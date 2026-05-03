@@ -19,6 +19,7 @@ local FxFolder       = Assets.Guns.Effects.Shooting
 local FX_BULLET_HOLE = FxFolder.BulletHole
 local FX_WOOD_CHIPS  = FxFolder.Parent.Environment.Wood_Chips
 
+local replicant_service = require(ReplicatedStorage.Shared.Modules["Client Modules"].ReplicantService)
 local events_replication_folder = ReplicatedStorage.Shared.Library.Events.Replicant_Communication
 local fast_cast_replication     = events_replication_folder.FastCast_Connection
 local hit_connection            = events_replication_folder.Hit_Connection
@@ -28,6 +29,8 @@ local texture_event             = events_replication_folder.Texture_Connection
 
 local gun_communication = events_replication_folder.Parent.Gun_Communication
 local drop_connection = gun_communication.Drop_Connection
+
+local general_sfx = ReplicatedStorage.Shared.Assets.Guns.Sounds.Shared
 
 -- // Tuning (shared defaults; subclasses can override on self)
 
@@ -257,6 +260,53 @@ function BaseTool:equip()
 			end
 		end
 	end)
+	
+	-- Keyframe-driven round visibility
+	for _, track in pairs(self.RegisteredAnimations) do
+		if not self.SoundFolder then return end
+		
+		if not track:IsA("AnimationTrack") then continue end
+		track.KeyframeReached:Connect(function(keyframe)
+			local rightArm = LOCAL_PLAYER.Character:FindFirstChild("Right Arm")
+			if not rightArm then return end
+			local round = rightArm:FindFirstChild(self.Round.Name)
+			if not round then return end
+			if keyframe == "vfx_hand_shell_visible" then
+				round.Transparency = 0
+			elseif keyframe == "vfx_hand_shell_invisible" then
+				round.Transparency = 1
+			end
+
+			if keyframe:sub(1,4) == "sfx_" then
+				local soundName = keyframe:sub(5)
+				local sound = self.SoundFolder:FindFirstChild(soundName)
+				if sound then
+					self:_play_sfx(sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
+				else
+					warn("Sound not found for keyframe:", soundName)
+				end
+			elseif keyframe:sub(1,5) == "gsfx_" then
+				local baseName = keyframe:sub(6)
+
+				local matches = {}
+
+				for _, child in ipairs(general_sfx:GetChildren()) do
+					-- match prefix: princerifle_shell, princerifle_shell1, etc.
+					if child.Name:sub(1, #baseName) == baseName then
+						table.insert(matches, child)
+					end
+				end
+
+				if #matches > 0 then
+					local chosen = matches[math.random(1, #matches)]
+
+					self:_play_sfx(chosen, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
+				else
+					warn("No GSFX matches found for:", baseName)
+				end
+			end
+		end)
+	end
 end
 
 function BaseTool:unequip()
@@ -426,7 +476,6 @@ function BaseTool:_restoreBase()
 	end
 
 	-- Stop all Layer 1 (fire/cycle) animations unconditionally
-	-- These should NOT auto-restore base; they're transient
 	if self.ANIM_LAYERS then
 		for trackName, layer in pairs(self.ANIM_LAYERS) do
 			if layer == 1 then
@@ -439,7 +488,6 @@ function BaseTool:_restoreBase()
 	end
 
 	if self.Aiming then
-
 		local want = self:_aimTrack()
 
 		-- Kill the opposite shoulder aim track
@@ -449,28 +497,25 @@ function BaseTool:_restoreBase()
 			kill:Stop(CUT)
 		end
 
-		-- Stop Hold if it's playing (shouldn't be, but be safe)
+		-- Stop Hold if it's playing
 		if anims.Hold and anims.Hold.IsPlaying then
 			anims.Hold:Stop(CUT)
 		end
 
-		-- Play the correct aim track
+		-- ONLY play if not already playing (prevent restart)
 		if want and not want.IsPlaying then
 			want:Play()
 		end
 	else
-
 		-- Kill both aim tracks
 		self:_killAimTracks()
 
 		-- Play Hold
 		if anims.Hold and not anims.Hold.IsPlaying then
 			anims.Hold:Play()
-		else
 		end
 	end
 end
-
 function BaseTool:_restoreBaseDeferred()
 	task.defer(function()
 		self:_restoreBase()
@@ -502,10 +547,7 @@ function BaseTool:aim()
 	if not self.RegisteredAnimations.Aim then return end
 	
 	if self.Equipping then 
-		print("equipping")
-		return 
-	else
-		print("not equipping")		
+		return 	
 	end
 	if LOCAL_PLAYER:GetAttribute("Jumping") then return end
 	self.Aiming = true
@@ -723,75 +765,145 @@ end
 --------------------------------------------------------------------------------
 
 function BaseTool:_startAimTracking()
-	if self._aimConnection then return end
-
 	local character = LOCAL_PLAYER.Character
 	if not character then return end
 
+	local root = character:FindFirstChild("HumanoidRootPart")
 	local torso = character:FindFirstChild("Torso")
-	local root  = character:FindFirstChild("HumanoidRootPart")
-	if not torso or not root then return end
+	if not (root and torso) then return end
 
-	local leftShoulder  = torso:FindFirstChild("Left Shoulder")
+	local leftShoulder = torso:FindFirstChild("Left Shoulder")
 	local rightShoulder = torso:FindFirstChild("Right Shoulder")
-	if not leftShoulder or not rightShoulder then return end
+	if not (leftShoulder and rightShoulder) then return end
 
-	self._leftShoulder    = leftShoulder
-	self._rightShoulder   = rightShoulder
-	self._leftShoulderC0  = leftShoulder.C0
-	self._rightShoulderC0 = rightShoulder.C0
+	local restLeftShoulder = leftShoulder.C0
+	local restRightShoulder = rightShoulder.C0
 
-	local pitchLimit = (self :: any).AIM_PITCH_LIMIT or AIM_PITCH_LIMIT
-	local lerpAlpha  = (self :: any).AIM_LERP_ALPHA  or AIM_LERP_ALPHA
+	local jitterAngles = { 0, 0, 0 }
+	local lastJitterTime = tick()
+	local lerpAlpha = 0.15 
+	
+	self._restLeftC0 = leftShoulder.C0
+	self._restRightC0 = rightShoulder.C0
 
-	self._aimConnection = RunService.RenderStepped:Connect(function()
-		if not self.Aiming then return end
+	self._aimConnection = game:GetService("RunService").RenderStepped:Connect(function()
+		if not self.Aiming or not self.Equipped then return end
 
-		local camCF = workspace.CurrentCamera.CFrame
-		local isFirstPerson = LOCAL_PLAYER:GetAttribute("FirstPerson") == true
+		local camera = workspace.CurrentCamera
+		local isFirstPerson = LOCAL_PLAYER.CameraMode == Enum.CameraMode.LockFirstPerson
+
+		local relativeCF = root.CFrame:ToObjectSpace(camera.CFrame)
+		local lookDir = relativeCF.LookVector
+
+		-- This is the vertical angle. We use math.asin to get the actual radian.
+		-- I've removed the 50/90 multiplier so it follows 1:1.
+		local cameraPitch = math.asin(math.clamp(lookDir.Y, -1, 1))
+
+		local armOffset = CFrame.new(0, 0, 0)
+		local defaultArmOffset = CFrame.new()
+
+		local leftArmCF = torso.CFrame:ToObjectSpace(
+			root.CFrame 
+				* CFrame.Angles(cameraPitch, root.RootJoint.CurrentAngle, 0) 
+				* CFrame.new(-1, 0.5, 0) 
+				* armOffset 
+				* CFrame.Angles(0, -math.pi / 2, 0) 
+				* defaultArmOffset
+		)
+
+		local rightArmCF = torso.CFrame:ToObjectSpace(
+			root.CFrame 
+				* CFrame.Angles(cameraPitch, root.RootJoint.CurrentAngle, 0) 
+				* CFrame.new(1, 0.5, 0) 
+				* armOffset 
+				* CFrame.Angles(0, math.pi / 2, 0) 
+				* defaultArmOffset:Inverse()
+		)
+
 
 		if isFirstPerson then
-			-- In first person: apply full camera rotation (pitch + yaw)
-			local localLook = root.CFrame:VectorToObjectSpace(camCF.LookVector)
-			local pitch = math.asin(math.clamp(localLook.Y, -1, 1))
-			local aimAngle = math.clamp(pitch, -pitchLimit, pitchLimit)
+			local shoulderOffsetX = 0.5
+			local shoulderOffsetY = -1.75
+			local shoulderOffsetZ = 0
 
-			-- Get yaw from camera relative to root
-			local camRelativeToRoot = root.CFrame:ToObjectSpace(camCF)
-			local _, yaw, _ = camRelativeToRoot:ToEulerAnglesYXZ()
+			-- Check for tool-specific offsets via attributes
+			if character:GetAttribute("LeftAiming") then shoulderOffsetX = -0.4 end
+			if character:GetAttribute("Guarding") then 
+				shoulderOffsetX = 0.15
+				shoulderOffsetY = -1.85 
+			end
 
-			leftShoulder.C0 = self._leftShoulderC0 * CFrame.Angles(0, yaw, -aimAngle)
-			rightShoulder.C0 = self._rightShoulderC0 * CFrame.Angles(0, yaw, aimAngle)
+			local shoulderOffset = CFrame.new(shoulderOffsetX, shoulderOffsetY, shoulderOffsetZ)
+			local yaw = math.atan2(-lookDir.X, -lookDir.Z)
 
-		else
-			-- In third person: only apply pitch
-			local pitch = camCF:ToEulerAnglesYXZ()
-			local aimAngle = math.clamp(pitch, -pitchLimit, pitchLimit)
+			-- Reconstruct the FP frame without camera shake
+			local baseCameraFrame = root.CFrame * CFrame.Angles(0, yaw, 0) * CFrame.Angles(cameraPitch, 0, 0)
 
-			leftShoulder.C0 = leftShoulder.C0:Lerp(
-				self._leftShoulderC0 * CFrame.Angles(0, 0, -aimAngle),
-				lerpAlpha
+			leftArmCF = torso.CFrame:ToObjectSpace(
+				baseCameraFrame
+					* CFrame.Angles(-cameraPitch, 0, 0) 
+					* shoulderOffset 
+					* CFrame.Angles(0, root.RootJoint.CurrentAngle, 0) 
+					* CFrame.new(-1, 0.5, 0) 
+					* CFrame.Angles(0, -math.pi / 2, 0) 
+					* defaultArmOffset
 			)
 
-			rightShoulder.C0 = rightShoulder.C0:Lerp(
-				self._rightShoulderC0 * CFrame.Angles(0, 0, aimAngle),
-				lerpAlpha
+			rightArmCF = torso.CFrame:ToObjectSpace(
+				baseCameraFrame
+					* shoulderOffset 
+					* CFrame.Angles(0, root.RootJoint.CurrentAngle, 0) 
+					* CFrame.new(1, 0.5, 0) 
+					* CFrame.Angles(0, math.pi / 2, 0) 
+					* defaultArmOffset:Inverse()
 			)
 		end
+
+		local t = tick()
+		if t - lastJitterTime >= 0.06 then
+			lastJitterTime = t
+			jitterAngles = {
+				math.rad(math.random(-5, 5)) / 20,
+				math.rad(math.random(-5, 5)) / 20,
+				math.rad(math.random(-5, 5)) / 20
+			}
+		end
+
+		local jitterRotation = CFrame.Angles(jitterAngles[1], jitterAngles[2], jitterAngles[3])
+		local breatheSway = CFrame.new(0, math.sin(t * 4) * 0.01, 0)
+
+		leftShoulder.C0 = leftShoulder.C0:Lerp(breatheSway * jitterRotation * leftArmCF, lerpAlpha)
+		rightShoulder.C0 = rightShoulder.C0:Lerp(breatheSway * jitterRotation * rightArmCF, lerpAlpha)
 	end)
 end
 
 function BaseTool:_stopAimTracking()
+	-- 1. Kill the loop immediately
 	if self._aimConnection then
 		self._aimConnection:Disconnect()
 		self._aimConnection = nil
 	end
-	if self._leftShoulder  and self._leftShoulderC0  then self._leftShoulder.C0  = self._leftShoulderC0  end
-	if self._rightShoulder and self._rightShoulderC0 then self._rightShoulder.C0 = self._rightShoulderC0 end
-	self._leftShoulder    = nil
-	self._rightShoulder   = nil
-	self._leftShoulderC0  = nil
-	self._rightShoulderC0 = nil
+
+	-- 2. Physical Reset
+	local character = LOCAL_PLAYER.Character
+	local torso = character and character:FindFirstChild("Torso")
+
+	if torso then
+		local leftShoulder = torso:FindFirstChild("Left Shoulder")
+		local rightShoulder = torso:FindFirstChild("Right Shoulder")
+
+		-- Use TweenService for a smooth return, or snap if you prefer
+		if leftShoulder and self._restLeftC0 then
+			game:GetService("TweenService"):Create(leftShoulder, TweenInfo.new(0.2), {C0 = self._restLeftC0}):Play()
+		end
+
+		if rightShoulder and self._restRightC0 then
+			game:GetService("TweenService"):Create(rightShoulder, TweenInfo.new(0.2), {C0 = self._restRightC0}):Play()
+		end
+	end
+
+	-- 3. Run your existing cleanup
+	self:_resetMotor6D()
 end
 
 --------------------------------------------------------------------------------
@@ -1077,6 +1189,10 @@ end
 
 function BaseTool:_connect_FastCast(...)
 	fast_cast_replication:FireServer(...)
+end
+
+function BaseTool:_play_sfx(...)
+	replicant_service.handle_sfx_replication(LOCAL_PLAYER, ...)
 end
 
 --------------------------------------------------------------------------------

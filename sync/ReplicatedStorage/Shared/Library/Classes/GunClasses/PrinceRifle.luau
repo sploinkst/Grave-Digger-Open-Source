@@ -20,6 +20,7 @@ local Util     = require(script.Parent.Parent.Parent.Util)
 --------------------------------------------------------------------------------
 
 local Assets      = ReplicatedStorage.Shared.Assets
+local SoundFolder = Assets.Guns:WaitForChild("Sounds"):WaitForChild("PrinceRifle")
 local HolsterFolder = Assets.Guns.Holsters:FindFirstChild("Gun Holsters")
 local ToolFolder  = Assets.Guns.ToolModels
 local AnimFolder  = Assets.Animations.Tools.Guns.PrinceRifle
@@ -27,6 +28,7 @@ local FxFolder    = Assets.Guns.Effects.Shooting
 
 local FX_MUZZLE_FLASH = FxFolder.Muzzle_Flash
 
+local fire_sound = SoundFolder.fire
 --------------------------------------------------------------------------------
 -- Tuning
 --------------------------------------------------------------------------------
@@ -185,6 +187,7 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.Check_Delay			 = 1
 	self.MuzzlePartName          = "PrinceRifle_Muzzle"
 	self.Can_Drop 				 = true
+	self.SoundFolder 			 = SoundFolder
 
 	self.unequip_wait     = false
 	self.Cycled           = true
@@ -313,10 +316,16 @@ function PrinceRifle:fire()
 	local shootDir = (targetPos - muzzle.Position).Unit
 
 	-- === FIRE ===
+	if self.Alt_Mode then
+		self:_play_sfx(fire_sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.5)
+	else
+		self:_play_sfx(fire_sound, self.actual_model:WaitForChild(self.MuzzlePartName))
+	end
 
 	local activeCast = self.Caster:Fire(muzzle.Position, shootDir, BULLET_SPEED, self.CasterBehavior)
 	activeCast.UserData.Direction  = shootDir
 	activeCast.UserData.Penetrated = false
+
 
 	self:_connect_FastCast(muzzle.Position, shootDir, BULLET_SPEED, {
 		bulletTemplate  = FxFolder.Bullet,
@@ -329,11 +338,14 @@ function PrinceRifle:fire()
 	local anims    = self.RegisteredAnimations
 	local fireAnim = (self.current_shoulder == "Right") and anims.Fire or anims.Fire_Left
 	fireAnim:Play()
+	
 
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false)
 
 	-- Muzzle flash
 	self:_fireMuzzleFlash()
+	
+
 
 	task.wait(FIRE_RATE)
 	self.Firing = false
@@ -474,6 +486,17 @@ function PrinceRifle:_on_equip()
 				round.Transparency = 0
 			elseif keyframe == "vfx_hand_shell_invisible" then
 				round.Transparency = 1
+			end
+			
+			if keyframe:sub(1,4) == "sfx_" then
+				local soundName = keyframe:sub(5)
+				local sound = SoundFolder:FindFirstChild(soundName)
+				if sound then
+					-- For Lebel fire sounds
+					self:_play_sfx(sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
+				else
+					warn("Sound not found for keyframe:", soundName)
+				end
 			end
 		end)
 	end

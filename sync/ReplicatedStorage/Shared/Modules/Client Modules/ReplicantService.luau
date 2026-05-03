@@ -20,6 +20,7 @@ local concussion_active = false
 local concussion_connection: RBXScriptConnection? = nil
 local heartbeat_sound: Sound? = nil
 local lastHeartbeatTime = 0
+
 -- Replication tracking
 local MAX_REPLICATION_EVENTS = 300
 module.ReplicationBuffer = {}
@@ -698,8 +699,6 @@ local function update_concussion_state()
 	end
 end
 
--- Initial state
-update_concussion_state()
 
 
 
@@ -825,6 +824,43 @@ local function handle_holster_replication(...)
 	})
 end
 
+function module.handle_sfx_replication(...)
+	local args = {...}
+	local player = args[1]
+	local sound_instance = args[2]
+	local parent = args[3]
+	local playback_speed = args[4] or sound_instance.PlaybackSpeed
+	local volume = args[5] or sound_instance.Volume
+	local pitch_shift = args[6] or 0
+	local pitch_variation = args[7] or 0  -- NEW: pitch variation parameter
+
+	local sound_clone = sound_instance:Clone()
+	sound_clone.Parent = parent
+
+	-- Set base pitch
+	sound_clone.Pitch = sound_instance.Pitch or 1
+
+	-- Apply pitch variation (same logic as the script)
+	if pitch_variation and typeof(pitch_variation) == "number" then
+		sound_clone.Pitch = sound_clone.Pitch + math.random(-pitch_variation * 100, pitch_variation * 100) / 100
+	end
+
+	-- Apply pitch shift (from PitchShiftSoundEffect)
+	if pitch_shift ~= 0 then
+		local pitch_sound = Instance.new("PitchShiftSoundEffect")
+		
+		pitch_sound.Octave = pitch_shift
+		pitch_sound.Parent = sound_clone
+	end
+
+	sound_clone:Play()
+	sound_clone.PlaybackSpeed = playback_speed
+	sound_clone.Volume = volume
+
+	sound_clone.Ended:Connect(function()
+		sound_clone:Destroy()
+	end)
+end
 
 
 function module.start_module()
@@ -873,9 +909,34 @@ function module.start_module()
 	fastcast_replicant.OnClientEvent:Connect(handle_fastcast_replication)
 	vfx_replicant.OnClientEvent:Connect(handle_vfx_replication)
 	texture_replicant.OnClientEvent:Connect(handle_texture_replication)
+	sfx_replicant.OnClientEvent:Connect(function(...)
+		local args = {...}
+		local player = args[1]
+		
+		if player == local_player then
+			return
+		end
+		
+		module.handle_sfx_replication(...)
+		
+	end)
 
 	-- Listen for changes
 	local_player:GetAttributeChangedSignal("Concussion"):Connect(update_concussion_state)
+	
+	-- // TEMP REMIND ME TO DELETE ONCE I GET LOADINGMANAGER UP AND RUNNING -- PRAXITOS
+	for _, sound in pairs(game:GetDescendants()) do
+		if sound:IsA("Sound") then
+			local last_volume = sound.Volume
+			sound.Volume = 0
+			sound:Play()
+			
+			-- // return to volume once sound is completed
+			sound.Ended:Connect(function()
+				sound.Volume = last_volume
+			end)
+		end
+	end
 end
 
 return module
