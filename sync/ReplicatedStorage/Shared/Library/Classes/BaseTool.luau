@@ -229,6 +229,7 @@ function BaseTool:equip()
 		if hold then draw.Stopped:Connect(function() 
 				if hold and self.tool and self.tool.Parent == character and self.Equipped then 
 					hold:Play() 
+					hold:AdjustSpeed(0.2) 
 					self.Equipping = false 
 				end 
 			end) end
@@ -257,6 +258,7 @@ function BaseTool:equip()
 			end
 			if self.RegisteredAnimations and self.RegisteredAnimations.Hold then
 				self.RegisteredAnimations.Hold:Play()
+				self.RegisteredAnimations.Hold:AdjustSpeed(0.2)
 			end
 		end
 	end)
@@ -513,6 +515,7 @@ function BaseTool:_restoreBase()
 		-- Play Hold
 		if anims.Hold and not anims.Hold.IsPlaying then
 			anims.Hold:Play()
+			anims.Hold:AdjustSpeed(0.2)
 		end
 	end
 end
@@ -534,7 +537,35 @@ function BaseTool:_onShoulderChanged()
 
 	task.defer(function()
 		if self:_isBusy() or not self.Aiming then return end
-		self:_restoreBase()
+
+		local anims = self.RegisteredAnimations
+		if not anims then return end
+
+		local rightTrack = anims.Aim
+		local leftTrack  = anims.Aim_Left
+
+		-- Detect currently playing track (this is the REAL "old")
+		local oldAimTrack = nil
+		if rightTrack and rightTrack.IsPlaying then
+			oldAimTrack = rightTrack
+		elseif leftTrack and leftTrack.IsPlaying then
+			oldAimTrack = leftTrack
+		end
+
+		local newAimTrack = self:_aimTrack()
+		if not newAimTrack then return end
+
+		-- If switching to the same track, do nothing
+		if oldAimTrack == newAimTrack then return end
+
+		-- Stop old, start new
+		if oldAimTrack and oldAimTrack.IsPlaying then
+			oldAimTrack:Stop(CUT)
+		end
+
+		if not newAimTrack.IsPlaying then
+			newAimTrack:Play(CUT)
+		end
 	end)
 end
 
@@ -586,6 +617,7 @@ function BaseTool:endAiming()
 		if not self:_isBusy() then
 			if anims.Hold and not anims.Hold.IsPlaying then
 				anims.Hold:Play(CUT)
+				anims.Hold:AdjustSpeed(0.2)
 			end
 		end
 	end
@@ -765,6 +797,89 @@ end
 --------------------------------------------------------------------------------
 
 function BaseTool:_startAimTracking()
+	-- 1. Guard Clause: Don't restart if already tracking
+	if self._aimConnection then
+		return
+	end
+
+	local character = LOCAL_PLAYER.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local torso = character and character:FindFirstChild("Torso")
+	if not (character and root and torso) then return end
+
+	local leftShoulder = torso:FindFirstChild("Left Shoulder")
+	local rightShoulder = torso:FindFirstChild("Right Shoulder")
+	if not (leftShoulder and rightShoulder) then return end
+
+	-- 2. Setup Reference Points
+	-- We save the clean "Rest" state once. If it's already saved, don't overwrite it
+	-- with a potentially "transformed" CFrame from a previous loop.
+	self._restLeftC0 = self._restLeftC0 or leftShoulder.C0
+	self._restRightC0 = self._restRightC0 or rightShoulder.C0
+
+	local camera = workspace.CurrentCamera
+
+	-- 3. Capture INITIAL Yaw (Horizontal) to fix the accumulation bug
+	-- We calculate where the camera is looking relative to the RootPart ONCE.
+	local relativeCF = root.CFrame:ToObjectSpace(camera.CFrame)
+	local lookDir = relativeCF.LookVector
+	local fixedYaw = math.atan2(-lookDir.X, -lookDir.Z)
+
+	local lastJitterTime = tick()
+	local jitterAngles = { 0, 0, 0 }
+	local lerpAlpha = 0.15 
+
+	-- 4. Start RenderStep Connection
+	self._aimConnection = game:GetService("RunService").RenderStepped:Connect(function()
+		if not self.Aiming or not self.Equipped then return end
+
+		-- Update ONLY the Pitch (Vertical) based on current camera look
+		local currentLookDir = camera.CFrame.LookVector
+		local cameraPitch = math.asin(math.clamp(currentLookDir.Y, -1, 1))
+
+		-- Combine our Fixed Horizontal (Yaw) with live Vertical (Pitch)
+		local rotationCF = CFrame.Angles(0, fixedYaw, 0) * CFrame.Angles(cameraPitch, 0, 0)
+
+		-- Apply the rotation while accounting for the character's animation lean (RootJoint)
+		local armRotation = rotationCF * CFrame.Angles(0, root.RootJoint.CurrentAngle, 0)
+
+		-- Calculate Target CFrames in Torso Space
+		-- This replicates your original shoulder positioning
+		local leftArmCF = torso.CFrame:ToObjectSpace(
+			root.CFrame 
+				* armRotation 
+				* CFrame.new(-1, 0.5, 0) 
+				* CFrame.Angles(0, -math.pi / 2, 0)
+		)
+
+		local rightArmCF = torso.CFrame:ToObjectSpace(
+			root.CFrame 
+				* armRotation 
+				* CFrame.new(1, 0.5, 0) 
+				* CFrame.Angles(0, math.pi / 2, 0)
+		)
+
+		-- 5. Jitter & Breathing Logic
+		local t = tick()
+		if t - lastJitterTime >= 0.06 then
+			lastJitterTime = t
+			jitterAngles = {
+				math.rad(math.random(-5, 5)) / 20,
+				math.rad(math.random(-5, 5)) / 20,
+				math.rad(math.random(-5, 5)) / 20
+			}
+		end
+
+		local jitterRotation = CFrame.Angles(jitterAngles[1], jitterAngles[2], jitterAngles[3])
+		local breatheSway = CFrame.new(0, math.sin(t * 4) * 0.01, 0)
+
+		-- 6. Apply to Motor6Ds with Lerp
+		-- We use the pre-calculated armCFs modified by sway and jitter
+		leftShoulder.C0 = leftShoulder.C0:Lerp(breatheSway * jitterRotation * leftArmCF, lerpAlpha)
+		rightShoulder.C0 = rightShoulder.C0:Lerp(breatheSway * jitterRotation * rightArmCF, lerpAlpha)
+	end)
+end
+--[[ BrokenAnim Im keeping cuz its funny function BaseTool:_startAimTracking()
 	local character = LOCAL_PLAYER.Character
 	if not character then return end
 
@@ -782,7 +897,7 @@ function BaseTool:_startAimTracking()
 	local jitterAngles = { 0, 0, 0 }
 	local lastJitterTime = tick()
 	local lerpAlpha = 0.15 
-	
+
 	self._restLeftC0 = leftShoulder.C0
 	self._restRightC0 = rightShoulder.C0
 
@@ -792,41 +907,31 @@ function BaseTool:_startAimTracking()
 		local camera = workspace.CurrentCamera
 		local isFirstPerson = LOCAL_PLAYER.CameraMode == Enum.CameraMode.LockFirstPerson
 
-		local relativeCF = root.CFrame:ToObjectSpace(camera.CFrame)
-		local lookDir = relativeCF.LookVector
-
-		-- This is the vertical angle. We use math.asin to get the actual radian.
-		-- I've removed the 50/90 multiplier so it follows 1:1.
-		local cameraPitch = math.asin(math.clamp(lookDir.Y, -1, 1))
-
 		local armOffset = CFrame.new(0, 0, 0)
 		local defaultArmOffset = CFrame.new()
 
+		-- Use camera CFrame directly to avoid double rotation
 		local leftArmCF = torso.CFrame:ToObjectSpace(
 			root.CFrame 
-				* CFrame.Angles(cameraPitch, root.RootJoint.CurrentAngle, 0) 
 				* CFrame.new(-1, 0.5, 0) 
 				* armOffset 
 				* CFrame.Angles(0, -math.pi / 2, 0) 
 				* defaultArmOffset
-		)
+		) * root.CFrame:ToObjectSpace(camera.CFrame)
 
 		local rightArmCF = torso.CFrame:ToObjectSpace(
 			root.CFrame 
-				* CFrame.Angles(cameraPitch, root.RootJoint.CurrentAngle, 0) 
 				* CFrame.new(1, 0.5, 0) 
 				* armOffset 
 				* CFrame.Angles(0, math.pi / 2, 0) 
 				* defaultArmOffset:Inverse()
-		)
-
+		) * root.CFrame:ToObjectSpace(camera.CFrame)
 
 		if isFirstPerson then
 			local shoulderOffsetX = 0.5
 			local shoulderOffsetY = -1.75
 			local shoulderOffsetZ = 0
 
-			-- Check for tool-specific offsets via attributes
 			if character:GetAttribute("LeftAiming") then shoulderOffsetX = -0.4 end
 			if character:GetAttribute("Guarding") then 
 				shoulderOffsetX = 0.15
@@ -834,29 +939,25 @@ function BaseTool:_startAimTracking()
 			end
 
 			local shoulderOffset = CFrame.new(shoulderOffsetX, shoulderOffsetY, shoulderOffsetZ)
-			local yaw = math.atan2(-lookDir.X, -lookDir.Z)
-
-			-- Reconstruct the FP frame without camera shake
-			local baseCameraFrame = root.CFrame * CFrame.Angles(0, yaw, 0) * CFrame.Angles(cameraPitch, 0, 0)
+			local cameraRelativeCF = root.CFrame:ToObjectSpace(camera.CFrame)
 
 			leftArmCF = torso.CFrame:ToObjectSpace(
-				baseCameraFrame
-					* CFrame.Angles(-cameraPitch, 0, 0) 
+				root.CFrame
 					* shoulderOffset 
 					* CFrame.Angles(0, root.RootJoint.CurrentAngle, 0) 
 					* CFrame.new(-1, 0.5, 0) 
 					* CFrame.Angles(0, -math.pi / 2, 0) 
 					* defaultArmOffset
-			)
+			) * cameraRelativeCF
 
 			rightArmCF = torso.CFrame:ToObjectSpace(
-				baseCameraFrame
+				root.CFrame
 					* shoulderOffset 
 					* CFrame.Angles(0, root.RootJoint.CurrentAngle, 0) 
 					* CFrame.new(1, 0.5, 0) 
 					* CFrame.Angles(0, math.pi / 2, 0) 
 					* defaultArmOffset:Inverse()
-			)
+			) * cameraRelativeCF
 		end
 
 		local t = tick()
@@ -875,16 +976,15 @@ function BaseTool:_startAimTracking()
 		leftShoulder.C0 = leftShoulder.C0:Lerp(breatheSway * jitterRotation * leftArmCF, lerpAlpha)
 		rightShoulder.C0 = rightShoulder.C0:Lerp(breatheSway * jitterRotation * rightArmCF, lerpAlpha)
 	end)
-end
+end]]
 
 function BaseTool:_stopAimTracking()
-	-- 1. Kill the loop immediately
+	-- 1. Kill the loop immediately so it stops setting C0 every frame
 	if self._aimConnection then
 		self._aimConnection:Disconnect()
 		self._aimConnection = nil
 	end
 
-	-- 2. Physical Reset
 	local character = LOCAL_PLAYER.Character
 	local torso = character and character:FindFirstChild("Torso")
 
@@ -892,18 +992,23 @@ function BaseTool:_stopAimTracking()
 		local leftShoulder = torso:FindFirstChild("Left Shoulder")
 		local rightShoulder = torso:FindFirstChild("Right Shoulder")
 
-		-- Use TweenService for a smooth return, or snap if you prefer
+		-- 2. Smooth Reset using TweenService
+		-- We use a slightly faster tween to make the tool feel responsive
+		local resetInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
 		if leftShoulder and self._restLeftC0 then
-			game:GetService("TweenService"):Create(leftShoulder, TweenInfo.new(0.2), {C0 = self._restLeftC0}):Play()
+			game:GetService("TweenService"):Create(leftShoulder, resetInfo, {C0 = self._restLeftC0}):Play()
 		end
 
 		if rightShoulder and self._restRightC0 then
-			game:GetService("TweenService"):Create(rightShoulder, TweenInfo.new(0.2), {C0 = self._restRightC0}):Play()
+			game:GetService("TweenService"):Create(rightShoulder, resetInfo, {C0 = self._restRightC0}):Play()
 		end
 	end
-
-	-- 3. Run your existing cleanup
-	self:_resetMotor6D()
+	task.delay(0.15, function()
+		if not self.Aiming then -- Double check we haven't started aiming again
+			self:_resetMotor6D()
+		end
+	end)
 end
 
 --------------------------------------------------------------------------------
