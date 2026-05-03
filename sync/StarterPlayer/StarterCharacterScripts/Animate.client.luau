@@ -200,23 +200,33 @@ end
 --------------------------------------------------
 -- BASE / OVERLAY
 --------------------------------------------------
-local function play_base(name: string, fade: number?, reversed: boolean)
-	if current_base_name == name and active_base and active_base.IsPlaying then
-		return
-	end
-
+local function play_base(name: string, fade: number?, reversed: boolean?, speed: number?)
 	local track = loaded_animations[name]
 	if not track then return end
 
 	fade = fade or 0.18
-
-	track:AdjustSpeed(reversed and -1 or 1)
+	if current_base_name == name and active_base and active_base.IsPlaying then
+		if speed then
+			active_base:AdjustSpeed(speed)
+		elseif reversed ~= nil then
+			active_base:AdjustSpeed(reversed and -1 or 1)
+		end
+		return
+	end
 
 	if active_base then
 		active_base:Stop(fade)
 	end
 
 	track:Play(fade)
+
+	if speed then
+		track:AdjustSpeed(speed)
+		print("Speed set to:", speed)
+	else
+		track:AdjustSpeed(reversed and -1 or 1)
+	end
+
 	active_base = track
 	current_base_name = name
 end
@@ -263,12 +273,12 @@ local function update_movement(speed: number)
 
 		if set_state(target) then
 			if crouching then
-				play_base("Crouch_Idle")
+				play_base("Crouch_Idle", nil, nil, 0.1)
 				set_target_hip_offset(-0.85)
 				clear_overlays()
 				play_overlay("Crouch_Arms")
 			else
-				play_base("Stand_Idle")
+				play_base("Stand_Idle", nil, nil, 0.1)
 				set_target_hip_offset(0)
 				clear_overlays()
 			end
