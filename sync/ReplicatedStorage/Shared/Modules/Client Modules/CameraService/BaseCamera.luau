@@ -57,6 +57,9 @@ local OCCLUSION_MARGIN = 0.25 -- Stops camera from clipping through walls
 local AIMING_FOV = 80
 local BASE_FOV = 90
 
+local HEAD_FOLLOW_SMOOTH = 12
+local HEAD_FOLLOW_MAX_PITCH = math.rad(75)
+
 local delta = InputService:GetMouseDelta()
 -- // Data
 local PlayerData = LocalPlayer:WaitForChild("PlayerData")
@@ -151,6 +154,10 @@ function BaseCamera.new(cameraInfo)
 	self.TargetShoulderZoom = CameraOffsets.Third_Person.Z
 	self.ZoomSpeed = 10
 
+	self.HeadConnection = nil
+	self.HeadFollowEnabled = false
+	self.HeadCurrentPitch = 0
+	
 	return self
 end
 
@@ -414,6 +421,86 @@ function BaseCamera:CustomCamera()
 	end)
 end
 
+function BaseCamera:HeadFollowCamera_Setup()
+	print("HeadFollowCamera_Setup")
+
+	local character, root = self:_getCharacterParts()
+	if not character then return end
+
+	local torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+	if not torso then
+		print("no torso")
+		return
+	end
+
+	local neck: Motor6D = torso:FindFirstChild("Neck")
+	if not neck or not neck:IsA("Motor6D") then
+		print("no neck")
+		return
+	end
+
+	self.HeadFollowEnabled = true
+
+	-- cache original pose so we don't destroy rig alignment
+	local baseC0 = neck.C0
+
+	local currentPitch = 0
+
+	self.HeadConnection = RunService.RenderStepped:Connect(function(dt)
+		if not character.Parent or not self.HeadFollowEnabled then return end
+
+		-- camera pitch + recoil influence
+		local targetPitch = self.CameraPitch + self.RecoilPitch
+		targetPitch = math.clamp(targetPitch, -HEAD_FOLLOW_MAX_PITCH, HEAD_FOLLOW_MAX_PITCH)
+
+		-- smoothing
+		local alpha = math.clamp(HEAD_FOLLOW_SMOOTH * dt, 0, 1)
+		currentPitch += (targetPitch - currentPitch) * alpha
+
+		-- apply ONLY up/down rotation on X axis, preserving original C0
+		neck.C0 = baseC0 * CFrame.Angles(-currentPitch, 0, 0)
+
+		self.HeadCurrentPitch = currentPitch
+	end)
+end
+
+function BaseCamera:HeadFollowCamera_Reject()
+	self.HeadFollowEnabled = false
+
+	if self.HeadConnection then
+		self.HeadConnection:Disconnect()
+		self.HeadConnection = nil
+	end
+
+	local character = LocalPlayer.Character
+	if not character then return end
+
+	local head = character:FindFirstChild("Head")
+	if not head then return end
+
+	local neck = head:FindFirstChild("Neck")
+	if not neck then return end
+
+	neck.Transform = CFrame.Angles(0, 0, 0)
+	self.HeadCurrentPitch = 0
+end
+
+function BaseCamera:HeadFollowCamera_Reject()
+	if self.HeadConnection then
+		self.HeadConnection:Disconnect()
+		self.HeadConnection = nil
+	end
+	
+	-- // reset the neck pitch
+	local character = LocalPlayer.Character
+	if not character then return end
+	local head = character:FindFirstChild("Head")
+	if not head then return end
+	local neck = head:FindFirstChild("Neck")
+	if not neck then return end
+	neck.Transform = CFrame.Angles(0, 0, 0)
+end
+
 --- Custom First Person Camera - Built entirely from scratch
 function BaseCamera:FirstPerson()
 	self:_unbind()
@@ -455,17 +542,22 @@ function BaseCamera:FirstPerson()
 		if not root then return end
 
 		local delta = InputService:GetMouseDelta()
+
+		-- // Handle Rotation with Recoil-Aware Clamping
 		self.CameraYaw -= math.rad(delta.X * MouseSensitivity)
+		local potentialPitch = self.CameraPitch - math.rad(delta.Y * MouseSensitivity)
+
+		-- Adjust the clamp boundaries so (CameraPitch + RecoilPitch) never exceeds PITCH_MIN/MAX
 		self.CameraPitch = math.clamp(
-			self.CameraPitch - math.rad(delta.Y * MouseSensitivity),
-			PITCH_MIN,
-			PITCH_MAX
+			potentialPitch, 
+			PITCH_MIN - self.RecoilPitch, 
+			PITCH_MAX - self.RecoilPitch
 		)
 
 		local offset = CameraOffsets.First_Person
 		local focusPoint = root.Position + Vector3.new(0, offset.Y, 0)
 
-		-- APPLY RECOIL HERE
+		-- APPLY RECOIL
 		local finalYaw = self.CameraYaw + self.RecoilYaw
 		local finalPitch = self.CameraPitch + self.RecoilPitch
 
@@ -522,6 +614,8 @@ function BaseCamera:OverTheShoulder()
 
 	first_person_transparency(character, false)
 
+	self:HeadFollowCamera_Setup()
+	
 	self:_bind(function(dt: number)
 		self:_updateRecoil(dt)
 
@@ -529,14 +623,19 @@ function BaseCamera:OverTheShoulder()
 		if not root then return end
 
 		local delta = InputService:GetMouseDelta()
+
+		-- // Handle Rotation with Recoil-Aware Clamping
 		self.CameraYaw -= math.rad(delta.X * MouseSensitivity)
+		local potentialPitch = self.CameraPitch - math.rad(delta.Y * MouseSensitivity)
+
+		-- Adjust the clamp boundaries so (CameraPitch + RecoilPitch) never exceeds PITCH_MIN/MAX
 		self.CameraPitch = math.clamp(
-			self.CameraPitch - math.rad(delta.Y * MouseSensitivity),
-			PITCH_MIN,
-			PITCH_MAX
+			potentialPitch, 
+			PITCH_MIN - self.RecoilPitch, 
+			PITCH_MAX - self.RecoilPitch
 		)
 
-		-- APPLY RECOIL HERE
+		-- APPLY RECOIL
 		local finalYaw = self.CameraYaw + self.RecoilYaw
 		local finalPitch = self.CameraPitch + self.RecoilPitch
 
