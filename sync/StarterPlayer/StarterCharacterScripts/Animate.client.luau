@@ -332,6 +332,8 @@ local function update_movement(speed: number)
 					play_base("Sprinting_Full")
 					play_overlay("Sprint_Lean")
 					play_overlay("Sprint_Arms")
+				else
+					clear_overlays()
 				end
 			end)
 		end
