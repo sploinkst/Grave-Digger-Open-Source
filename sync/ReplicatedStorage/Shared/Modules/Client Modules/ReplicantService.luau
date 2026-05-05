@@ -862,6 +862,18 @@ function module.handle_sfx_replication(...)
 	end)
 end
 
+function module.connect_sfx(...)
+	local args = {...}
+	module.handle_sfx_replication(...)
+	
+	-- // remove player from the args
+	local player = args[1]
+	table.remove(args, 1)
+	
+	
+	sfx_replicant:FireServer(args)
+end
+
 
 function module.start_module()
 	rebind_ui()
@@ -918,7 +930,6 @@ function module.start_module()
 		end
 		
 		module.handle_sfx_replication(...)
-		
 	end)
 
 	-- Listen for changes

@@ -328,8 +328,12 @@ function PrinceRifle:fire()
 
 
 	self:_connect_FastCast(muzzle.Position, shootDir, BULLET_SPEED, {
-		bulletTemplate  = FxFolder.Bullet,
+		bulletTemplate = FxFolder.Bullet,
 		bulletContainer = workspace.Game_Details.Effects.Bullets,
+		isPenetration = false,
+		penetrationLevel = self.Penetration_Level,
+		damage = self.damage,
+		knockbackForce = self.KnockBack_Force
 	})
 
 	self.Cycled   = false

@@ -78,8 +78,19 @@ function module.start_module()
 		vfx_replicant:FireAllClients(...)
 	end)
 
-	sfx_replicant.OnServerEvent:Connect(function(...)
-		sfx_replicant:FireAllClients(...)
+	sfx_replicant.OnServerEvent:Connect(function(player, ...)
+		local rawArgs = {...}
+
+		-- Flatten once if the first argument is a table (prevents nested payload bug)
+		if typeof(rawArgs[1]) == "table" then
+			rawArgs = rawArgs[1]
+		end
+
+		-- Repack with player at index [1]
+		table.insert(rawArgs, 1, player)
+
+
+		sfx_replicant:FireAllClients(table.unpack(rawArgs))
 	end)
 
 	texture_replicant.OnServerEvent:Connect(function(...)
