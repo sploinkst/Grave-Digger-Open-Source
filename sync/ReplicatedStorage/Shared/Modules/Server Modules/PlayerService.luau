@@ -129,6 +129,12 @@ local function apply_full_appearance(character: Model, player: Player)
 	Mesh.TextureId = ""
 	handle.Material = Enum.Material.Sand
 	handle.BrickColor = BrickColor.new("Brown")
+	
+	-- // remove face
+	local head = character:FindFirstChild("Head")
+	local head_mesh = head:FindFirstChild("Mesh")
+	head_mesh.TextureId = ""
+	head:FindFirstChildWhichIsA("Decal"):Destroy()
 end
 
 local function handle_character(player: Player, character: Model, ragdoll_object)
