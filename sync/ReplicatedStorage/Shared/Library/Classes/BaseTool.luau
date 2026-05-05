@@ -797,7 +797,7 @@ end
 --------------------------------------------------------------------------------
 
 function BaseTool:_startAimTracking()
-	-- 1. Guard Clause: Don't restart if already tracking
+	-- 1. Guard Clause
 	if self._aimConnection then
 		return
 	end
@@ -811,56 +811,88 @@ function BaseTool:_startAimTracking()
 	local rightShoulder = torso:FindFirstChild("Right Shoulder")
 	if not (leftShoulder and rightShoulder) then return end
 
-	-- 2. Setup Reference Points
-	-- We save the clean "Rest" state once. If it's already saved, don't overwrite it
-	-- with a potentially "transformed" CFrame from a previous loop.
+	-- 2. Rest state cache
 	self._restLeftC0 = self._restLeftC0 or leftShoulder.C0
 	self._restRightC0 = self._restRightC0 or rightShoulder.C0
 
 	local camera = workspace.CurrentCamera
 
-	-- 3. Capture INITIAL Yaw (Horizontal) to fix the accumulation bug
-	-- We calculate where the camera is looking relative to the RootPart ONCE.
-	local relativeCF = root.CFrame:ToObjectSpace(camera.CFrame)
-	local lookDir = relativeCF.LookVector
-	local fixedYaw = math.atan2(-lookDir.X, -lookDir.Z)
+	-- freelook state cache
+	self._wasFreeLook = self._wasFreeLook or false
+	self._freeLookYaw = self._freeLookYaw or 0
 
 	local lastJitterTime = tick()
 	local jitterAngles = { 0, 0, 0 }
-	local lerpAlpha = 0.15 
+	local lerpAlpha = 0.15
 
-	-- 4. Start RenderStep Connection
+	-- 3. Render loop
 	self._aimConnection = game:GetService("RunService").RenderStepped:Connect(function()
 		if not self.Aiming or not self.Equipped then return end
 
-		-- Update ONLY the Pitch (Vertical) based on current camera look
+		local t = tick()
+
+		local freeLook = LOCAL_PLAYER:GetAttribute("FreeLook") == true
+
+		-- === CHARACTER CHECK SAFETY (in case of respawn) ===
+		local character = LOCAL_PLAYER.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local torso = character and character:FindFirstChild("Torso")
+		if not (character and root and torso) then return end
+
+		local leftShoulder = torso:FindFirstChild("Left Shoulder")
+		local rightShoulder = torso:FindFirstChild("Right Shoulder")
+		if not (leftShoulder and rightShoulder) then return end
+
+		-- === PITCH (camera driven, unchanged) ===
 		local currentLookDir = camera.CFrame.LookVector
 		local cameraPitch = math.asin(math.clamp(currentLookDir.Y, -1, 1))
 
-		-- Combine our Fixed Horizontal (Yaw) with live Vertical (Pitch)
-		local rotationCF = CFrame.Angles(0, fixedYaw, 0) * CFrame.Angles(cameraPitch, 0, 0)
+		-- === YAW (FIXED) ===
+		local relativeCF = root.CFrame:ToObjectSpace(camera.CFrame)
+		local lookDir = relativeCF.LookVector
+		local currentYaw = math.atan2(-lookDir.X, -lookDir.Z)
 
-		-- Apply the rotation while accounting for the character's animation lean (RootJoint)
+		if freeLook then
+			--[[ lock yaw on first entry into freelook
+			if not self._wasFreeLook then
+				self._freeLookYaw = currentYaw
+			end
+
+			self._wasFreeLook = true
+			yaw = self._freeLookYaw]]
+		else
+			-- normal mode: follow camera every frame
+			self._wasFreeLook = false
+			self._freeLookYaw = currentYaw
+			yaw = currentYaw
+		end
+
+		-- === ROTATION BUILD ===
+		if yaw == nil then return end
+		local rotationCF =
+			CFrame.Angles(0, yaw, 0)
+			* CFrame.Angles(cameraPitch, 0, 0)
+
+		-- Apply animation lean
 		local armRotation = rotationCF * CFrame.Angles(0, root.RootJoint.CurrentAngle, 0)
 
-		-- Calculate Target CFrames in Torso Space
-		-- This replicates your original shoulder positioning
+		-- === ARM TARGETS ===
 		local leftArmCF = torso.CFrame:ToObjectSpace(
-			root.CFrame 
-				* armRotation 
-				* CFrame.new(-1, 0.5, 0) 
+			root.CFrame
+				* armRotation
+				* CFrame.new(-1, 0.5, 0)
 				* CFrame.Angles(0, -math.pi / 2, 0)
 		)
 
 		local rightArmCF = torso.CFrame:ToObjectSpace(
-			root.CFrame 
-				* armRotation 
-				* CFrame.new(1, 0.5, 0) 
+			root.CFrame
+				* armRotation
+				* CFrame.new(1, 0.5, 0)
 				* CFrame.Angles(0, math.pi / 2, 0)
 		)
 
-		-- 5. Jitter & Breathing Logic
-		local t = tick()
+		-- === JITTER (kept disabled as in your original) ===
+		--[[
 		if t - lastJitterTime >= 0.06 then
 			lastJitterTime = t
 			jitterAngles = {
@@ -873,10 +905,16 @@ function BaseTool:_startAimTracking()
 		local jitterRotation = CFrame.Angles(jitterAngles[1], jitterAngles[2], jitterAngles[3])
 		local breatheSway = CFrame.new(0, math.sin(t * 4) * 0.01, 0)
 
-		-- 6. Apply to Motor6Ds with Lerp
-		-- We use the pre-calculated armCFs modified by sway and jitter
-		leftShoulder.C0 = leftShoulder.C0:Lerp(breatheSway * jitterRotation * leftArmCF, lerpAlpha)
-		rightShoulder.C0 = rightShoulder.C0:Lerp(breatheSway * jitterRotation * rightArmCF, lerpAlpha)
+		leftShoulder.C0 =
+			leftShoulder.C0:Lerp(breatheSway * jitterRotation * leftArmCF, lerpAlpha)
+
+		rightShoulder.C0 =
+			rightShoulder.C0:Lerp(breatheSway * jitterRotation * rightArmCF, lerpAlpha)
+		]]
+
+		-- If jitter is disabled, you still need to apply arms somewhere:
+		leftShoulder.C0 = leftShoulder.C0:Lerp(leftArmCF, lerpAlpha)
+		rightShoulder.C0 = rightShoulder.C0:Lerp(rightArmCF, lerpAlpha)
 	end)
 end
 --[[ BrokenAnim Im keeping cuz its funny function BaseTool:_startAimTracking()
@@ -1065,6 +1103,17 @@ function BaseTool:_onBulletHit(
 	if cast.UserData.Penetrated then return end
 	if not muzzle then return end
 
+	-- Check if we hit a character (player or NPC)
+	local hitModel = instance:FindFirstAncestorOfClass("Model")
+	local isCharacter = hitModel and hitModel:FindFirstChildOfClass("Humanoid")
+
+	-- If we hit a character, skip penetration and just apply damage
+	if isCharacter then
+		self:_applyHit(result, damage, direction, knockback_force)
+		cast.UserData.Penetrated = true
+		return
+	end
+
 	if (muzzle.Position - result.Position).Magnitude > profile.Distance_Limiter then
 		cast.UserData.Penetrated = true
 		return
@@ -1122,7 +1171,14 @@ function BaseTool:_onBulletHit(
 
 	local newOrigin    = result.Position + direction * 0.2
 	local continuation = self.Caster:Fire(newOrigin, direction, velocity.Magnitude, self.CasterBehavior)
-	self:_connect_FastCast(newOrigin, direction, velocity.Magnitude)
+	self:_connect_FastCast(newOrigin, direction, velocity.Magnitude, {
+		bulletTemplate = FxFolder.Bullet,
+		bulletContainer = workspace.Game_Details.Effects.Bullets,
+		isPenetration = true,
+		penetrationLevel = Penetration_Level,
+		damage = damage,
+		knockbackForce = knockback_force
+	})
 	continuation.UserData.Direction  = direction
 	continuation.UserData.Penetrated = true
 end
@@ -1297,7 +1353,7 @@ function BaseTool:_connect_FastCast(...)
 end
 
 function BaseTool:_play_sfx(...)
-	replicant_service.handle_sfx_replication(LOCAL_PLAYER, ...)
+	replicant_service.connect_sfx(LOCAL_PLAYER, ...)
 end
 
 --------------------------------------------------------------------------------
