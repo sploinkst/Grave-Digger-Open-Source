@@ -320,13 +320,19 @@ local function update_movement(speed: number)
 		return
 	end
 
+	-- // lean + walkspeed slow speedup
+	if speed >= 14 and speed <= 17 then
+		play_overlay("Sprint_Lean", 0.15)
+		play_base("Walk_Forward", 0, 0, 1 - speed / 100)
+	end
+	
 	-- SPRINT
 	if speed >= 17 then
 		if set_state("SPRINT") then
 			clear_overlays()
-			play_base("Sprinting_Full")
-			play_overlay(sprint_arms_overlay())
-			play_overlay("Sprint_Lean")
+			play_base("Sprinting_Full", 0.15)
+			play_overlay(sprint_arms_overlay(), 0.15)
+			play_overlay("Sprint_Lean", 0.15)
 			
 			playing_sprint_arms = true
 			
