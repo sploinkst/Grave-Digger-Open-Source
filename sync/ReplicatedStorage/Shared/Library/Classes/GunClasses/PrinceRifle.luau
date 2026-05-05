@@ -155,13 +155,13 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 		Fire      = AnimFolder.PrinceRifle_Fire,
 		Fire_Left = AnimFolder.PrinceRifle_Fire_Left,
 
-		Cycle = AnimFolder.PrinceRifle_Cycle,
+		Cycle = AnimFolder.PrinceRifle_Reload_Alt, 
 
 		Reload_Empty = AnimFolder.PrinceRifle_Reload_Empty,
 		Reload_Start = AnimFolder.PrinceRifle_Reload_Start,
 		Reload_Loop  = AnimFolder.PrinceRifle_Reload_Loop,
 		Reload_End   = AnimFolder.PrinceRifle_Reload_End,
-		Reload_Alt   = AnimFolder.PrinceRifle_Reload_Alt,
+		Reload_Alt   = AnimFolder.PrinceRifle_Cycle,
 
 		Alt_Mode_On  = AnimFolder.PrinceRifle_Alt_Mode_On,
 		Alt_Mode_Off = AnimFolder.PrinceRifle_Alt_Mode_Off,
@@ -171,7 +171,9 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 		Melee1 = AnimFolder.PrinceRifle_Melee1,
 		Melee2 = AnimFolder.PrinceRifle_Melee2,
 		
-		Drop = AnimFolder.Parent.Parent.Misc.Drop_Rifle
+		Drop = AnimFolder.Parent.Parent.Misc.Drop_Rifle,
+		
+		Short = AnimFolder.PrinceRifle_Short,
 	}
 
 	self.damage                  = 105
@@ -188,13 +190,14 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.MuzzlePartName          = "PrinceRifle_Muzzle"
 	self.Can_Drop 				 = true
 	self.SoundFolder 			 = SoundFolder
+	self.Short_Distance			 = 2.3
 
 	self.unequip_wait     = false
 	self.Cycled           = true
 	self.Firing           = false
 	self.Cycling          = false
 	self.Reloading        = false
-	self.Alt_Mode         = false
+	self.Alt_Mode         = true
 	self.Alting           = false
 	self._reloadCancelled = false
 	self.Checking		  = false
@@ -300,6 +303,10 @@ function PrinceRifle:fire()
 		return
 	end
 
+	if self.ForceBlockFire == true then
+		self.Firing = false
+		return
+	end
 	-- === AIMLOGIC ===
 
 	local mousePos = UserInputService:GetMouseLocation()

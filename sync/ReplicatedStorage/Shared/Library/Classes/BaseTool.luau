@@ -32,6 +32,8 @@ local drop_connection = gun_communication.Drop_Connection
 
 local general_sfx = ReplicatedStorage.Shared.Assets.Guns.Sounds.Shared
 
+local bullet_warning_part = ReplicatedStorage.Shared.Assets.UI.Warning_Barrel
+
 -- // Tuning (shared defaults; subclasses can override on self)
 
 local AIM_PITCH_LIMIT  = math.rad(60)
@@ -161,6 +163,7 @@ function BaseTool.new(BaseToolCreateInfo: Types.BaseToolCreateInfo): BaseTool
 	self._shoulderChangedConn  = nil
 	self._aimConnection        = nil
 
+	self.ForceBlockFire = false
 	-- FastCast (initialized by subclass)
 	self.Caster         = nil
 	self.CasterBehavior = nil
@@ -203,6 +206,162 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 end
 
 --------------------------------------------------------------------------------
+-- Short Mechanic
+--------------------------------------------------------------------------------
+function BaseTool:GetBarrelWarningPart(muzzle)
+	local clone = bullet_warning_part:Clone()
+
+	-- ensure attachments exist on the warning part
+	local hitAttach = Instance.new("Attachment")
+	hitAttach.Name = "HitWarningAttach"
+	hitAttach.Parent = clone
+
+	clone:SetAttribute("HitAttachName", hitAttach.Name)
+
+	return clone
+end
+
+
+function BaseTool:init_short_mechanic()
+	print("[BASETOOL] init_short_mechanic called")
+
+	local short_distance = self.Short_Distance or 2.3
+
+	local barrelWarning = self:GetBarrelWarningPart()
+	if not barrelWarning then
+		print("[BASETOOL] ERROR: barrelWarning is nil")
+		return
+	end
+
+	local warning_beam = barrelWarning:FindFirstChild("warningbeam", true)
+	local billboard_ui = barrelWarning:FindFirstChild("x", true)
+
+	-- attachments (created once, reused)
+	local muzzleAttach = Instance.new("Attachment")
+	muzzleAttach.Name = "MuzzleWarningAttach"
+
+	local hitAttach = barrelWarning:FindFirstChild("HitWarningAttach", true)
+	if not hitAttach then
+		hitAttach = Instance.new("Attachment")
+		hitAttach.Name = "HitWarningAttach"
+		hitAttach.Parent = barrelWarning
+	end
+
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.IgnoreWater = true
+
+	self._debugFolder = self._debugFolder or Instance.new("Folder")
+	self._debugFolder.Name = "RayDebug"
+	self._debugFolder.Parent = workspace
+
+	if self.short_connection then
+		self.short_connection:Disconnect()
+		self.short_connection = nil
+	end
+
+	self.short_connection = game:GetService("RunService").Heartbeat:Connect(function()
+		local character = LOCAL_PLAYER.Character
+		if not character or not self.Equipped then
+			if barrelWarning.Parent then
+				barrelWarning.Parent = nil
+			end
+			return
+		end
+
+		local head = character:FindFirstChild("Head")
+		local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
+
+		if not head or not muzzle then
+			return
+		end
+
+		rayParams.FilterDescendantsInstances = {
+			character,
+			self.actual_model,
+			self._debugFolder
+		}
+
+		local headDir = head.CFrame.LookVector
+
+		local headResult = workspace:Raycast(
+			head.Position,
+			headDir * short_distance,
+			rayParams
+		)
+
+		local muzzleResult = workspace:Raycast(
+			muzzle.Position,
+			headDir * short_distance,
+			rayParams
+		)
+
+		-- =========================
+		-- SHORT LOGIC
+		-- =========================
+
+		if headResult then
+			self.IsShorted = true
+			self.ForceBlockFire = true
+			self:_playAnim("Short")
+
+			barrelWarning.Parent = nil
+			return
+		end
+
+		if muzzleResult then
+			self.IsShorted = false
+			self.ForceBlockFire = true
+
+			self:_stopAllExcept()
+			self:_restoreBase("Short")
+
+			barrelWarning.Parent = workspace
+			barrelWarning.CFrame = CFrame.new(muzzleResult.Position)
+
+			-- ensure attachments are parented correctly ONCE beam is active
+			muzzleAttach.Parent = muzzle
+			hitAttach.Parent = barrelWarning
+
+			if warning_beam then
+				warning_beam.Attachment0 = muzzleAttach
+				warning_beam.Attachment1 = hitAttach
+				warning_beam.Enabled = true
+			end
+
+			if billboard_ui then
+				billboard_ui.Enabled = true
+			end
+
+			return
+		end
+
+		-- default state
+		self.IsShorted = false
+		self.ForceBlockFire = false
+
+		self:_stopAllExcept()
+		self:_restoreBase("Short")
+
+		barrelWarning.Parent = nil
+
+		if warning_beam then
+			warning_beam.Enabled = false
+		end
+
+		if billboard_ui then
+			billboard_ui.Enabled = false
+		end
+	end)
+end
+
+function BaseTool:clean_up_short()
+	if self.short_connection then
+		self.short_connection:Disconnect()
+		self.short_connection = nil
+	end
+end
+--------------------------------------------------------------------------------
 -- Equip / Unequip
 --------------------------------------------------------------------------------
 
@@ -231,6 +390,7 @@ function BaseTool:equip()
 					hold:Play() 
 					hold:AdjustSpeed(0.2) 
 					self.Equipping = false 
+					self:init_short_mechanic()
 				end 
 			end) end
 	end
@@ -262,6 +422,7 @@ function BaseTool:equip()
 			end
 		end
 	end)
+	
 	
 	-- Keyframe-driven round visibility
 	for _, track in pairs(self.RegisteredAnimations) do
@@ -309,6 +470,9 @@ function BaseTool:equip()
 			end
 		end)
 	end
+	
+	
+
 end
 
 function BaseTool:unequip()
@@ -346,6 +510,7 @@ function BaseTool:unequip()
 		end
 	end
 
+	self:clean_up_short()
 	self.actual_model = nil
 	if LOCAL_PLAYER.Character then LOCAL_PLAYER.Character:SetAttribute("Aiming", nil) end
 end
