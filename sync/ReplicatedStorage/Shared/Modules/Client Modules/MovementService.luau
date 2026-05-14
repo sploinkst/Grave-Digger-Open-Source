@@ -116,11 +116,8 @@ end
 ]]
 local function canStartSprint()
 	if W_Locked == true then
-		-- Must be pressing W to start sprint
-		print("Sprint check: W_Locked =", W_Locked, ", checking W key")
 		return KeyStates.Forward
 	else
-		print("Sprint check: W_Locked =", W_Locked, ", checking any movement key")
 		-- Can start sprint with any movement key
 		return KeyStates.Forward or KeyStates.Backwards or KeyStates.Left or KeyStates.Right
 	end
@@ -218,7 +215,6 @@ local function sprintLoop()
 			KeyStates.Left or
 			KeyStates.Right
 
-		print("[SprintLoop] KeyStates - W:", KeyStates.Forward, "A:", KeyStates.Left, "S:", KeyStates.Backwards, "D:", KeyStates.Right, "hasMovement:", hasMovementInput)
 
 		-- Only accelerate forward, but allow sprint persistence differently based on lock
 		if W_Locked and KeyStates.Forward or not W_Locked and hasMovementInput then
@@ -228,8 +224,6 @@ local function sprintLoop()
 			-- lerp from base to max over SprintRampTime
 			local sprintSpeed = lerp(0, MaxSpeed - BaseSpeed, t)
 			Humanoid.WalkSpeed = BaseSpeed + sprintSpeed
-
-			print("[SprintLoop] Accelerating - W held, ramp progress:", t, "speed:", Humanoid.WalkSpeed)
 
 			-- apply sprint attribute once ramp is complete
 			if t >= 1 then
@@ -307,7 +301,6 @@ local function sprintLoop()
 		task.wait(0.03) 
 	end
 
-	print("[SprintLoop] Ended - W_Locked:", W_Locked)
 	LoopRunning = false
 end
 

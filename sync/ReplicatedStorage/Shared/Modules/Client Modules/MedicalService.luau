@@ -56,7 +56,6 @@ end
 
 -- // Connections
 function module.start_module()
-	print("[MEDICALSERVICE::] Starting MedicalService!")
 	
 	update_char_variables()
 	health_loop()

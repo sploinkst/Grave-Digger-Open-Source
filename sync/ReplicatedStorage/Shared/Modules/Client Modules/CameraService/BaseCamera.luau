@@ -73,8 +73,8 @@ local NECK_PITCH_CLAMP = math.rad(75)  -- Max head pitch
 
 -- // Sensitivity & Input
 local MouseSensitivity = 0.0025   -- Delta multiplier for camera rotation
-local PITCH_MIN = math.rad(-90)   -- Max look down
-local PITCH_MAX = math.rad(90)    -- Max look up
+local PITCH_MIN = math.rad(-85)   -- Max look down
+local PITCH_MAX = math.rad(85)    -- Max look up
 
 -- // Collision Avoidance (Matches v_u_257, v_u_258, v_u_259 raycasts)
 local COLLISION_MARGIN = 0.25     -- Stops camera from clipping
@@ -102,6 +102,8 @@ local InputData = SettingsData:WaitForChild("Input Options")
 local Shoulder_Switch = InputData:WaitForChild("Shoulder Switch")
 local First_Person = InputData:WaitForChild("First Person")
 local Free_Look = InputData:WaitForChild("Free Look")
+
+local HiddenModelCache = {}
 
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 
@@ -493,32 +495,93 @@ local function first_person_transparency(character: Instance, isFirstPerson: boo
 	local transparency_connection = nil
 
 	local function update_part(obj: BasePart, instant: boolean)
-		local isEssentialBodyPart = obj.Name:find("Head") or obj.Name:find("Torso") or obj.Name:find("Root") or obj.Parent:IsA("Accessory")
+		local isEssentialBodyPart =
+			obj.Name:find("Head")
+			or obj.Name:find("Torso")
+			or obj.Name:find("Root")
+			or obj.Parent:IsA("Accessory")
 
 		local targetValue = 0
+
 		if isFirstPerson and isEssentialBodyPart then
 			targetValue = 1
 		end
 
-		if TweenCache[obj] then TweenCache[obj]:Cancel() end
+		if TweenCache[obj] then
+			TweenCache[obj]:Cancel()
+			TweenCache[obj] = nil
+		end
 
 		if instant then
 			obj.LocalTransparencyModifier = targetValue
 		else
-			local tween = TweenService:Create(obj, tweenInfo, {LocalTransparencyModifier = targetValue})
+			local tween = TweenService:Create(obj, tweenInfo, {
+				LocalTransparencyModifier = targetValue
+			})
+
 			tween:Play()
 			TweenCache[obj] = tween
 		end
 	end
 
-	-- Initial sweep
+	local function set_model_visibility(model: Instance, hidden: boolean)
+		if not model then
+			return
+		end
+
+		HiddenModelCache[model] = HiddenModelCache[model] or {}
+
+		for _, descendant in ipairs(model:GetDescendants()) do
+			if descendant:IsA("BasePart") then
+				local targetValue = hidden and 1 or 0
+
+				if TweenCache and TweenCache[descendant] then
+					TweenCache[descendant]:Cancel()
+					TweenCache[descendant] = nil
+				end
+
+				if hidden then
+					if HiddenModelCache[model][descendant] == nil then
+						HiddenModelCache[model][descendant] =
+							descendant.LocalTransparencyModifier < 1
+					end
+
+					if HiddenModelCache[model][descendant] then
+						descendant.LocalTransparencyModifier = targetValue
+					end
+				else
+					if HiddenModelCache[model][descendant] then
+						descendant.LocalTransparencyModifier = targetValue
+					end
+				end
+			end
+		end
+
+		if not hidden then
+			HiddenModelCache[model] = nil
+		end
+	end
+
 	for _, obj in character:GetDescendants() do
 		if obj:IsA("BasePart") then
 			update_part(obj, false)
 		end
 	end
 
-	-- Track new parts
+	for _, child: Instance in pairs(character.Head:GetChildren()) do
+		if child:IsA("Motor6D") or child:IsA("Weld") then
+			local part_1 = child.Part1
+
+			if part_1 and part_1:IsA("BasePart") then
+				local model = part_1.Parent
+
+				if model then
+					set_model_visibility(model, isFirstPerson)
+				end
+			end
+		end
+	end
+
 	transparency_connection = character.DescendantAdded:Connect(function(obj)
 		task.defer(function()
 			if obj:IsA("BasePart") then
@@ -529,7 +592,6 @@ local function first_person_transparency(character: Instance, isFirstPerson: boo
 
 	return transparency_connection
 end
-
 --[[
 	Setup head following camera pitch.
 	Matches ingameScript_GD neck rotation (Line 3550).
@@ -994,10 +1056,8 @@ function BaseCamera:_setupCharacterDeathListener(humanoid)
 end
 
 function BaseCamera:Start()
-	print("[BaseCamera] Starting camera system")
 
 	local function onCharacterAdded(character)
-		print("[BaseCamera] Character added, initializing...")
 		self:End()
 
 		self:_refreshKeybinds()

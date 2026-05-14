@@ -226,23 +226,22 @@ function BaseTool:GetBarrelWarningPart(muzzle)
 	return clone
 end
 
-
 function BaseTool:init_short_mechanic()
 	print("[BASETOOL] init_short_mechanic called")
+
+	local RunService = game:GetService("RunService")
 
 	local short_distance = self.Short_Distance or 2.3
 	local barrelWarning = self:GetBarrelWarningPart()
 
 	if not barrelWarning then
-		print("[BASETOOL] ERROR: barrelWarning is nil at init")
+		warn("[BASETOOL] ERROR: barrelWarning missing")
 		return
 	end
 
-	-- Cache UI elements once
 	local warning_beam = barrelWarning:FindFirstChild("warningbeam", true)
 	local billboard_ui = barrelWarning:FindFirstChild("x", true)
 
-	-- Create attachments outside the loop
 	local muzzleAttach = Instance.new("Attachment")
 	muzzleAttach.Name = "MuzzleWarningAttach"
 
@@ -253,7 +252,6 @@ function BaseTool:init_short_mechanic()
 		hitAttach.Parent = barrelWarning
 	end
 
-	-- Reuse raycast/overlap params
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 	rayParams.IgnoreWater = true
@@ -265,120 +263,130 @@ function BaseTool:init_short_mechanic()
 		self.short_connection:Disconnect()
 	end
 
-	-- State tracking to avoid redundant calls
-	local lastState = nil -- "headBlock", "muzzleWarning", "default"
+	local lastState = "default"
 
-	self.short_connection = game:GetService("RunService").RenderStepped:Connect(function()
+	local function clearMuzzleFX()
+		if warning_beam then warning_beam.Enabled = false end
+		if billboard_ui then billboard_ui.Enabled = false end
+		if barrelWarning.Parent then barrelWarning.Parent = nil end
+		muzzleAttach.Parent = nil
+		hitAttach.Parent = nil
+	end
+
+	self.short_connection = RunService.RenderStepped:Connect(function()
 		local character = LOCAL_PLAYER.Character
-		if not character or not self.Equipped then
-			if barrelWarning.Parent ~= nil then
-				barrelWarning.Parent = nil
-			end
+		if not character then return end
+		if not self.Equipped then
+			clearMuzzleFX()
 			return
 		end
 
 		local head = character:FindFirstChild("Head")
-		local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
+		if not head then return end
 
-		if not head or not muzzle then return end
+		if not self.actual_model then return end
+		local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName)
+		if not muzzle then return end
 
-		-- Update filter lists
-		rayParams.FilterDescendantsInstances = { character, self.actual_model, barrelWarning }
-		overlapParams.FilterDescendantsInstances = { character, self.actual_model, barrelWarning }
+		rayParams.FilterDescendantsInstances = {
+			character,
+			self.actual_model,
+			barrelWarning
+		}
+
+		overlapParams.FilterDescendantsInstances = {
+			character,
+			self.actual_model,
+			barrelWarning
+		}
 
 		local headDir = head.CFrame.LookVector
-		local muzzleDir = muzzle.CFrame.LookVector
 
-		-- Only raycast head once per frame
-		local headResult = workspace:Raycast(head.Position, headDir * short_distance, rayParams)
+		local headResult = workspace:Raycast(
+			head.Position,
+			headDir * short_distance,
+			rayParams
+		)
+
 		local muzzleResult = nil
 
-		-- Only raycast muzzle if not aiming
+		-- =========================
+		-- MUZZLE LOGIC
+		-- =========================
 		if not self.Aiming then
-			muzzleResult = workspace:Raycast(muzzle.Position, muzzleDir * short_distance, rayParams)
-		elseif not headResult then
-			-- Muzzle fallback only when aiming AND head didn't hit
-			local probeCF = muzzle.CFrame
-			local probeSize = Vector3.new(0.1, 0.1, 0.1)
+			muzzleResult = workspace:Raycast(
+				muzzle.Position,
+				headDir * short_distance,
+				rayParams
+			)
 
-			local part = Instance.new("Part")
-			part.CFrame = probeCF
-			part.Size = probeSize
-			part.Anchored = true
-			part.Transparency = 0.5
-			part.CanCollide = false
-			part.CanQuery = false
-			part.Parent = workspace
+		elseif not headResult and lastState ~= "headBlock" then
+			local probe = Instance.new("Part")
+			probe.Anchored = true
+			probe.CanCollide = false
+			probe.CanQuery = false
+			probe.Transparency = 1
+			probe.Size = Vector3.new(0.15, 0.15, 0.15)
+			probe.CFrame = CFrame.new(muzzle.Position, muzzle.Position + headDir)
+			probe.Parent = workspace
 
-			local parts = workspace:GetPartsInPart(part, overlapParams)
+			local parts = workspace:GetPartsInPart(probe, overlapParams)
 
-			-- Filter out fully transparent parts
-			local validParts = {}
-			for i = #parts, 1, -1 do
-				if parts[i].Transparency < 1 then
-					table.insert(validParts, parts[i])
+			for _, p in ipairs(parts) do
+				if p.Transparency < 0.95 then
+					muzzleResult = {
+						Position = muzzle.Position + (headDir * 0.1),
+						Distance = 0.1
+					}
+					break
 				end
 			end
 
-			if #validParts > 0 then
-				print("[BASETOOL][MUZZLE FALLBACK TRIGGERED] parts:", #validParts)
-				for _, p in ipairs(validParts) do
-					print("   ->", p, p.Parent)
-				end
-				muzzleResult = {
-					Position = muzzle.Position + (muzzleDir * 0.1),
-					Distance = 0.1
-				}
-			end
-
-			part:Destroy()
+			task.delay(0.05, function()
+				probe:Destroy()
+			end)
 		end
 
-		-- ===========================
-		-- STATE MACHINE (avoid redundant calls)
-		-- ===========================
-
+		-- =========================
+		-- HEAD BLOCK
+		-- =========================
 		if headResult then
-			-- HEAD BLOCK STATE
 			if lastState ~= "headBlock" then
 				lastState = "headBlock"
+
 				self.IsShorted = true
 				self.ForceBlockFire = true
 				self:_stopAllExcept()
-				self._shortActive = true
+
 				self._shortTrack = self:_playAnim("Short")
+
 				if self._shortTrack then
-					self._shortTrack:AdjustSpeed(0)
+					self._shortTrack:AdjustSpeed(0.001)
 				end
 			end
 
-			-- Update animation playback position based on distance
-			if self._shortTrack and self._shortTrack.Length > 0 then
-				local dist = headResult.Distance
-				-- Normalize distance: 0 = at muzzle, 1 = at short_distance
-				local normalizedDist = math.clamp(dist / short_distance, 0, 1)
-				-- Further away (normalizedDist closer to 1) = earlier in animation (higher TimePosition)
-				-- Closer (normalizedDist closer to 0) = later in animation (lower TimePosition)
-				self._shortTrack.TimePosition = self._shortTrack.Length * normalizedDist
-			end
+			-- HARD BLOCK muzzle FX
+			clearMuzzleFX()
 
-			if barrelWarning.Parent ~= nil then
-				barrelWarning.Parent = nil
-			end
+			return
+		end
 
-		elseif muzzleResult and self.Aiming then
-			-- MUZZLE WARNING STATE
+		-- =========================
+		-- MUZZLE WARNING
+		-- =========================
+		if muzzleResult and self.Aiming and lastState ~= "headBlock" then
 			if lastState ~= "muzzleWarning" then
 				lastState = "muzzleWarning"
+
 				self.IsShorted = false
 				self.ForceBlockFire = true
+
 				self:_stopAllExcept()
 				self:_restoreBase("Short")
 			end
 
-			print("[BASETOOL][MUZZLE WARNING ACTIVE]")
-
 			barrelWarning.CFrame = CFrame.new(muzzleResult.Position)
+
 			muzzleAttach.Parent = muzzle
 			hitAttach.Parent = barrelWarning
 
@@ -396,28 +404,28 @@ function BaseTool:init_short_mechanic()
 				barrelWarning.Parent = workspace
 			end
 
-		else
-			-- DEFAULT STATE
-			if lastState ~= "default" then
-				lastState = "default"
-				self.IsShorted = false
-				self.ForceBlockFire = false
-				self:_stopAllExcept()
-				self:_restoreBase("Short")
-			end
+			return
+		end
 
-			if barrelWarning.Parent ~= nil then
-				barrelWarning.Parent = nil
-			end
+		-- =========================
+		-- DEFAULT
+		-- =========================
+		if lastState ~= "default" then
+			lastState = "default"
 
-			if warning_beam then
-				warning_beam.Enabled = false
-			end
+			self.IsShorted = false
+			self.ForceBlockFire = false
 
-			if billboard_ui then
-				billboard_ui.Enabled = false
+			self:_stopAllExcept()
+			self:_restoreBase("Short")
+
+			if self._shortTrack then
+				self._shortTrack:Stop()
+				self._shortTrack = nil
 			end
 		end
+
+		clearMuzzleFX()
 	end)
 end
 
@@ -467,6 +475,8 @@ function BaseTool:equip()
 			warn("[" .. self.className .. "] Failed to find model")
 		end
 	end
+	
+	self:_startAimTracking()
 
 	character:GetAttributeChangedSignal("Sprinting"):Connect(function()
 		if character:GetAttribute("Sprinting") == true then
@@ -811,6 +821,11 @@ function BaseTool:aim()
 	if self.Equipping then 
 		return 	
 	end
+
+	if self.IsShorted == true then
+		return 
+	end
+	
 	if LOCAL_PLAYER:GetAttribute("Jumping") then return end
 	self.Aiming = true
 	self._aimVersion += 1
@@ -1058,7 +1073,7 @@ function BaseTool:_startAimTracking()
 
 	-- 3. Render loop
 	self._aimConnection = game:GetService("RunService").RenderStepped:Connect(function()
-		if not self.Aiming or not self.Equipped then return end
+		if not self.Equipped then return end
 
 		local t = tick()
 
