@@ -334,4 +334,47 @@ function Util.applyRecoil(recoil: number, recoilCount: number, spread: number, d
 	end
 end
 
+function Util.quick_give_accessory(player, accessory:Model, create_object: boolean)
+	local character = player.Character
+	local accessory_folder = character.CharacterData.Equipment
+
+
+
+	if create_object then
+		local primary_part_reference = accessory.PrimaryPart
+		local character_reference = character:FindFirstChild(primary_part_reference.Name)
+
+		if not primary_part_reference then
+			warn("Accessory has no PrimaryPart:", accessory.Name)
+			return
+		end
+
+
+		if not character_reference then
+			warn("Accessory's PrimaryPart not found in character:", primary_part_reference)
+			return
+		end
+
+
+
+		accessory.Parent = accessory_folder
+
+		if accessory:GetAttribute("HideHair") then
+			for _, hair in character:GetChildren() do
+				if hair:IsA("Accessory") then
+					hair.Handle.Transparency = 1
+				end
+			end
+		end
+
+
+		Util.quick_weld(character_reference, primary_part_reference, character_reference, "AccessoryWeld")
+	end
+	
+	
+	local string_value = Instance.new("StringValue")
+	string_value.Parent = accessory_folder
+	string_value.Name = accessory.Name
+end
+
 return Util
