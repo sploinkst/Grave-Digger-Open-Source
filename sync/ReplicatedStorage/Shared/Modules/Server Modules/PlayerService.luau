@@ -7,6 +7,7 @@ local Ragdoll_Status = require(game:GetService("ReplicatedStorage").Shared.Libra
 local testing_boolean = game.ReplicatedStorage.Shared.Library.Configuration.Game_Variables.Testing_Boolean
 local status_service = require(script.Parent.StatusService)
 
+local util_module = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 
 local shirt_clothing = script.Shirt
 local pants_clothing = script.Pants
@@ -137,6 +138,23 @@ local function apply_full_appearance(character: Model, player: Player)
 	head:FindFirstChildWhichIsA("Decal"):Destroy()
 end
 
+local function setup_hitboxes(character: Model)
+	local hitboxes_folder = Instance.new("Folder")
+	hitboxes_folder.Name = "Hitboxes"
+	hitboxes_folder.Parent = character
+	
+	local head_hitbox = Instance.new("Part")
+	head_hitbox.Name = "Head"
+	head_hitbox.Parent = hitboxes_folder
+	head_hitbox.Size = Vector3.new(2, 2, 1.6)
+	head_hitbox.Transparency = 1
+	head_hitbox.CanCollide = false
+	head_hitbox.Massless = true
+	head_hitbox.BrickColor = BrickColor.new("Bright red")
+	
+	util_module.quick_weld(character.Head, head_hitbox, character.Head, "HeadHitbox")
+end
+
 local function handle_character(player: Player, character: Model, ragdoll_object)
 	setup_characterdata(character)
 
@@ -146,6 +164,7 @@ local function handle_character(player: Player, character: Model, ragdoll_object
 	humanoid.MaxHealth = 200
 	humanoid.Health = 200
 	
+	setup_hitboxes(character)
 	task.defer(function()
 		apply_full_appearance(character, player)
 	end)

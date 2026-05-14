@@ -67,6 +67,100 @@ local function getDistanceScaledForce(baseForce: number, distance: number)
 	return math.max(scaled, MIN_FORCE)
 end
 
+function module.check_for_helmet(character)
+	local character_head = character.Head
+	
+	print("Checking for helmet for:", character.Name)
+	for _, weld:Instance in character_head:GetChildren() do
+		if not weld:IsA("Weld") and not weld:IsA("Motor6D") then print(weld.Name, "Not a weld or motor6d") continue end
+		
+		if weld.Name == "AccessoryWeld" then
+			print("Accessory found")
+			
+			local part_1 = weld.Part1
+			
+			if part_1.Parent:FindFirstChild("Helmet") then
+				print("Helmet found")
+				-- // check to see if its welded, if it isnt welded assume it was knocked off
+				if part_1.Parent:FindFirstChild("Head") then
+					if part_1.Parent.Head:FindFirstChild("Helmet") then
+						return part_1.Parent
+					else
+						return false
+					end
+				end
+				
+				return part_1.Parent
+				
+				
+			else
+				print("Helmet not found")
+				return false
+			end
+		end
+	end
+end
+
+function module.pop_helmet(character, helmet_model)
+	local Debris = game:GetService("Debris")
+
+	local head_part = helmet_model:FindFirstChild("Head")
+	if not head_part then
+		warn("Helmet head part missing")
+		return
+	end
+
+	for _, child in helmet_model:GetChildren() do
+		if not child:GetAttribute("Knock") then
+			continue
+		end
+
+		if not child:IsA("BasePart") then
+			continue
+		end
+
+		print(child.Name, "is marked to be knocked...")
+
+		local reference_weld = head_part:FindFirstChild(child.Name)
+
+		if not reference_weld then
+			print("No reference weld found for:", child.Name)
+			continue
+		end
+
+		reference_weld:Destroy()
+
+		print("Weld destroyed for:", child.Name)
+
+		child.CanCollide = true
+		child.Anchored = false
+
+		-- Randomized pop direction
+		local randomDirection = Vector3.new(
+			math.random(-100, 100) / 100,
+			1,
+			math.random(-100, 100) / 100
+		).Unit
+
+		-- Apply instant velocity
+		local velocity = Instance.new("LinearVelocity")
+		velocity.Attachment0 = child:FindFirstChildOfClass("Attachment") or Instance.new("Attachment", child)
+		velocity.MaxForce = math.huge
+		velocity.VectorVelocity = randomDirection * 15
+		velocity.RelativeTo = Enum.ActuatorRelativeTo.World
+		velocity.Parent = child
+
+		-- Add some spin
+		child.AssemblyAngularVelocity = Vector3.new(
+			math.random(-20, 20),
+			math.random(-20, 20),
+			math.random(-20, 20)
+		)
+
+		-- Remove velocity object shortly after
+		Debris:AddItem(velocity, 0.15)
+	end
+end
 
 function module.start_module()
 
@@ -98,47 +192,85 @@ function module.start_module()
 	end)
 
 	hit_connection.OnServerEvent:Connect(function(player, hitData, damage: number, knockback_force: number)
-		if not hitData then return end
+		if not hitData then
+			return
+		end
 
-		local position = hitData.Position
-		local instance = hitData.Instance
-		local direction = hitData.Direction
+		local instance: BasePart = hitData.Instance
+		local position: Vector3 = hitData.Position
+		local direction: Vector3 = hitData.Direction
 
+		if not instance or not instance:IsDescendantOf(workspace) then
+			return
+		end
 
-		if not instance or not instance:IsDescendantOf(workspace) then return end
-		if not direction then return end
+		if not direction then
+			return
+		end
 
 		local character = player.Character
-		if not character then return end
+		if not character then
+			return
+		end
 
 		local hrp = character:FindFirstChild("HumanoidRootPart")
-		if not hrp then return end
-		
-		local hit_player = game.Players:GetPlayerFromCharacter(instance.Parent)
-		
-		local forceDir = (direction.Unit + Vector3.new(0, 0.1, 0)).Unit
+		if not hrp then
+			return
+		end
+
+		local model = getModelFromInstance(instance)
+		local humanoid = getHumanoid(model)
+
+		if not humanoid or humanoid.Health <= 0 then
+			return
+		end
+
+		local hitCharacter = model
+		local hitPlayer = game.Players:GetPlayerFromCharacter(hitCharacter)
+
+		-- // Knockback
+		local forceDirection = (direction.Unit + Vector3.new(0, 0.1, 0)).Unit
 
 		local baseForce = knockback_force or 5
 		local distance = (hrp.Position - position).Magnitude
 		local finalForce = getDistanceScaledForce(baseForce, distance)
 
-		local model = getModelFromInstance(instance)
-		local humanoid = getHumanoid(model)
+		local knockbackTarget = if instance:IsA("BasePart")
+			then instance
+			else model and model.PrimaryPart
 
-		if instance:IsA("BasePart") then
-			applyKnockback(instance, forceDir, finalForce)
-		elseif model and model.PrimaryPart then
-			applyKnockback(model.PrimaryPart, forceDir, finalForce)
+		if knockbackTarget then
+			applyKnockback(knockbackTarget, forceDirection, finalForce)
 		end
 
-		if humanoid and humanoid.Health > 0 then
-			humanoid:TakeDamage(damage or 0)
-			
-			
-			if humanoid.Health < 100 then
-				status_service.give_status(hit_player, "WoundStatus")
-				status_service.give_status(hit_player, "ConcussionStatus")
+		-- // Headshot / helmet logic
+		if hitPlayer and instance.Name == "Head" then
+			local helmet = module.check_for_helmet(hitCharacter)
+
+			if helmet then
+				module.pop_helmet(hitCharacter, helmet)
+
+				status_service.give_status(hitPlayer, "ConcussionStatus")
+
+				task.delay(3, function()
+					status_service.remove_status(hitPlayer, "ConcussionStatus")
+				end)
+				
+				return
+			else
+				-- No helmet = instant kill
+				humanoid.Health = 0
+				return
 			end
+		end
+
+		-- // Damage
+		humanoid:TakeDamage(damage or 0)
+
+		-- // Injury states
+		if humanoid.Health < 100 and hitPlayer then
+			status_service.give_status(hitPlayer, "WoundStatus", nil, instance.Name)
+			status_service.give_status(hitPlayer, "ConcussionStatus")
 		end
 	end)
 	
