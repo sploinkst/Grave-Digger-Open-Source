@@ -282,42 +282,30 @@ function PrinceRifle:fire()
 		self:reload()
 		return
 	end
-
 	if self.Firing then return end
-	if self.Cycling then return end
-	if not self.Cycled then return end
-
 	self.Firing = true
-	self.Cycled = false
 
 	if self:_if_sprinting() then
 		self.Firing = false
-		self.Cycled = true
 		return
 	end
 
 	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
-
 	if not muzzle then
 		self.Firing = false
-		self.Cycled = true
 		return
 	end
 
 	local camera = workspace.CurrentCamera
-
 	if not camera then
 		self.Firing = false
-		self.Cycled = true
 		return
 	end
 
 	if self.ForceBlockFire == true then
 		self.Firing = false
-		self.Cycled = true
 		return
 	end
-
 	-- === AIMLOGIC ===
 
 	local mousePos = UserInputService:GetMouseLocation()
@@ -325,92 +313,57 @@ function PrinceRifle:fire()
 
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-	raycastParams.FilterDescendantsInstances = {
-		game.Players.LocalPlayer.Character
-	}
+	raycastParams.FilterDescendantsInstances = { game.Players.LocalPlayer.Character }
 
-	local result = workspace:Raycast(
-		ray.Origin,
-		ray.Direction * 1000,
-		raycastParams
-	)
+	local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
 
-	local targetPos = result and result.Position or (
-		ray.Origin + ray.Direction * 1000
-	)
+	local targetPos = result and result.Position or (ray.Origin + ray.Direction * 1000)
 
 	local shootDir = (targetPos - muzzle.Position).Unit
 
 	-- === FIRE ===
-
 	if self.Alt_Mode then
-		self:_play_sfx(
-			fire_sound,
-			self.actual_model:WaitForChild(self.MuzzlePartName),
-			nil,
-			0.5
-		)
+		self:_play_sfx(fire_sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.5)
 	else
-		self:_play_sfx(
-			fire_sound,
-			self.actual_model:WaitForChild(self.MuzzlePartName)
-		)
+		self:_play_sfx(fire_sound, self.actual_model:WaitForChild(self.MuzzlePartName))
 	end
 
-	local activeCast = self.Caster:Fire(
-		muzzle.Position,
-		shootDir,
-		BULLET_SPEED,
-		self.CasterBehavior
-	)
-
-	activeCast.UserData.Direction = shootDir
+	local activeCast = self.Caster:Fire(muzzle.Position, shootDir, BULLET_SPEED, self.CasterBehavior)
+	activeCast.UserData.Direction  = shootDir
 	activeCast.UserData.Penetrated = false
 
-	self:_connect_FastCast(
-		muzzle.Position,
-		shootDir,
-		BULLET_SPEED,
-		{
-			bulletTemplate = FxFolder.Bullet,
-			bulletContainer = workspace.Game_Details.Effects.Bullets,
-			isPenetration = false,
-			penetrationLevel = self.Penetration_Level,
-			damage = self.damage,
-			knockbackForce = self.KnockBack_Force
-		}
-	)
 
+	self:_connect_FastCast(muzzle.Position, shootDir, BULLET_SPEED, {
+		bulletTemplate = FxFolder.Bullet,
+		bulletContainer = workspace.Game_Details.Effects.Bullets,
+		isPenetration = false,
+		penetrationLevel = self.Penetration_Level,
+		damage = self.damage,
+		knockbackForce = self.KnockBack_Force
+	})
+
+	self.Cycled   = false
 	self.Capacity -= 1
 
-	local anims = self.RegisteredAnimations
-	local fireAnim = (
-		self.current_shoulder == "Right"
-			and anims.Fire
-			or anims.Fire_Left
-	)
-
+	local anims    = self.RegisteredAnimations
+	local fireAnim = (self.current_shoulder == "Right") and anims.Fire or anims.Fire_Left
 	self:_stopAllExcept()
-
 	fireAnim:Play()
+	
 
-	Util.applyRecoil(
-		self.recoil,
-		self.recoil_count,
-		10,
-		false
-	)
+	Util.applyRecoil(self.recoil, self.recoil_count, 10, false)
 
 	if self.Alt_Mode == true then
 		self:cycle()
 	end
-
+	
+	-- Muzzle flash
 	self:_fireMuzzleFlash()
+	
+
 
 	task.wait(FIRE_RATE)
-
 	self.Firing = false
-
 	self:_restoreBase()
 end
 

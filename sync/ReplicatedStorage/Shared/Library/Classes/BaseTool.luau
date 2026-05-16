@@ -1675,7 +1675,7 @@ function BaseTool:ammo_check()
 
 	self.Checking = true
 	self.Check_Delayed = true
-	local ammo_check_part, ammo_check_utilsammo_checkammo
+	local ammo_check_part, ammo_check_utils
 	if not workspace.CurrentCamera:FindFirstChild("Ammo_Check") then
 		ammo_check_part  = game.ReplicatedStorage.Shared.Assets.Guns.Effects.AmmoUI.Ammo_Check:Clone()
 		ammo_check_part.Parent = workspace.CurrentCamera

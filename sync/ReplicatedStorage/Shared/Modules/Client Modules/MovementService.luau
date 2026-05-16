@@ -51,6 +51,7 @@ local VAULT_BODY_POSITION_P = 2000
 local VAULT_BODY_POSITION_D = 500
 
 -- // State
+local SprintKeyHeld = false
 local Sprinting   = false
 local LoopRunning = false
 local SprintTicker = 0 
@@ -112,6 +113,8 @@ local function setHoldBreathe(holding: boolean)
 		Character:SetAttribute("HoldBreathe", nil)
 		HoldingBreath = false
 	end
+	
+	print("Set HoldBreathe to:", holding)
 end
 
 local function resetSpeed()
@@ -345,6 +348,15 @@ local function sprintLoop()
 	while Sprinting do
 		if not Character or not Humanoid or not RootPart then break end
 
+		-- Stop sprinting if aiming
+		if Character:GetAttribute("Aiming") then
+			print("[SprintLoop] Stopped: Aiming")
+			setHoldBreathe(true)
+			Sprinting = false  -- ADD THIS LINE
+			resetSpeed()       -- ADD THIS LINE
+			break
+		end
+		
 		-- Check if recently jumped/fell
 		if (tick() - fall_time) < fall_threshold then
 			print("[SprintLoop] Stopped: Recently jumped/fell")
@@ -359,13 +371,6 @@ local function sprintLoop()
 		-- Stop sprinting if crouching
 		if Character:GetAttribute("Crouching") then
 			print("[SprintLoop] Stopped: Crouching")
-			break
-		end
-
-		-- Stop sprinting if aiming
-		if Character:GetAttribute("Aiming") then
-			print("[SprintLoop] Stopped: Aiming")
-			setHoldBreathe(true)
 			break
 		end
 
@@ -511,18 +516,35 @@ function module.start_module()
 	setupVaultInput()
 	setupVaultCooldownReset()
 
+	Character:GetAttributeChangedSignal("Aiming"):Connect(function()
+		local aiming = Character:GetAttribute("Aiming")
+
+		if aiming and SprintKeyHeld then
+			setHoldBreathe(true)
+		else
+			setHoldBreathe(false)
+		end
+	end)
+	
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 
 		if input.KeyCode == getSprintKey() then
+			SprintKeyHeld = true
+
 			if (tick() - fall_time) < fall_threshold then
 				return
 			end
 
-			-- Check if player can start sprint based on W_Locked state
 			if canStartSprint() then
 				Sprinting = true
 				task.spawn(sprintLoop)
+			end
+			
+			if Character:GetAttribute("Aiming") then
+				setHoldBreathe(true)
+			else
+				setHoldBreathe(false)
 			end
 		end
 
@@ -548,6 +570,8 @@ function module.start_module()
 
 	UserInputService.InputEnded:Connect(function(input)
 		if input.KeyCode == getSprintKey() then
+			SprintKeyHeld = false
+
 			Sprinting = false
 			resetSpeed()
 			setHoldBreathe(false)
@@ -597,11 +621,6 @@ function module.start_module()
 		end)
 	end)
 
-	Character:GetAttributeChangedSignal("Aiming"):Connect(function()
-		if not Character:GetAttribute("Aiming") and HoldingBreath == true then
-			setHoldBreathe(false)
-		end
-	end)
 
 	LocalPlayer:GetAttributeChangedSignal("FreeLook"):Connect(function()
 		if not LocalPlayer:GetAttribute("FreeLook") then

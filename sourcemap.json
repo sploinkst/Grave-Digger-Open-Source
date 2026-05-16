@@ -1,1 +1,979 @@
-{"name":"-G-D-R-Development-Repository","className":"DataModel","filePaths":["default.project.json"],"children":[{"name":"ReplicatedStorage","className":"ReplicatedStorage","children":[{"name":"Shared","className":"Folder","children":[{"name":"Library","className":"Folder","children":[{"name":"Classes","className":"Folder","children":[{"name":"CameraClass","className":"ModuleScript","filePaths":["src\\shared\\Library\\Classes\\CameraClass.luau"]},{"name":"GunClasses","className":"Folder","children":[{"name":"BaseGun","className":"ModuleScript","filePaths":["src\\shared\\Library\\Classes\\GunClasses\\BaseGun.luau","src\\shared\\Library\\Classes\\GunClasses\\BaseGun.meta.json"]}]},{"name":"TerrainChunkClass","className":"ModuleScript","filePaths":["src\\shared\\Library\\Classes\\TerrainChunkClass.luau"]},{"name":"ToolClasses","className":"Folder","children":[{"name":"BaseTool","className":"ModuleScript","filePaths":["src\\shared\\Library\\Classes\\ToolClasses\\BaseTool.luau","src\\shared\\Library\\Classes\\ToolClasses\\BaseTool.meta.json"]},{"name":"HeavyPickaxe","className":"ModuleScript","filePaths":["src\\shared\\Library\\Classes\\ToolClasses\\HeavyPickaxe.luau"]},{"name":"Pickaxe","className":"ModuleScript","filePaths":["src\\shared\\Library\\Classes\\ToolClasses\\Pickaxe.luau"]}]}]},{"name":"Externals","className":"Folder","children":[{"name":"FastCast","className":"ModuleScript","filePaths":["src\\shared\\Library\\Externals\\FastCast\\init.luau"],"children":[{"name":"ActiveCast","className":"ModuleScript","filePaths":["src\\shared\\Library\\Externals\\FastCast\\ActiveCast.luau"]},{"name":"Signal","className":"ModuleScript","filePaths":["src\\shared\\Library\\Externals\\FastCast\\Signal.luau"]},{"name":"Table","className":"ModuleScript","filePaths":["src\\shared\\Library\\Externals\\FastCast\\Table.luau"]},{"name":"TypeDefinitions","className":"ModuleScript","filePaths":["src\\shared\\Library\\Externals\\FastCast\\TypeDefinitions.luau"]},{"name":"TypeMarshaller","className":"ModuleScript","filePaths":["src\\shared\\Library\\Externals\\FastCast\\TypeMarshaller.luau"]}]},{"name":"ProfileService","className":"ModuleScript","filePaths":["src\\shared\\Library\\Externals\\ProfileService.luau"]},{"name":"TypeChecker","className":"ModuleScript","filePaths":["src\\shared\\Library\\Externals\\TypeChecker.luau"]}]},{"name":"Types","className":"ModuleScript","filePaths":["src\\shared\\Library\\Types.luau"]},{"name":"Util","className":"ModuleScript","filePaths":["src\\shared\\Library\\Util.luau"]}]},{"name":"Modules","className":"Folder","children":[{"name":"Client Modules","className":"Folder","children":[{"name":"CameraService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Client Modules\\CameraService\\init.luau"],"children":[{"name":"BaseCamera","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Client Modules\\CameraService\\BaseCamera.luau"]}]},{"name":"ClientTerrainService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Client Modules\\ClientTerrainService.luau"]},{"name":"DirectionalService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Client Modules\\DirectionalService.luau"]},{"name":"InventoryService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Client Modules\\InventoryService.luau"]},{"name":"ReplicantService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Client Modules\\ReplicantService.luau"]},{"name":"StaminaService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Client Modules\\StaminaService.luau"]},{"name":"ToolService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Client Modules\\ToolService.luau"]}]},{"name":"Server Modules","className":"Folder","children":[{"name":"CommandService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\init.luau"],"children":[{"name":"Cmdr","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\init.luau"],"children":[{"name":"CmdrClient","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CmdrClient\\init.luau"],"children":[{"name":"CmdrInterface","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CmdrClient\\CmdrInterface\\init.luau"],"children":[{"name":"AutoComplete","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CmdrClient\\CmdrInterface\\AutoComplete.luau"]},{"name":"Window","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CmdrClient\\CmdrInterface\\Window.luau"]}]},{"name":"DefaultEventHandlers","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CmdrClient\\DefaultEventHandlers.luau"]}]},{"name":"CreateGui","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CreateGui.luau"]},{"name":"Initialize","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Initialize.luau"]},{"name":"Shared","className":"Folder","children":[{"name":"Argument","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Shared\\Argument.luau"]},{"name":"Command","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Shared\\Command.luau"]},{"name":"Dispatcher","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Shared\\Dispatcher.luau"]},{"name":"Registry","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Shared\\Registry.luau"]},{"name":"Util","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Shared\\Util.luau"]}]}]},{"name":"Commands","className":"Folder","children":[{"name":"00 - Members","className":"Folder","children":[{"name":"bind","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\bind.luau"]},{"name":"clear","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\clear.luau"]},{"name":"echo","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\echo.luau"]},{"name":"help","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\help.luau"]},{"name":"history","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\history.luau"]},{"name":"hover","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\hover.luau"]},{"name":"me","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\me.luau"]},{"name":"replace","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\replace.luau"]},{"name":"run","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\run.luau"]},{"name":"runif","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\runif.luau"]},{"name":"unbind","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\unbind.luau"]}]},{"name":"01 - Moderators","className":"Folder","children":[{"name":"blink","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\01 - Moderators\\blink.luau"]},{"name":"position","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\01 - Moderators\\position.luau"]},{"name":"thru","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\01 - Moderators\\thru.luau"]},{"name":"version","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\01 - Moderators\\version.luau"]}]},{"name":"02 - Developers","className":"Folder","children":[{"name":"datastore","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\datastore.luau"]},{"name":"datastoreServer","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\datastoreServer.luau"]},{"name":"givetool","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\givetool.luau"]},{"name":"givetoolServer","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\givetoolServer.luau"]},{"name":"removetool","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\removetool.luau"]},{"name":"removetoolServer","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\removetoolServer.luau"]},{"name":"wipedata","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\wipedata.luau"]},{"name":"wipedataServer","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\wipedataServer.luau"]}]},{"name":"03 - Executives","className":"Folder","children":[{"name":"announce","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\announce.luau"]},{"name":"announceServer","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\announceServer.luau"]},{"name":"kick","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\kick.luau"]},{"name":"kickServer","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\kickServer.luau"]},{"name":"kill","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\kill.luau"]},{"name":"killServer","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\killServer.luau"]},{"name":"respawn","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\respawn.luau"]},{"name":"respawnServer","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\respawnServer.luau"]},{"name":"setVariable","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\setVariable.luau"]},{"name":"setVariableServer","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\setVariableServer.luau"]},{"name":"teleport","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\teleport.luau"]},{"name":"teleportServer","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\teleportServer.luau"]}]}]},{"name":"Hooks","className":"Folder","children":[{"name":"AfterRun","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Hooks\\AfterRun.luau"]},{"name":"BeforeRun","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Hooks\\BeforeRun.luau"]}]},{"name":"Types","className":"Folder","children":[{"name":"BindableResource","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\BindableResource.luau"]},{"name":"BrickColor","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\BrickColor.luau"]},{"name":"Color3","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Color3.luau"]},{"name":"Command","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Command.luau"]},{"name":"ConditionFunction","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\ConditionFunction.luau"]},{"name":"Duration","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Duration.luau"]},{"name":"Player","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Player.luau"]},{"name":"PlayerId","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\PlayerId.luau"]},{"name":"Primitives","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Primitives.luau"]},{"name":"Properties","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Properties.luau"]},{"name":"Team","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Team.luau"]},{"name":"Tools","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Tools.luau"]},{"name":"UserInput","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\UserInput.luau"]},{"name":"Variables","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Variables.luau"]},{"name":"Vector","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Vector.luau"]}]}]},{"name":"DataService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\DataService\\init.luau"],"children":[{"name":"Datapushes","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\DataService\\Datapushes.luau"]},{"name":"Datastores","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\DataService\\Datastores.luau"]},{"name":"Template","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\DataService\\Template.luau"]},{"name":"Utilities","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\DataService\\Utilities.luau"]}]},{"name":"ItemsService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\ItemsService.luau"]},{"name":"PlayerService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\PlayerService.luau"]},{"name":"TerrainService","className":"ModuleScript","filePaths":["src\\shared\\Modules\\Server Modules\\TerrainService.luau"]}]}]}]}]},{"name":"StarterPlayer","className":"StarterPlayer","children":[{"name":"StarterPlayerScripts","className":"StarterPlayerScripts","children":[{"name":"Client","className":"LocalScript"}]}]},{"name":"Workspace","className":"Workspace","children":[{"name":"Workplace Stuff","className":"Folder","children":[{"name":"trialcompound","className":"Model","children":[{"name":"banner","className":"Part","children":[{"name":"click","className":"Part","children":[{"name":"Script","className":"Script"}]}]}]}]}]}]}
+{
+  "name": "-G-D-R-Development-Repository",
+  "className": "DataModel",
+  "filePaths": [
+    "default.project.json"
+  ],
+  "children": [
+    {
+      "name": "ReplicatedStorage",
+      "className": "ReplicatedStorage",
+      "children": [
+        {
+          "name": "Shared",
+          "className": "Folder",
+          "children": [
+            {
+              "name": "Library",
+              "className": "Folder",
+              "children": [
+                {
+                  "name": "Classes",
+                  "className": "Folder",
+                  "children": [
+                    {
+                      "name": "CameraClass",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Library\\Classes\\CameraClass.luau"
+                      ]
+                    },
+                    {
+                      "name": "GunClasses",
+                      "className": "Folder",
+                      "children": [
+                        {
+                          "name": "BaseGun",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Library\\Classes\\GunClasses\\BaseGun.luau",
+                            "src\\shared\\Library\\Classes\\GunClasses\\BaseGun.meta.json"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "TerrainChunkClass",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Library\\Classes\\TerrainChunkClass.luau"
+                      ]
+                    },
+                    {
+                      "name": "ToolClasses",
+                      "className": "Folder",
+                      "children": [
+                        {
+                          "name": "BaseTool",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Library\\Classes\\ToolClasses\\BaseTool.luau",
+                            "src\\shared\\Library\\Classes\\ToolClasses\\BaseTool.meta.json"
+                          ]
+                        },
+                        {
+                          "name": "HeavyPickaxe",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Library\\Classes\\ToolClasses\\HeavyPickaxe.luau"
+                          ]
+                        },
+                        {
+                          "name": "Pickaxe",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Library\\Classes\\ToolClasses\\Pickaxe.luau"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "Externals",
+                  "className": "Folder",
+                  "children": [
+                    {
+                      "name": "FastCast",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Library\\Externals\\FastCast\\init.luau"
+                      ],
+                      "children": [
+                        {
+                          "name": "ActiveCast",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Library\\Externals\\FastCast\\ActiveCast.luau"
+                          ]
+                        },
+                        {
+                          "name": "Signal",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Library\\Externals\\FastCast\\Signal.luau"
+                          ]
+                        },
+                        {
+                          "name": "Table",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Library\\Externals\\FastCast\\Table.luau"
+                          ]
+                        },
+                        {
+                          "name": "TypeDefinitions",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Library\\Externals\\FastCast\\TypeDefinitions.luau"
+                          ]
+                        },
+                        {
+                          "name": "TypeMarshaller",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Library\\Externals\\FastCast\\TypeMarshaller.luau"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "ProfileService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Library\\Externals\\ProfileService.luau"
+                      ]
+                    },
+                    {
+                      "name": "TypeChecker",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Library\\Externals\\TypeChecker.luau"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "Types",
+                  "className": "ModuleScript",
+                  "filePaths": [
+                    "src\\shared\\Library\\Types.luau"
+                  ]
+                },
+                {
+                  "name": "Util",
+                  "className": "ModuleScript",
+                  "filePaths": [
+                    "src\\shared\\Library\\Util.luau"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Modules",
+              "className": "Folder",
+              "children": [
+                {
+                  "name": "Client Modules",
+                  "className": "Folder",
+                  "children": [
+                    {
+                      "name": "CameraService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Client Modules\\CameraService\\init.luau"
+                      ],
+                      "children": [
+                        {
+                          "name": "BaseCamera",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Modules\\Client Modules\\CameraService\\BaseCamera.luau"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "ClientTerrainService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Client Modules\\ClientTerrainService.luau"
+                      ]
+                    },
+                    {
+                      "name": "DirectionalService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Client Modules\\DirectionalService.luau"
+                      ]
+                    },
+                    {
+                      "name": "InventoryService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Client Modules\\InventoryService.luau"
+                      ]
+                    },
+                    {
+                      "name": "ReplicantService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Client Modules\\ReplicantService.luau"
+                      ]
+                    },
+                    {
+                      "name": "StaminaService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Client Modules\\StaminaService.luau"
+                      ]
+                    },
+                    {
+                      "name": "ToolService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Client Modules\\ToolService.luau"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "Server Modules",
+                  "className": "Folder",
+                  "children": [
+                    {
+                      "name": "CommandService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Server Modules\\CommandService\\init.luau"
+                      ],
+                      "children": [
+                        {
+                          "name": "Cmdr",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\init.luau"
+                          ],
+                          "children": [
+                            {
+                              "name": "CmdrClient",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CmdrClient\\init.luau"
+                              ],
+                              "children": [
+                                {
+                                  "name": "CmdrInterface",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CmdrClient\\CmdrInterface\\init.luau"
+                                  ],
+                                  "children": [
+                                    {
+                                      "name": "AutoComplete",
+                                      "className": "ModuleScript",
+                                      "filePaths": [
+                                        "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CmdrClient\\CmdrInterface\\AutoComplete.luau"
+                                      ]
+                                    },
+                                    {
+                                      "name": "Window",
+                                      "className": "ModuleScript",
+                                      "filePaths": [
+                                        "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CmdrClient\\CmdrInterface\\Window.luau"
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "name": "DefaultEventHandlers",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CmdrClient\\DefaultEventHandlers.luau"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "name": "CreateGui",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\CreateGui.luau"
+                              ]
+                            },
+                            {
+                              "name": "Initialize",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Initialize.luau"
+                              ]
+                            },
+                            {
+                              "name": "Shared",
+                              "className": "Folder",
+                              "children": [
+                                {
+                                  "name": "Argument",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Shared\\Argument.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "Command",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Shared\\Command.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "Dispatcher",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Shared\\Dispatcher.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "Registry",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Shared\\Registry.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "Util",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Cmdr\\Shared\\Util.luau"
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "name": "Commands",
+                          "className": "Folder",
+                          "children": [
+                            {
+                              "name": "00 - Members",
+                              "className": "Folder",
+                              "children": [
+                                {
+                                  "name": "bind",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\bind.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "clear",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\clear.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "echo",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\echo.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "help",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\help.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "history",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\history.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "hover",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\hover.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "me",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\me.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "replace",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\replace.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "run",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\run.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "runif",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\runif.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "unbind",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\00 - Members\\unbind.luau"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "name": "01 - Moderators",
+                              "className": "Folder",
+                              "children": [
+                                {
+                                  "name": "blink",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\01 - Moderators\\blink.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "position",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\01 - Moderators\\position.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "thru",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\01 - Moderators\\thru.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "version",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\01 - Moderators\\version.luau"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "name": "02 - Developers",
+                              "className": "Folder",
+                              "children": [
+                                {
+                                  "name": "datastore",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\datastore.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "datastoreServer",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\datastoreServer.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "givetool",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\givetool.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "givetoolServer",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\givetoolServer.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "removetool",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\removetool.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "removetoolServer",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\removetoolServer.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "wipedata",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\wipedata.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "wipedataServer",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\02 - Developers\\wipedataServer.luau"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "name": "03 - Executives",
+                              "className": "Folder",
+                              "children": [
+                                {
+                                  "name": "announce",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\announce.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "announceServer",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\announceServer.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "kick",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\kick.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "kickServer",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\kickServer.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "kill",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\kill.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "killServer",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\killServer.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "respawn",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\respawn.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "respawnServer",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\respawnServer.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "setVariable",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\setVariable.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "setVariableServer",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\setVariableServer.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "teleport",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\teleport.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "teleportServer",
+                                  "className": "ModuleScript",
+                                  "filePaths": [
+                                    "src\\shared\\Modules\\Server Modules\\CommandService\\Commands\\03 - Executives\\teleportServer.luau"
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "name": "Hooks",
+                          "className": "Folder",
+                          "children": [
+                            {
+                              "name": "AfterRun",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Hooks\\AfterRun.luau"
+                              ]
+                            },
+                            {
+                              "name": "BeforeRun",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Hooks\\BeforeRun.luau"
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "name": "Types",
+                          "className": "Folder",
+                          "children": [
+                            {
+                              "name": "BindableResource",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\BindableResource.luau"
+                              ]
+                            },
+                            {
+                              "name": "BrickColor",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\BrickColor.luau"
+                              ]
+                            },
+                            {
+                              "name": "Color3",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Color3.luau"
+                              ]
+                            },
+                            {
+                              "name": "Command",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Command.luau"
+                              ]
+                            },
+                            {
+                              "name": "ConditionFunction",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\ConditionFunction.luau"
+                              ]
+                            },
+                            {
+                              "name": "Duration",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Duration.luau"
+                              ]
+                            },
+                            {
+                              "name": "Player",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Player.luau"
+                              ]
+                            },
+                            {
+                              "name": "PlayerId",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\PlayerId.luau"
+                              ]
+                            },
+                            {
+                              "name": "Primitives",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Primitives.luau"
+                              ]
+                            },
+                            {
+                              "name": "Properties",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Properties.luau"
+                              ]
+                            },
+                            {
+                              "name": "Team",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Team.luau"
+                              ]
+                            },
+                            {
+                              "name": "Tools",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Tools.luau"
+                              ]
+                            },
+                            {
+                              "name": "UserInput",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\UserInput.luau"
+                              ]
+                            },
+                            {
+                              "name": "Variables",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Variables.luau"
+                              ]
+                            },
+                            {
+                              "name": "Vector",
+                              "className": "ModuleScript",
+                              "filePaths": [
+                                "src\\shared\\Modules\\Server Modules\\CommandService\\Types\\Vector.luau"
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "DataService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Server Modules\\DataService\\init.luau"
+                      ],
+                      "children": [
+                        {
+                          "name": "Datapushes",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Modules\\Server Modules\\DataService\\Datapushes.luau"
+                          ]
+                        },
+                        {
+                          "name": "Datastores",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Modules\\Server Modules\\DataService\\Datastores.luau"
+                          ]
+                        },
+                        {
+                          "name": "Template",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Modules\\Server Modules\\DataService\\Template.luau"
+                          ]
+                        },
+                        {
+                          "name": "Utilities",
+                          "className": "ModuleScript",
+                          "filePaths": [
+                            "src\\shared\\Modules\\Server Modules\\DataService\\Utilities.luau"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "ItemsService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Server Modules\\ItemsService.luau"
+                      ]
+                    },
+                    {
+                      "name": "PlayerService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Server Modules\\PlayerService.luau"
+                      ]
+                    },
+                    {
+                      "name": "TerrainService",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "src\\shared\\Modules\\Server Modules\\TerrainService.luau"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "StarterPlayer",
+      "className": "StarterPlayer",
+      "children": [
+        {
+          "name": "StarterPlayerScripts",
+          "className": "StarterPlayerScripts",
+          "children": [
+            {
+              "name": "Client",
+              "className": "LocalScript"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Workspace",
+      "className": "Workspace",
+      "children": [
+        {
+          "name": "Workplace Stuff",
+          "className": "Folder",
+          "children": [
+            {
+              "name": "trialcompound",
+              "className": "Model",
+              "children": [
+                {
+                  "name": "banner",
+                  "className": "Part",
+                  "children": [
+                    {
+                      "name": "click",
+                      "className": "Part",
+                      "children": [
+                        {
+                          "name": "Script",
+                          "className": "Script"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "StarterPlayer",
+      "className": "StarterPlayer",
+      "guid": "7581",
+      "children": [
+        {
+          "name": "StarterCharacterScripts",
+          "className": "StarterCharacterScripts",
+          "guid": "131051",
+          "children": [
+            {
+              "name": "Animate",
+              "className": "LocalScript",
+              "guid": "27139",
+              "filePaths": [
+                "sync/StarterPlayer/StarterCharacterScripts/Animate.client.luau"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ReplicatedStorage",
+      "className": "ReplicatedStorage",
+      "guid": "130435",
+      "children": [
+        {
+          "name": "Shared",
+          "className": "Folder",
+          "guid": "12699",
+          "children": [
+            {
+              "name": "Modules",
+              "className": "Folder",
+              "guid": "12700",
+              "children": [
+                {
+                  "name": "Client Modules",
+                  "className": "Folder",
+                  "guid": "12701",
+                  "children": [
+                    {
+                      "name": "CameraService",
+                      "className": "ModuleScript",
+                      "guid": "52848",
+                      "children": [
+                        {
+                          "name": "BaseCamera",
+                          "className": "ModuleScript",
+                          "guid": "52849",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Modules/Client Modules/CameraService/BaseCamera.luau"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "MovementService",
+                      "className": "ModuleScript",
+                      "guid": "52845",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/Shared/Modules/Client Modules/MovementService.luau"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Library",
+              "className": "Folder",
+              "guid": "12714",
+              "children": [
+                {
+                  "name": "Classes",
+                  "className": "Folder",
+                  "guid": "12715",
+                  "children": [
+                    {
+                      "name": "BaseTool",
+                      "className": "ModuleScript",
+                      "guid": "52945",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/Shared/Library/Classes/BaseTool.luau"
+                      ]
+                    },
+                    {
+                      "name": "GunClasses",
+                      "className": "Folder",
+                      "guid": "12716",
+                      "children": [
+                        {
+                          "name": "PrinceRifle",
+                          "className": "ModuleScript",
+                          "guid": "52947",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/GunClasses/PrinceRifle.luau"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

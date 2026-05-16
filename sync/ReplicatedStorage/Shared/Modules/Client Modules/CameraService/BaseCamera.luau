@@ -95,6 +95,9 @@ local RECOIL_SNAPPINESS = 100
 -- // Shoulder System (Matches v_u_81.flip_cam toggle)
 local SHOULDER_SWITCH_SPEED = 6
 
+-- // Hold Breath UI
+local hold_breath = LocalPlayer.PlayerGui:WaitForChild("Aiming"):WaitForChild("hold_breath")
+
 -- // Data
 local PlayerData = LocalPlayer:WaitForChild("PlayerData")
 local SettingsData = PlayerData:WaitForChild("Settings Data")
@@ -102,6 +105,7 @@ local InputData = SettingsData:WaitForChild("Input Options")
 local Shoulder_Switch = InputData:WaitForChild("Shoulder Switch")
 local First_Person = InputData:WaitForChild("First Person")
 local Free_Look = InputData:WaitForChild("Free Look")
+
 
 local HiddenModelCache = {}
 
@@ -430,6 +434,7 @@ function BaseCamera:_setupAimingCheck()
 end
 
 function BaseCamera:_onAimingStateChanged()
+	print("Aiming state changed")
 	if not LocalPlayer.Character then return end
 
 	self.is_aiming = LocalPlayer.Character:GetAttribute("Aiming") or false
@@ -474,16 +479,23 @@ function BaseCamera:_onHoldBreathStateChanged()
 	self.hold_breathtime = tick()
 
 	if self.FOVTween then self.FOVTween:Cancel() end
+	if self.FOVTween2 then self.FOVTween2:Cancel() end
 
 	local isAiming = LocalPlayer.Character:GetAttribute("Aiming")
 	local targetFOV = self.holding_breath and FOV_Config.HOLD_BREATH or (isAiming and FOV_Config.AIMING or FOV_Config.BASE)
+	local targetTransparency = self.holding_breath and 0 or 1
 
 	self.FOVTween = TweenService:Create(Camera, 
 		TweenInfo.new(HOLD_BREATH_FADE_SPEED, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), 
 		{FieldOfView = targetFOV}
 	)
 
+	self.FOVTween2 = TweenService:Create(hold_breath, 
+		TweenInfo.new(HOLD_BREATH_FADE_SPEED, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), 
+		{ImageTransparency = targetTransparency}
+	)
 	self.FOVTween:Play()
+	self.FOVTween2:Play()
 end
 
 --[[
@@ -913,7 +925,9 @@ function BaseCamera:OverTheShoulder()
 
 	self.transparency_connection = first_person_transparency(character, false)
 	self:HeadFollowCamera_Setup()
-
+	self:_setupAimingCheck()
+	self:_setupHoldBreathCheck()
+	
 	self:_bind(function(dt: number)
 		self:_updateRecoil(dt)
 		self:_updateHoldBreath()
