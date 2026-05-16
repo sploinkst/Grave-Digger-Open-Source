@@ -12,6 +12,7 @@ local Tool_Folder               = ReplicatedStorage.Shared.Assets.Guns.ToolModel
 local Animations_Folder         = ReplicatedStorage.Shared.Assets.Animations.Tools.Utility.Medkit
 
 local Heal_RemoteEvent          = ReplicatedStorage.Shared.Library.Events.Replicant_Communication.Heal_Connection
+local HealNotify_RemoteEvent	= ReplicatedStorage.Shared.Library.Events.Replicant_Communication.HealNotify_Connection
 local Status_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Status_Communication.Status_Connection
 
 local local_player = player_service.LocalPlayer
@@ -127,7 +128,7 @@ function Medkit:_raycast_target()
 
 	if rayResult then
 		local hitPart = rayResult.Instance
-		local hitCharacter = hitPart.Parent
+		local hitCharacter = hitPart:FindFirstAncestorWhichIsA("Model")
 
 		if hitCharacter and hitCharacter:FindFirstChildOfClass("Humanoid") then
 			local distance = (self.Character.HumanoidRootPart.Position - hitCharacter.HumanoidRootPart.Position).Magnitude
@@ -340,6 +341,10 @@ function Medkit:_process_target_heal(target: Model)
 	local wounds = target_wounds:GetChildren()
 	local wound = wounds[math.random(1, #wounds)]
 
+	local actual_player = player_service:GetPlayerFromCharacter(target) or player_service:GetPlayerFromCharacter(target.Parent)
+	-- // fires a healnotify remoteevent for the server to make a UI notif for the target player
+	HealNotify_RemoteEvent:FireServer(actual_player) 
+	print("[MEDKIT] Firing HealNotify for", actual_player and actual_player.Name or "Unknown") 
 	return self:_perform_surgery(wound, target)
 end
 
@@ -356,7 +361,7 @@ function Medkit:_begin_heal_loop(target: Model?)
 
 			if target and self.Aiming then
 				success = self:_process_target_heal(target)
-			else
+			elseif not self.Aiming then
 				success = self:_process_self_heal()
 			end
 
