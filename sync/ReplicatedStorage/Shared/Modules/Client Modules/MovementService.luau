@@ -4,6 +4,7 @@ local module = {}
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 -- // Player
 local LocalPlayer = Players.LocalPlayer
@@ -37,6 +38,18 @@ local BaseSpeed          = 10
 local MaxSpeed           = 18
 local SprintRampTime     = 2
 
+-- // VAULT CONFIG
+local VAULT_RAYCAST_RANGE_1 = 2      -- Forward surface detection
+local VAULT_RAYCAST_RANGE_2 = 3.5    -- Top clearance
+local VAULT_RAYCAST_RANGE_3 = 3      -- Mid clearance
+local VAULT_RAYCAST_RANGE_4 = 3      -- Upper clearance
+local VAULT_TARGET_UP = 5             -- Distance to move player up
+local VAULT_TARGET_FORWARD = 5        -- Distance to move player forward
+local VAULT_DURATION = 0.4            -- How long vault physics applies
+local VAULT_BODY_POSITION_MAXFORCE = Vector3.new(200000, 200000, 200000)
+local VAULT_BODY_POSITION_P = 2000
+local VAULT_BODY_POSITION_D = 500
+
 -- // State
 local Sprinting   = false
 local LoopRunning = false
@@ -47,6 +60,12 @@ local fall_time = tick()
 local fall_threshold = 0.35
 
 local W_Locked = true
+
+-- // VAULT STATE
+local VaultActive = false
+local VaultCooldown = false
+local VaultAnimPlaying = false
+local mantleAnim = game:GetService("ReplicatedStorage"):WaitForChild("Shared").Assets.Animations.Character.Jumping.Mantle
 
 -- // Velocity tracking for alignment system
 -- Track the last few velocity readings to smooth out alignment-caused jitter
@@ -159,6 +178,160 @@ local function getForwardVelocity()
 
 	local velocity = RootPart.CFrame:vectorToObjectSpace(RootPart.AssemblyLinearVelocity)
 	return velocity.Z
+end
+
+local function checkVaultGeometry()
+	if not RootPart then
+		return false
+	end
+
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = {Character}
+	rayParams.IgnoreWater = true
+
+	-- Raycast 1: Forward surface check
+	local rayOrigin1 = RootPart.Position
+	local rayDirection1 = RootPart.CFrame.LookVector * VAULT_RAYCAST_RANGE_1
+
+	local rayResult1 = workspace:Raycast(rayOrigin1, rayDirection1, rayParams)
+
+	local check1 = false
+
+	if rayResult1 then
+		local model = rayResult1.Instance:FindFirstAncestorOfClass("Model")
+		local hasHumanoid = model and model:FindFirstChildOfClass("Humanoid")
+
+		if not hasHumanoid and rayResult1.Instance.CanCollide then
+			check1 = true
+		end
+	end
+
+	-- Raycast 2: Top clearance
+	local rayOrigin2 = RootPart.Position
+	local rayDirection2 = RootPart.CFrame.UpVector * VAULT_RAYCAST_RANGE_2
+
+	local rayResult2 = workspace:Raycast(rayOrigin2, rayDirection2, rayParams)
+
+	local check2 = not rayResult2
+
+	-- Raycast 3: Mid clearance
+	local rayOrigin3 = RootPart.Position + Vector3.new(0, 2.5, 0)
+	local rayDirection3 = RootPart.CFrame.LookVector * VAULT_RAYCAST_RANGE_3
+
+	local rayResult3 = workspace:Raycast(rayOrigin3, rayDirection3, rayParams)
+
+	local check3 = not rayResult3
+
+	-- Raycast 4: Upper clearance
+	local rayOrigin4 = RootPart.Position + Vector3.new(0, 6, 0)
+	local rayDirection4 = RootPart.CFrame.LookVector * VAULT_RAYCAST_RANGE_4
+
+	local rayResult4 = workspace:Raycast(rayOrigin4, rayDirection4, rayParams)
+
+	local check4 = not rayResult4
+
+	return check1 and check2 and check3 and check4
+end
+
+local function executeVault()
+	if not Character or not RootPart or not Humanoid then
+		return
+	end
+
+	VaultActive = true
+	VaultCooldown = true
+
+	Character:SetAttribute("Vaulting", true)
+
+	-- Animation
+	local animator = Humanoid:FindFirstChildOfClass("Animator")
+
+	if animator then
+		pcall(function()
+			local track = animator:LoadAnimation(mantleAnim)
+			track:Play(0.05)
+
+			VaultAnimPlaying = true
+		end)
+	end
+
+	-- Calculate target position
+	local targetPosition =
+		RootPart.Position
+		+ Vector3.new(0, VAULT_TARGET_UP, 0)
+		+ (RootPart.CFrame.LookVector * VAULT_TARGET_FORWARD)
+
+	-- Create BodyPosition
+	local bodyPosition = Instance.new("BodyPosition")
+	bodyPosition.Name = "VaultPosition"
+	bodyPosition.MaxForce = VAULT_BODY_POSITION_MAXFORCE
+	bodyPosition.P = VAULT_BODY_POSITION_P
+	bodyPosition.D = VAULT_BODY_POSITION_D
+	bodyPosition.Position = targetPosition
+	bodyPosition.Parent = RootPart
+
+	-- Cleanup
+	task.delay(VAULT_DURATION, function()
+		if bodyPosition and bodyPosition.Parent then
+			bodyPosition:Destroy()
+		end
+
+		Character:SetAttribute("Vaulting", nil)
+
+		VaultActive = false
+		VaultAnimPlaying = false
+	end)
+end
+
+local function checkVaultTrigger()
+	if not Character then
+		return false
+	end
+
+	if not RootPart then
+		return false
+	end
+
+	if not IsJumping then
+		return false
+	end
+
+	-- Already vaulting
+	if VaultActive then
+		return false
+	end
+
+	if VaultCooldown then
+		return false
+	end
+
+	-- Montage checks
+	if Character:FindFirstChild("VaultMontage") then
+		return false
+	end
+
+	if VaultAnimPlaying then
+		return false
+	end
+
+	-- State checks
+	if Character:GetAttribute("Aiming") then
+		return false
+	end
+
+	if Character:GetAttribute("Crouching") then
+		return false
+	end
+
+	-- Geometry validation
+	local geometryPassed = checkVaultGeometry()
+
+	if not geometryPassed then
+		return false
+	end
+
+	return true
 end
 
 -- // Core loop
@@ -304,11 +477,39 @@ local function sprintLoop()
 	LoopRunning = false
 end
 
+local function setupVaultInput()
+	RunService.RenderStepped:Connect(function()
+		local holdingSpace =
+			UserInputService:IsKeyDown(Enum.KeyCode.Space)
+
+		local holdingGamepad =
+			UserInputService:IsGamepadButtonDown(0, Enum.KeyCode.ButtonA)
+
+		if holdingSpace or holdingGamepad then
+			if checkVaultTrigger() then
+				executeVault()
+			end
+		end
+	end)
+end
+
+local function setupVaultCooldownReset()
+	Humanoid.StateChanged:Connect(function(old, new)
+		if new == Enum.HumanoidStateType.Landed then
+			VaultCooldown = false
+		end
+	end)
+end
+
 -- // Input
 function module.start_module()
 	if Humanoid then
 		Humanoid.WalkSpeed = BaseSpeed
 	end
+
+	-- Setup vault mechanics
+	setupVaultInput()
+	setupVaultCooldownReset()
 
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end

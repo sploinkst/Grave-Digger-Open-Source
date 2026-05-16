@@ -12,6 +12,7 @@ local sfx_replicant = replicant_folder.SFX_Connection
 local texture_replicant = replicant_folder.Texture_Connection
 local hit_connection = replicant_folder.Hit_Connection
 local heal_connection = replicant_folder.Heal_Connection
+local healnotify_connection = replicant_folder.HealNotify_Connection
 
 local status_connection = replicant_folder.Parent.Status_Communication.Status_Connection
 
@@ -285,6 +286,13 @@ function module.start_module()
 		status_service.remove_status(healed, "WoundStatus")
 		status_service.remove_status(healed, "ConcussionStatus")
 		healed.Character.Humanoid.Health = 100
+	end)
+	
+	healnotify_connection.OnServerEvent:Connect(function(healer, healee:Player)
+		print("Received healnotify_connection from", healer.Name, "for healee:", healee.Name)
+		local notify_ui = require(healee.PlayerGui.Notifications.Utils)
+		
+		notify_ui.send_notification(healee, healer.Name .. ": Stand still while I heal you.")
 	end)
 	
 	status_connection.OnServerEvent:Connect(function(player, status, enabled: boolean)

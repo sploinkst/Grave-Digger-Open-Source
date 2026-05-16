@@ -7,7 +7,7 @@ local item_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes
 local gun_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes.GunClasses
 
 
-function module.give_item(player: Player, item: string)
+function module.give_item(player: Player, item: string, given_ammo: number)
     print("Received with:", player.Name, item)
     local item_module = item_classes:FindFirstChild(item) or gun_classes:FindFirstChild(item)
     if not item_module then
@@ -30,6 +30,24 @@ function module.give_item(player: Player, item: string)
 
     tool.RequiresHandle = false
     print("ItemsService: Gave item", item, "to", player.Name)
+
+	local clip_size
+	
+	if object.Max_Capacity then
+		if not given_ammo then
+			clip_size = object.Max_Capacity * 3 or 1
+			print("ItemsService: No given_ammo, referring to tool: Clip Size", clip_size)
+		else
+			clip_size = math.clamp(given_ammo, 0, object.Max_Capacity * 3 or 1)
+			print("ItemsService: Referring to Given_Ammo Variable, Clip Size", given_ammo)
+		end
+	end
+	
+	local number_value = Instance.new("NumberValue")
+	number_value.Name = "Reserve_Ammo"
+	number_value.Parent = tool
+	number_value.Value = clip_size
+	
 
     -- check instance property (not class property)
     if object.holster_reference then

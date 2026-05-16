@@ -391,6 +391,21 @@ character:GetAttributeChangedSignal("Crouching"):Connect(function()
 	end
 end)
 
+
+--------------------------------------------------
+-- VAULT
+--------------------------------------------------
+character:GetAttributeChangedSignal("Vaulting"):Connect(function()
+	local vaulting = character:GetAttribute("Vaulting") == true
+	if vaulting then
+		print("VAULTING")
+		stop_overlay("Jump_MidAir")
+		stop_overlay("Jump_Arms")
+	end
+end)
+
+
+
 --------------------------------------------------
 -- LOOP
 --------------------------------------------------
