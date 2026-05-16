@@ -227,6 +227,8 @@ function BaseTool:GetBarrelWarningPart(muzzle)
 end
 
 function BaseTool:init_short_mechanic()
+	if not self.RegisteredAnimations.Short then return end
+	
 	print("[BASETOOL] init_short_mechanic called")
 
 	local RunService = game:GetService("RunService")
@@ -1673,7 +1675,7 @@ function BaseTool:ammo_check()
 
 	self.Checking = true
 	self.Check_Delayed = true
-	local ammo_check_part, ammo_check_utils
+	local ammo_check_part, ammo_check_utilsammo_checkammo
 	if not workspace.CurrentCamera:FindFirstChild("Ammo_Check") then
 		ammo_check_part  = game.ReplicatedStorage.Shared.Assets.Guns.Effects.AmmoUI.Ammo_Check:Clone()
 		ammo_check_part.Parent = workspace.CurrentCamera
@@ -1685,19 +1687,24 @@ function BaseTool:ammo_check()
 
 	self:_stopAllExcept()
 	self.RegisteredAnimations.Check:Play()
-	self.RegisteredAnimations.Check.Stopped:Wait()
 
 	self.Checking = false
 	local hrp = LOCAL_PLAYER.Character.HumanoidRootPart
-	ammo_check_part.Position = hrp.Position + hrp.CFrame.RightVector * 2 + Vector3.new(0, 1.5, 0)
+	ammo_check_part.Position = self.actual_model:FindFirstChild(self.MuzzlePartName).Position + self.actual_model:FindFirstChild(self.MuzzlePartName).CFrame.RightVector * 2 + Vector3.new(0, 1.5, 0)
+
+	-- // destroy old weld
+	if ammo_check_part:FindFirstChild("WeldConstraint") then
+		ammo_check_part:FindFirstChild("WeldConstraint"):Destroy()
+	end
 
 	local weld   = Instance.new("WeldConstraint")
 	weld.Part0   = ammo_check_part
-	weld.Part1   = hrp
+	weld.Part1   = self.actual_model:FindFirstChild(self.MuzzlePartName)
 	weld.Parent  = ammo_check_part
 
 	local pct = math.clamp(self.Capacity / self.Max_Capacity, 0, 1)
-	ammo_check_utils.utils(self.Ammo_Type, pct, false)
+	ammo_check_utils.utils(self.Ammo_Type, pct, false,  self.tool:FindFirstChild("Reserve_Ammo").Value / (self.Max_Capacity * 3) )
+	print("Bar Size will be:", self.Max_Capacity * 3, self.tool:FindFirstChild("Reserve_Ammo").Value, self.tool:FindFirstChild("Reserve_Ammo").Value / (self.Max_Capacity * 3))
 
 	self:_restoreBase()
 
