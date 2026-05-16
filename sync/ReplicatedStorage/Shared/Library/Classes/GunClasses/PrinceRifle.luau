@@ -155,13 +155,13 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 		Fire      = AnimFolder.PrinceRifle_Fire,
 		Fire_Left = AnimFolder.PrinceRifle_Fire_Left,
 
-		Cycle = AnimFolder.PrinceRifle_Reload_Alt, 
+		Cycle = AnimFolder.PrinceRifle_Cycle, 
 
 		Reload_Empty = AnimFolder.PrinceRifle_Reload_Empty,
 		Reload_Start = AnimFolder.PrinceRifle_Reload_Start,
 		Reload_Loop  = AnimFolder.PrinceRifle_Reload_Loop,
 		Reload_End   = AnimFolder.PrinceRifle_Reload_End,
-		Reload_Alt   = AnimFolder.PrinceRifle_Cycle,
+		Reload_Alt   = AnimFolder.PrinceRifle_Reload_Alt,
 
 		Alt_Mode_On  = AnimFolder.PrinceRifle_Alt_Mode_On,
 		Alt_Mode_Off = AnimFolder.PrinceRifle_Alt_Mode_Off,
@@ -224,13 +224,6 @@ function PrinceRifle:AltMode()
 	self:setAltMode()
 end
 
---------------------------------------------------------------------------------
--- Private: isBusy (includes Alting)
---------------------------------------------------------------------------------
-
-function PrinceRifle:_isBusy(): boolean
-	return self.Firing or self.Cycling or self.Reloading or self.Alting
-end
 
 --------------------------------------------------------------------------------
 -- Public: Actions
@@ -243,7 +236,7 @@ function PrinceRifle:setAltMode()
 	local anims = self.RegisteredAnimations
 	self:_stopAllExcept()
 
-	if self.Alt_Mode then
+	if self.Alt_Mode == true then
 		anims.Alt_Mode_Off:Play()
 		anims.Alt_Mode_Off.Stopped:Wait()
 		self.Alt_Mode = false
@@ -253,6 +246,10 @@ function PrinceRifle:setAltMode()
 		anims.Alt_Mode_On.Stopped:Wait()
 		self.Alt_Mode = true
 		self:notify("Firemode: Repeating Fire")
+		
+		if not self.Cycled == true then
+			self:cycle()
+		end
 	end
 
 	self.Alting = false
@@ -261,19 +258,21 @@ end
 
 function PrinceRifle:cycle()
 	if self.Cycling then return end
-	if self.Alt_Mode then return end
+
 	self.Cycling = true
 
 	local anims = self.RegisteredAnimations
 	if not anims then self.Cycling = false; print("Anims not found.") return end
 
 	self:_stopAllExcept()
-	anims.Cycle:Play(0.15)
-	task.delay(CYCLE_REST_TIME, function()
 
+	
+	anims.Cycle:Play(0.15)
+	self.tool:FindFirstChild("Reserve_Ammo").Value -= 1
+
+	task.delay(CYCLE_REST_TIME, function()
 		self.Cycled  = true
 		self.Cycling = false  
-
 		self:_restoreBase()
 	end)
 end
@@ -283,30 +282,42 @@ function PrinceRifle:fire()
 		self:reload()
 		return
 	end
+
 	if self.Firing then return end
+	if self.Cycling then return end
+	if not self.Cycled then return end
+
 	self.Firing = true
+	self.Cycled = false
 
 	if self:_if_sprinting() then
 		self.Firing = false
+		self.Cycled = true
 		return
 	end
 
 	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
+
 	if not muzzle then
 		self.Firing = false
+		self.Cycled = true
 		return
 	end
 
 	local camera = workspace.CurrentCamera
+
 	if not camera then
 		self.Firing = false
+		self.Cycled = true
 		return
 	end
 
 	if self.ForceBlockFire == true then
 		self.Firing = false
+		self.Cycled = true
 		return
 	end
+
 	-- === AIMLOGIC ===
 
 	local mousePos = UserInputService:GetMouseLocation()
@@ -314,57 +325,93 @@ function PrinceRifle:fire()
 
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-	raycastParams.FilterDescendantsInstances = { game.Players.LocalPlayer.Character }
+	raycastParams.FilterDescendantsInstances = {
+		game.Players.LocalPlayer.Character
+	}
 
-	local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+	local result = workspace:Raycast(
+		ray.Origin,
+		ray.Direction * 1000,
+		raycastParams
+	)
 
-	local targetPos = result and result.Position or (ray.Origin + ray.Direction * 1000)
+	local targetPos = result and result.Position or (
+		ray.Origin + ray.Direction * 1000
+	)
 
 	local shootDir = (targetPos - muzzle.Position).Unit
 
 	-- === FIRE ===
+
 	if self.Alt_Mode then
-		self:_play_sfx(fire_sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.5)
+		self:_play_sfx(
+			fire_sound,
+			self.actual_model:WaitForChild(self.MuzzlePartName),
+			nil,
+			0.5
+		)
 	else
-		self:_play_sfx(fire_sound, self.actual_model:WaitForChild(self.MuzzlePartName))
+		self:_play_sfx(
+			fire_sound,
+			self.actual_model:WaitForChild(self.MuzzlePartName)
+		)
 	end
 
-	local activeCast = self.Caster:Fire(muzzle.Position, shootDir, BULLET_SPEED, self.CasterBehavior)
-	activeCast.UserData.Direction  = shootDir
+	local activeCast = self.Caster:Fire(
+		muzzle.Position,
+		shootDir,
+		BULLET_SPEED,
+		self.CasterBehavior
+	)
+
+	activeCast.UserData.Direction = shootDir
 	activeCast.UserData.Penetrated = false
 
+	self:_connect_FastCast(
+		muzzle.Position,
+		shootDir,
+		BULLET_SPEED,
+		{
+			bulletTemplate = FxFolder.Bullet,
+			bulletContainer = workspace.Game_Details.Effects.Bullets,
+			isPenetration = false,
+			penetrationLevel = self.Penetration_Level,
+			damage = self.damage,
+			knockbackForce = self.KnockBack_Force
+		}
+	)
 
-	self:_connect_FastCast(muzzle.Position, shootDir, BULLET_SPEED, {
-		bulletTemplate = FxFolder.Bullet,
-		bulletContainer = workspace.Game_Details.Effects.Bullets,
-		isPenetration = false,
-		penetrationLevel = self.Penetration_Level,
-		damage = self.damage,
-		knockbackForce = self.KnockBack_Force
-	})
-
-	self.Cycled   = false
 	self.Capacity -= 1
 
-	local anims    = self.RegisteredAnimations
-	local fireAnim = (self.current_shoulder == "Right") and anims.Fire or anims.Fire_Left
+	local anims = self.RegisteredAnimations
+	local fireAnim = (
+		self.current_shoulder == "Right"
+			and anims.Fire
+			or anims.Fire_Left
+	)
+
+	self:_stopAllExcept()
+
 	fireAnim:Play()
-	
 
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false)
+	Util.applyRecoil(
+		self.recoil,
+		self.recoil_count,
+		10,
+		false
+	)
 
-	-- Muzzle flash
+	if self.Alt_Mode == true then
+		self:cycle()
+	end
+
 	self:_fireMuzzleFlash()
-	
-
 
 	task.wait(FIRE_RATE)
-	self.Firing = false
-	self:_restoreBase()
 
-	if self.Alt_Mode then
-		self:_altReload()
-	end
+	self.Firing = false
+
+	self:_restoreBase()
 end
 
 function PrinceRifle:melee()
@@ -380,81 +427,106 @@ function PrinceRifle:melee()
 	self:_restoreBase()
 end
 
-function PrinceRifle:_altReload()
+function PrinceRifle:_autoCycle()
+	if self.Capacity >= self.Max_Capacity then
+		self.Cycled = true
+		return
+	end
+
+	if self.Cycling then return end
+
+	self.Cycling = true
+	self.Cycled = false
+
 	local anims = self.RegisteredAnimations
+	if not anims then
+		self.Cycling = false
+		return
+	end
+
 	self:_stopAllExcept()
+
 	anims.Reload_Alt:Play()
 	anims.Reload_Alt.Stopped:Wait()
-	self.Cycled   = true
-	self.Capacity += 1
+
+	if self.tool:FindFirstChild("Reserve_Ammo").Value > 0 then
+		self.tool:FindFirstChild("Reserve_Ammo").Value -= 1
+		self.Capacity += 1
+	end
+
+	self.Cycling = false
+	self.Cycled = true
+
 	self:_restoreBase()
 end
 
 function PrinceRifle:reload()
 	if self.Reloading then return end
+	if self.tool:FindFirstChild("Reserve_Ammo").Value <= 0 then
+		self:notify("I don't have any more ammo...")
+		self.Cycling = false
+		self:_restoreBase()
+		return
+	end
+	
 	if self.Capacity >= self.Max_Capacity then return end
+	
 
-	if self.Aiming then self:endAiming() end
 
-	self:_stopAllExcept()
-	self.Reloading        = true
-	self._reloadCancelled = false
+	if self.Alt_Mode == true then
+		self:_stopAllExcept()
+		self.Reloading        = true
+		self._reloadCancelled = false
 
-	local anims = self.RegisteredAnimations
+		if self.Aiming then self:endAiming() end
+		local anims = self.RegisteredAnimations
 
-	if self.Capacity == 0 then
-		anims.Reload_Empty:Play()
-		anims.Reload_Empty.Stopped:Wait()
-	else
-		anims.Reload_Start:Play()
-		anims.Reload_Start.Stopped:Wait()
-	end
-
-	while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
-		anims.Reload_Loop:Play()
-		anims.Reload_Loop.Stopped:Wait()
-		if self._reloadCancelled then break end
-
-		self.Capacity += 1
-
-		if not self.Cycled then
-			self:cycle()
+		if self.Capacity == 0 then
+			anims.Reload_Empty:Play()
+			anims.Reload_Empty.Stopped:Wait()
+		else
+			anims.Reload_Start:Play()
+			anims.Reload_Start.Stopped:Wait()
 		end
-	end
 
-	if not self._reloadCancelled then
-		anims.Reload_End:Play()
-		anims.Reload_End.Stopped:Wait()
-	else
-		for _, name in ipairs({ "Reload_Loop", "Reload_Start", "Reload_Empty" }) do
-			local t = anims[name]
-			if t and t.IsPlaying then t:Stop(0.15) end
+		while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
+			anims.Reload_Loop:Play()
+			anims.Reload_Loop.Stopped:Wait()
+			if self._reloadCancelled then break end
+
+			self.Capacity += 1
+			self.tool:FindFirstChild("Reserve_Ammo").Value -= 1
+			print("Reloaded, removed one.")
 		end
-	end
 
-	self.Reloading        = false
-	self._reloadCancelled = false
-	self:_restoreBase()
+		if not self._reloadCancelled then
+			anims.Reload_End:Play()
+			anims.Reload_End.Stopped:Wait()
+		else
+			for _, name in ipairs({ "Reload_Loop", "Reload_Start", "Reload_Empty" }) do
+				local t = anims[name]
+				if t and t.IsPlaying then t:Stop(0.15) end
+			end
+		end
+
+		self.Reloading        = false
+		self._reloadCancelled = false
+		self:_restoreBase()
+	else
+		self:_autoCycle()
+	end
 end
 
 function PrinceRifle:activate()
 	if not self.actual_model then return end
 	if self:_isBusy() then return end
 
-	if not self.Cycled then
-		task.spawn(function() self:cycle() end)
-		return
-	end
+	if self.Firing then return end
+	if self.Cycling then return end
+	if not self.Cycled then return end
 
 	if self.Aiming then
-		if self.Cycling then 
-			print("Cycling, cancelling activate")
-			return
-		else
-			print("Activating, self.Cycling is:", self.Cycling)
-		end
-
-		task.spawn(function() self:fire() end)
+		self:fire()
 	else
 		self:melee()
 	end
@@ -527,7 +599,6 @@ function PrinceRifle:_on_unequip()
 	self.Firing    = false
 	self.Cycling   = false
 	self.Reloading = false
-	self.Alt_Mode  = false
 	self.Alting    = false
 
 	local char = game.Players.LocalPlayer.Character
