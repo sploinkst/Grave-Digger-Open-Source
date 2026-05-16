@@ -35,9 +35,8 @@ local function hide()
 end
 
 function module.utils(Ammo_Type: string, Ammo_Percentage: number, Revolver: boolean, bar_size: UDim2?)
-	bar_size = bar_size or UDim2.new(1, 0, 1, 0)
-	-- rest of the code unchanged
-	-- cancel any pending hide
+	print("Ammo Check: ", Ammo_Type, Ammo_Percentage, Revolver, bar_size)
+	bar_size = UDim2.new(1, 0, bar_size, 0)
 	if hideThread then
 		task.cancel(hideThread)
 		hideThread = nil
