@@ -591,6 +591,8 @@ function BaseTool:unequip()
 	self:clean_up_short()
 	self.actual_model = nil
 	if LOCAL_PLAYER.Character then LOCAL_PLAYER.Character:SetAttribute("Aiming", nil) end
+	
+	workspace.CurrentCamera:FindFirstChild("Ammo_Check"):Destroy()
 end
 
 --------------------------------------------------------------------------------
@@ -857,7 +859,6 @@ function BaseTool:endAiming()
 	if not self.Aiming then return end
 	self.Aiming = false
 	self._aimVersion += 1
-	self:_stopAimTracking()
 	self:_stopTransparencyTracking()
 	local anims = self.RegisteredAnimations
 	if anims then
@@ -1693,14 +1694,12 @@ function BaseTool:ammo_check()
 	ammo_check_part.Position = self.actual_model:FindFirstChild(self.MuzzlePartName).Position + self.actual_model:FindFirstChild(self.MuzzlePartName).CFrame.RightVector * 2 + Vector3.new(0, 1.5, 0)
 
 	-- // destroy old weld
-	if ammo_check_part:FindFirstChild("WeldConstraint") then
-		ammo_check_part:FindFirstChild("WeldConstraint"):Destroy()
+	if not ammo_check_part:FindFirstChild("WeldConstraint") then
+		local weld   = Instance.new("WeldConstraint")
+		weld.Part0   = ammo_check_part
+		weld.Part1   = self.actual_model:FindFirstChild(self.MuzzlePartName)
+		weld.Parent  = ammo_check_part
 	end
-
-	local weld   = Instance.new("WeldConstraint")
-	weld.Part0   = ammo_check_part
-	weld.Part1   = self.actual_model:FindFirstChild(self.MuzzlePartName)
-	weld.Parent  = ammo_check_part
 
 	local pct = math.clamp(self.Capacity / self.Max_Capacity, 0, 1)
 	ammo_check_utils.utils(self.Ammo_Type, pct, false,  self.tool:FindFirstChild("Reserve_Ammo").Value / (self.Max_Capacity * 3) )
