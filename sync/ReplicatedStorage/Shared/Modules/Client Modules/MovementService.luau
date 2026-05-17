@@ -56,9 +56,10 @@ local Sprinting   = false
 local LoopRunning = false
 local SprintTicker = 0 
 local HoldingBreath = false
-local IsJumping = true
+local IsJumping = false
 local fall_time = tick()
 local fall_threshold = 0.35
+local fall_duration_threshold = 0.3
 
 local W_Locked = true
 
@@ -113,7 +114,7 @@ local function setHoldBreathe(holding: boolean)
 		Character:SetAttribute("HoldBreathe", nil)
 		HoldingBreath = false
 	end
-	
+
 	print("Set HoldBreathe to:", holding)
 end
 
@@ -356,13 +357,17 @@ local function sprintLoop()
 			resetSpeed()       -- ADD THIS LINE
 			break
 		end
-		
-		-- Check if recently jumped/fell
-		if (tick() - fall_time) < fall_threshold then
-			print("[SprintLoop] Stopped: Recently jumped/fell")
-			Sprinting = false
-			resetSpeed()
-			break
+
+		-- Check if recently jumped/fell but DON'T automatically stop sprint
+		-- Instead, check if falling for more than fall_duration_threshold seconds
+		if IsJumping then
+			local fallDuration = tick() - fall_time
+			if fallDuration > fall_duration_threshold then
+				print("[SprintLoop] Stopped: Falling for too long -", fallDuration, "seconds")
+				Sprinting = false
+				resetSpeed()
+				break
+			end
 		end
 
 		-- Check if dead
@@ -511,7 +516,9 @@ function module.start_module()
 	if Humanoid then
 		Humanoid.WalkSpeed = BaseSpeed
 	end
-
+	
+	fall_time = tick()
+	
 	-- Setup vault mechanics
 	setupVaultInput()
 	setupVaultCooldownReset()
@@ -525,22 +532,21 @@ function module.start_module()
 			setHoldBreathe(false)
 		end
 	end)
-	
+
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 
 		if input.KeyCode == getSprintKey() then
 			SprintKeyHeld = true
 
-			if (tick() - fall_time) < fall_threshold then
-				return
-			end
+			-- CHANGED: Allow sprint restart even if recently fell
+			-- Remove the fall_threshold check that prevented sprint restart
 
 			if canStartSprint() then
 				Sprinting = true
 				task.spawn(sprintLoop)
 			end
-			
+
 			if Character:GetAttribute("Aiming") then
 				setHoldBreathe(true)
 			else
@@ -609,7 +615,8 @@ function module.start_module()
 		elseif new == Enum.HumanoidStateType.Landed then
 			LocalPlayer:SetAttribute("Jumping", nil)
 			IsJumping = false
-			fall_time = tick() 
+			fall_time = tick()  -- Reset fall_time when landing
+			print("[StateChanged] Landed - fall_time reset to:", fall_time)
 		end
 	end)
 

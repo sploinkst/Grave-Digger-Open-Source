@@ -421,7 +421,7 @@ end)
 humanoid.StateChanged:Connect(function(_, new_state)
 	if new_state == Enum.HumanoidStateType.Jumping then
 		is_airborne = true
-		clear_overlays()
+		--clear_overlays()
 		
 		if not if_tool_equipped() then
 			play_overlay("Jump_Arms", 0.2)
@@ -435,7 +435,7 @@ humanoid.StateChanged:Connect(function(_, new_state)
 		is_airborne = false
 		stop_overlay("Jump_MidAir")
 		stop_overlay("Jump_Arms")
-		play_base("Jump_Land")
+		play_overlay("Jump_Land")
 	end
 end)
 
