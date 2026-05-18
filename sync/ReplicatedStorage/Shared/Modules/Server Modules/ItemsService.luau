@@ -28,7 +28,8 @@ function module.give_item(player: Player, item: string, given_ammo: number)
     tool.Name = object.name
     tool.Parent = player:WaitForChild("Backpack")
 
-    tool.RequiresHandle = false
+	tool.RequiresHandle = false
+	tool.CanBeDropped = false
     print("ItemsService: Gave item", item, "to", player.Name)
 
 	local clip_size

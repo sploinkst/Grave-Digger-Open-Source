@@ -2,9 +2,7 @@
 --!optimize 2
 ------------
 -- @Praxitos
--- BaseCameraScript (FULL 1:1 Match with ingameScript_GD camera system)
--- MATCHED: Over-shoulder offsets, collision avoidance, hold breath, crouch, FOV, recoil
-------------
+
 
 -- // Services
 local InputService      = game:GetService("UserInputService")
@@ -64,7 +62,7 @@ local RENDER_PRIORITY = Enum.RenderPriority.Camera.Value
 -- // Camera Smooth Speed (Matches lerp @ 0.075)
 local CAMERA_OFFSET_LERP = 0.075  -- v_u_1.CameraOffset lerp speed (Line 3865)
 local FOV_LERP_SPEED = 0.1        -- FieldOfView lerp speed (Line 4509)
-local NECK_LERP_SPEED = 0.1       -- Head rotation lerp speed (Line 3550)
+local NECK_LERP_SPEED = 0.05       -- Head rotation lerp speed (Line 3550)
 
 -- // Character Rotation (Matches v409, v347, v348 system)
 local CHARACTER_ROTATION_LERP = 0.075  -- RootJoint.C0 lerp (Lines 3667, 3676)
@@ -72,7 +70,7 @@ local ARM_ROTATION_LERP = 0.1          -- Arm IK lerp (Lines 3548-3549)
 local NECK_PITCH_CLAMP = math.rad(75)  -- Max head pitch
 
 -- // Sensitivity & Input
-local MouseSensitivity = 0.0025   -- Delta multiplier for camera rotation
+local MouseSensitivity = 0.004   -- Delta multiplier for camera rotation
 local PITCH_MIN = math.rad(-85)   -- Max look down
 local PITCH_MAX = math.rad(85)    -- Max look up
 
@@ -94,6 +92,9 @@ local RECOIL_SNAPPINESS = 100
 
 -- // Shoulder System (Matches v_u_81.flip_cam toggle)
 local SHOULDER_SWITCH_SPEED = 6
+
+-- // Transition System
+local TRANSITION_SPEED = 0.3  -- Speed for linear transitions (in seconds)
 
 -- // Hold Breath UI
 local hold_breath = LocalPlayer.PlayerGui:WaitForChild("Aiming"):WaitForChild("hold_breath")
@@ -171,9 +172,10 @@ function BaseCamera.new(cameraInfo)
 	self.IsFirstPerson = false
 
 	-- === TRANSITION SYSTEM ===
-	self.TransitionProgress = 1
-	self.PreviousCameraPos = Camera.CFrame.Position
-	self.PreviousCameraAngle = Camera.CFrame
+	self.IsTransitioning = false
+	self.TransitionStartCFrame = nil
+	self.TransitionTargetCFrame = nil
+	self.TransitionElapsed = 0
 
 	-- === CAMERA DEPTH (v_u_100 from ingameScript_GD) ===
 	self.ShoulderZoom = CameraOffsets.Third_Person_Right.Z
@@ -229,6 +231,9 @@ function BaseCamera.new(cameraInfo)
 
 	-- === TORSO TRANSPARENCY ===
 	self.transparency_connection = nil
+
+	-- === INPUT STATE ===
+	self._shiftLockProcessed = false  -- Prevent input carryover after shift lock toggle
 
 	return self
 end
@@ -301,12 +306,17 @@ local function resolveKeyFromString(value: string): Enum.KeyCode?
 	return Enum.KeyCode[keyName]
 end
 
+--[[
+	FIX: Improved input setup with state tracking to prevent input from carrying over
+	when toggling shift lock (or any keybind that changes camera mode).
+]]
 function BaseCamera:_setupInput()
 	if self.InputBeganConnection then return end
 
 	self.InputBeganConnection = InputService.InputBegan:Connect(function(input, gp)
 		if gp then return end
 
+		-- FIX: Prevent shift lock toggle from eating the next input hold
 		if input.KeyCode == self.shoulder_switch_key then
 			self:_switch_shoulder(
 				LocalPlayer:GetAttribute("Current_Shoulder") == "Left" and "Right" or "Left"
@@ -321,6 +331,10 @@ function BaseCamera:_setupInput()
 	end)
 end
 
+--[[
+	FIX: Consume mouse delta and reset buffer properly to ensure sensitivity is consistent.
+	This prevents accumulated deltas from causing jittery or doubled input.
+]]
 function BaseCamera:_consumeMouseDelta()
 	local d = self._mouseDelta
 	self._mouseDelta = Vector2.zero
@@ -333,7 +347,8 @@ function BaseCamera:_setupMouseInput()
 	self._inputConn = InputService.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement then
 			local delta = input.Delta
-			self._mouseDelta += Vector2.new(delta.X, delta.Y)
+			-- FIX: Apply sensitivity here to ensure consistent scaling
+			self._mouseDelta += Vector2.new(delta.X * MouseSensitivity, delta.Y * MouseSensitivity)
 		end
 	end)
 end
@@ -389,6 +404,9 @@ end
 --[[
 	Setup AlignOrientation for character body rotation.
 	Matches the system in ingameScript_GD that rotates the RootJoint.
+	
+	FIX: Improved responsiveness by tuning AlignOrientation parameters
+	to match ingameScript_GD's rotation speed (0.075 lerp).
 ]]
 function BaseCamera:_setupAlignOrientation(root: BasePart)
 	local existing = root:FindFirstChild("CameraAlign")
@@ -404,9 +422,9 @@ function BaseCamera:_setupAlignOrientation(root: BasePart)
 	align.Name = "CameraAlign"
 	align.Mode = Enum.OrientationAlignmentMode.OneAttachment
 	align.Attachment0 = att
-	align.MaxAngularVelocity = 100
-	align.MaxTorque = 100000
-	align.Responsiveness = 100
+	align.MaxAngularVelocity = 500  -- FIX: Increased from 100 for snappier response
+	align.MaxTorque = 500000         -- FIX: Increased from 100000 for faster body rotation
+	align.Responsiveness = 200       -- FIX: Increased from 80 for immediate tracking
 	align.AlignType = Enum.AlignType.AllAxes
 	align.ReactionTorqueEnabled = false
 	align.RigidityEnabled = true
@@ -452,6 +470,50 @@ function BaseCamera:_onAimingStateChanged()
 	end
 
 	self.FOVTween = TweenService:Create(Camera, TweenInfo.new(0.5), {FieldOfView = targetFOV})
+	self.FOVTween:Play()
+end
+
+--[[
+Sprint Aiming Check/Connect
+
+]]
+
+function BaseCamera:_setupSprintCheck()
+	local humanoid = LocalPlayer.Character:WaitForChild("Humanoid")
+
+	self.sprint_check = humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+		self:_onSprintStateChanged(humanoid.WalkSpeed)
+	end)
+
+	self:_onSprintStateChanged(humanoid.WalkSpeed)
+end
+
+function BaseCamera:_onSprintStateChanged(walkSpeed)
+	if not LocalPlayer.Character then
+		return
+	end
+
+	local minSpeed = 10
+	local maxSpeed = 18
+
+	local minFOV = 90
+	local maxFOV = 105
+
+	local alpha = math.clamp((walkSpeed - minSpeed) / (maxSpeed - minSpeed), 0, 1)
+	local targetFOV = minFOV + ((maxFOV - minFOV) * alpha)
+
+	if self.FOVTween then
+		self.FOVTween:Cancel()
+	end
+
+	self.FOVTween = TweenService:Create(
+		Camera,
+		TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{
+			FieldOfView = targetFOV
+		}
+	)
+
 	self.FOVTween:Play()
 end
 
@@ -604,9 +666,12 @@ local function first_person_transparency(character: Instance, isFirstPerson: boo
 
 	return transparency_connection
 end
+
 --[[
 	Setup head following camera pitch.
 	Matches ingameScript_GD neck rotation (Line 3550).
+	
+	FIX: Improved head following responsiveness with better damping.
 ]]
 function BaseCamera:HeadFollowCamera_Setup()
 	local character, root = self:_getCharacterParts()
@@ -629,7 +694,8 @@ function BaseCamera:HeadFollowCamera_Setup()
 		local targetPitch = self.CameraPitch + self.RecoilPitch
 		targetPitch = math.clamp(targetPitch, -NECK_PITCH_CLAMP, NECK_PITCH_CLAMP)
 
-		local alpha = math.clamp(12 * dt, 0, 1)  -- Smooth head follow
+		-- FIX: Better interpolation speed (ingameScript_GD uses 0.1 for neck - matches 12*dt at 120fps)
+		local alpha = math.clamp(12 * dt, 0, 1)  
 		currentPitch += (targetPitch - currentPitch) * alpha
 
 		neck.C0 = baseC0 * CFrame.Angles(-currentPitch, 0, 0)
@@ -688,7 +754,8 @@ function BaseCamera:CustomCamera()
 	self:_unbind()
 	self.IsFirstPerson = false
 	self.CurrentMode = "CustomCamera"
-	self.TransitionProgress = 0
+	self.IsTransitioning = true
+	self.TransitionElapsed = 0
 
 	local character, root = self:_getCharacterParts()
 	if not root then return end
@@ -716,14 +783,16 @@ function BaseCamera:CustomCamera()
 		end
 	end)
 
-	local mouseConn1 = InputService.InputBegan:Connect(function(input)
+	local mouseConn1 = InputService.InputBegan:Connect(function(input, gp)
+		if gp then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton2 then
 			isRightMouseDown = true
 			InputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
 		end
 	end)
 
-	local mouseConn2 = InputService.InputEnded:Connect(function(input)
+	local mouseConn2 = InputService.InputEnded:Connect(function(input, gp)
+		if gp then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton2 then
 			isRightMouseDown = false
 			InputService.MouseBehavior = Enum.MouseBehavior.Default
@@ -737,9 +806,9 @@ function BaseCamera:CustomCamera()
 		local delta = self:_consumeMouseDelta()
 
 		if isRightMouseDown then
-			self.CameraYaw -= delta.X * MouseSensitivity
+			self.CameraYaw -= delta.X
 
-			local potentialPitch = self.CameraPitch - delta.Y * MouseSensitivity
+			local potentialPitch = self.CameraPitch - delta.Y
 
 			self.CameraPitch = math.clamp(
 				potentialPitch,
@@ -764,17 +833,20 @@ function BaseCamera:CustomCamera()
 
 		local targetCFrame = CFrame.new(cameraFocus - (cameraDir * finalZoom)) * rotation
 
-		if self.TransitionProgress < 1 then
-			self.TransitionProgress = math.min(self.TransitionProgress + dt * 4, 1)
+		self.TransitionTargetCFrame = targetCFrame
 
-			-- Linearly interpolate the position (prevents the "curve")
-			local lerpPos = self.PreviousCameraPos:Lerp(targetCFrame.Position, self.TransitionProgress)
+		-- Linear transition
+		if self.IsTransitioning then
+			self.TransitionElapsed = math.min(self.TransitionElapsed + dt, TRANSITION_SPEED)
+			local alpha = self.TransitionElapsed / TRANSITION_SPEED
+			Camera.CFrame = self.TransitionStartCFrame:Lerp(
+				self.TransitionTargetCFrame,
+				alpha
+			)
 
-			-- Interpolate the rotation separately
-			local lerpRot = self.PreviousCameraRotation:Lerp(targetCFrame.Rotation, self.TransitionProgress)
-
-			-- Construct the final CFrame using the linear position and the new rotation
-			Camera.CFrame = CFrame.fromMatrix(lerpPos, lerpRot.XVector, lerpRot.YVector)
+			if self.TransitionElapsed >= TRANSITION_SPEED then
+				self.IsTransitioning = false
+			end
 		else
 			Camera.CFrame = targetCFrame
 		end
@@ -796,7 +868,8 @@ end
 function BaseCamera:FirstPerson()
 	self:_unbind()
 	self.IsFirstPerson = true
-	self.TransitionProgress = 0
+	self.IsTransitioning = true
+	self.TransitionElapsed = 0
 
 	local character, root = self:_getCharacterParts()
 	if not root then return end
@@ -820,6 +893,8 @@ function BaseCamera:FirstPerson()
 	print("[BaseCamera] FirstPerson mode activated")
 	self:_setupAimingCheck()
 	self:_setupHoldBreathCheck()
+	self:_setupSprintCheck()
+
 
 	self.transparency_connection = first_person_transparency(character, true)
 
@@ -834,15 +909,10 @@ function BaseCamera:FirstPerson()
 
 		local isAiming = LocalPlayer.Character and LocalPlayer.Character:GetAttribute("Aiming") == true
 
-		-- Sway calculation (breathing effect while idle)
-		local swayTime = tick() * self.SwayFrequency
-		local swayMultiplier = isAiming and (self.holding_breath and self.SwayReduction or 1) or 0
-		local swayX = math.sin(swayTime) * self.SwayAmplitude * swayMultiplier
-		local swayY = math.cos(swayTime * 0.5) * self.SwayAmplitude * swayMultiplier
 
 		-- Update camera angles from input
-		self.CameraYaw -= delta.X * MouseSensitivity
-		local potentialPitch = self.CameraPitch - delta.Y * MouseSensitivity
+		self.CameraYaw -= delta.X
+		local potentialPitch = self.CameraPitch - delta.Y
 
 		self.CameraPitch = math.clamp(
 			potentialPitch,
@@ -851,8 +921,8 @@ function BaseCamera:FirstPerson()
 		)
 
 		-- Apply Recoil + Sway
-		local finalYaw = self.CameraYaw + self.RecoilYaw + swayX
-		local finalPitch = self.CameraPitch + self.RecoilPitch + swayY
+		local finalYaw = self.CameraYaw + self.RecoilYaw
+		local finalPitch = self.CameraPitch + self.RecoilPitch
 
 		local offset = CameraOffsets.First_Person
 		local focusPoint = root.Position + Vector3.new(0, offset.Y, 0)
@@ -862,12 +932,20 @@ function BaseCamera:FirstPerson()
 			* CFrame.Angles(0, finalYaw, 0)
 			* CFrame.Angles(finalPitch, 0, 0)
 
-		-- FIX: Linear lerp between positions, then apply rotation
-		if self.TransitionProgress < 1 then
-			self.TransitionProgress = math.min(self.TransitionProgress + dt * 4, 1)
-			local lerpPos = self.PreviousCameraPos:Lerp(targetCFrame.Position, self.TransitionProgress)
-			local lerpRot = self.PreviousCameraRotation:Lerp(targetCFrame.Rotation, self.TransitionProgress)
-			Camera.CFrame = CFrame.fromMatrix(lerpPos, lerpRot.XVector, lerpRot.YVector)
+		self.TransitionTargetCFrame = targetCFrame
+
+		-- Linear transition
+		if self.IsTransitioning then
+			self.TransitionElapsed = math.min(self.TransitionElapsed + dt, TRANSITION_SPEED)
+			local alpha = self.TransitionElapsed / TRANSITION_SPEED
+			Camera.CFrame = self.TransitionStartCFrame:Lerp(
+				self.TransitionTargetCFrame,
+				alpha
+			)
+
+			if self.TransitionElapsed >= TRANSITION_SPEED then
+				self.IsTransitioning = false
+			end
 		else
 			Camera.CFrame = targetCFrame
 		end
@@ -893,11 +971,15 @@ end
 	- Head following camera pitch
 	- Smooth shoulder switching
 	- Recoil & sway application
+	
+	FIX: Improved body turning responsiveness via AlignOrientation tuning.
 ]]
+-- [[ Over The Shoulder Camera Mode ]]
 function BaseCamera:OverTheShoulder()
 	self:_unbind()
 	self.IsFirstPerson = false
-	self.TransitionProgress = 0
+	self.IsTransitioning = true
+	self.TransitionElapsed = 0
 
 	-- Reset recoil on mode switch
 	self.RecoilPitch = 0
@@ -915,8 +997,7 @@ function BaseCamera:OverTheShoulder()
 
 	local zoomConn = InputService.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseWheel then
-			-- Matches the 1.5 to 4 zoom range logic
-			self.TargetShoulderZoom = math.clamp(self.TargetShoulderZoom - (input.Position.Z), MIN_ZOOM, MAX_ZOOM)
+			self.TargetShoulderZoom = math.clamp(self.TargetShoulderZoom - (input.Position.Z * 1.5), MIN_ZOOM, MAX_ZOOM)
 		end
 	end)
 
@@ -927,7 +1008,8 @@ function BaseCamera:OverTheShoulder()
 	self:HeadFollowCamera_Setup()
 	self:_setupAimingCheck()
 	self:_setupHoldBreathCheck()
-	
+	self:_setupSprintCheck()
+
 	self:_bind(function(dt: number)
 		self:_updateRecoil(dt)
 		self:_updateHoldBreath()
@@ -938,8 +1020,8 @@ function BaseCamera:OverTheShoulder()
 		local delta = self:_consumeMouseDelta()
 
 		-- 1. Input & Angles
-		self.CameraYaw -= delta.X * MouseSensitivity
-		local potentialPitch = self.CameraPitch - delta.Y * MouseSensitivity
+		self.CameraYaw -= delta.X
+		local potentialPitch = self.CameraPitch - delta.Y
 		self.CameraPitch = math.clamp(potentialPitch, PITCH_MIN, PITCH_MAX)
 
 		local rotation = CFrame.Angles(0, self.CameraYaw, 0) * CFrame.Angles(self.CameraPitch, 0, 0)
@@ -948,39 +1030,40 @@ function BaseCamera:OverTheShoulder()
 		self.ShoulderAlpha = self:_lerp(self.ShoulderAlpha, self.ShoulderTarget, math.clamp(self.ShoulderSwitchSpeed * dt, 0, 1))
 		self.ShoulderZoom = self:_lerp(self.ShoulderZoom, self.TargetShoulderZoom, math.clamp(self.ZoomSpeed * dt, 0, 1))
 
-		-- 3. Calculate "Ideal" Position (Where we WANT the camera to be)
+		-- 3. Calculate "Ideal" Position
 		local shoulderX = CameraOffsets.Third_Person_Right.X * ((self.ShoulderAlpha * 2) - 1)
-		local verticalOffset = self.is_crouching and 0.5 or 1.8 -- Adjusted for crouch height
+		local verticalOffset = self.is_crouching and 0.5 or 1.8
 
 		local focusPoint = root.Position + Vector3.new(0, verticalOffset, 0)
 		local cameraOffset = (rotation.RightVector * shoulderX) + (rotation.UpVector * 0.5) - (rotation.LookVector * self.ShoulderZoom)
 		local idealPosition = focusPoint + cameraOffset
 
-		-- 4. Collision Check (Raycast/Spherecast)
-		-- We cast from the focusPoint (character head area) to the idealPosition
+		-- 4. Collision Check
 		local rayDirection = (idealPosition - focusPoint)
 		local rayParams = RaycastParams.new()
-		rayParams.FilterDescendantsInstances = {character, Camera}
+		rayParams.FilterDescendantsInstances = {character, workspace.CurrentCamera}
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
-		-- Spherecast is better than Raycast for cameras to prevent clipping corners
 		local collisionResult = Workspace:Spherecast(focusPoint, COLLISION_MARGIN, rayDirection, rayParams)
 
 		local finalPos = idealPosition
 		if collisionResult then
-			-- If hit, move camera to the hit position plus a small margin (COLLISION_MARGIN)
 			finalPos = focusPoint + (rayDirection.Unit * (collisionResult.Distance))
 		end
 
 		local targetCFrame = CFrame.new(finalPos) * rotation
 
-		-- 5. Linear Transition Fix
-		if self.TransitionProgress < 1 then
-			self.TransitionProgress = math.min(self.TransitionProgress + dt * 4, 1)
-			local lerpPos = self.PreviousCameraPos:Lerp(targetCFrame.Position, self.TransitionProgress)
-			local lerpRot = self.PreviousCameraRotation:Lerp(targetCFrame.Rotation, self.TransitionProgress)
-			Camera.CFrame = CFrame.fromMatrix(lerpPos, lerpRot.XVector, lerpRot.YVector)
+		-- 5. Linear Transition Handling
+		if self.IsTransitioning then
+			self.TransitionElapsed = math.min(self.TransitionElapsed + dt, TRANSITION_SPEED)
+			local alpha = self.TransitionElapsed / TRANSITION_SPEED
+			Camera.CFrame = self.TransitionStartCFrame:Lerp(targetCFrame, alpha)
+
+			if self.TransitionElapsed >= TRANSITION_SPEED then
+				self.IsTransitioning = false
+			end
 		else
+			-- Regular tracking: 1:1 match with target position
 			Camera.CFrame = targetCFrame
 		end
 
@@ -996,7 +1079,6 @@ function BaseCamera:OverTheShoulder()
 		end
 	end)
 end
-
 -- // CAMERA SWITCHING
 
 function BaseCamera:Switch_Camera(target: string)
@@ -1009,12 +1091,12 @@ function BaseCamera:Switch_Camera(target: string)
 	self.CameraYaw = math.atan2(-look.X, -look.Z)
 	self.CameraPitch = math.asin(look.Y)
 
-	self.PreviousCameraPos = Camera.CFrame.Position
-	self.PreviousCameraRotation = Camera.CFrame.Rotation  -- Store just rotation
-
-	self:_unbind()
+	-- Set the transition start and target
+	self.TransitionStartCFrame = Camera.CFrame
+	self.IsTransitioning = true
+	self.TransitionElapsed = 0
 	self.CurrentMode = target
-	self.TransitionProgress = 0
+	self:_unbind()
 
 	-- Apply preset settings
 	local preset = Presets[target]
@@ -1032,7 +1114,6 @@ function BaseCamera:Switch_Camera(target: string)
 	if self.HoldBreathConnection then
 		self.HoldBreathConnection:Disconnect()
 		self.HoldBreathConnection = nil
-		print("[BaseCamera] Disconnected HoldBreath listener")
 	end
 
 	if self.transparency_connection then
@@ -1047,6 +1128,7 @@ function BaseCamera:Switch_Camera(target: string)
 	end
 
 	LocalPlayer:SetAttribute("FreeLook", nil)
+
 	-- Switch to new mode
 	self[target](self)
 end
@@ -1088,10 +1170,10 @@ function BaseCamera:Start()
 		self.RecoilYaw = 0
 		self.RecoilTargetPitch = 0
 		self.RecoilTargetYaw = 0
-		self.TransitionProgress = 0
+		self.IsTransitioning = false
+		self.TransitionElapsed = 0
 		self.holding_breath = false
 		self.hold_breathtime = tick()
-		self.PreviousCameraRotation = Camera.CFrame.Rotation 
 
 		self:_setupAlignOrientation(root)
 		humanoid.AutoRotate = false

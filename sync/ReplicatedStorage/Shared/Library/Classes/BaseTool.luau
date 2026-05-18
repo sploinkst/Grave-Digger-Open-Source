@@ -592,7 +592,9 @@ function BaseTool:unequip()
 	self.actual_model = nil
 	if LOCAL_PLAYER.Character then LOCAL_PLAYER.Character:SetAttribute("Aiming", nil) end
 	
-	workspace.CurrentCamera:FindFirstChild("Ammo_Check"):Destroy()
+	if workspace.CurrentCamera:FindFirstChild("Ammo_Check") then
+		workspace.CurrentCamera.Ammo_Check:Destroy()
+	end
 end
 
 --------------------------------------------------------------------------------
@@ -1312,11 +1314,13 @@ function BaseTool:_cacheMotor6D()
 	}
 end
 
+-- Left: -1, 0.5, 0) 0, -90, 0), Right: 0.5, 0.5, 0), 0, -90, 0
+
 function BaseTool:_resetMotor6D()
 	if not self.motor_6d or not self._motorOriginal then return end
 	local motor    = self.motor_6d
-	local targetC0 = self._motorOriginal.C0
-	local targetC1 = self._motorOriginal.C1
+	local targetC0 = CFrame.new(-1, 0.5, 0) * CFrame.Angles(-math.rad(90), 0, 0)
+	local targetC1 = CFrame.new(0.5, 0.5, 0) * CFrame.Angles(-math.rad(90), 0, 0)
 	local snapDist = (self :: any).MOTOR_SNAP_DIST or MOTOR_SNAP_DIST
 	local alpha    = (self :: any).MOTOR_LERP_ALPHA or MOTOR_LERP_ALPHA
 	local conn
