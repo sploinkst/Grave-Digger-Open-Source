@@ -1,6 +1,3 @@
---!strict
---!optimize 2
-------------
 -- @Praxitos
 
 
@@ -23,6 +20,8 @@ BaseCamera.__index = BaseCamera
 local LocalPlayer = PlayerService.LocalPlayer
 local Camera      = Workspace.CurrentCamera
 
+local aiming_ui = LocalPlayer.PlayerGui:WaitForChild("Aiming"):WaitForChild("Scoped_In")
+local cursor_ui = LocalPlayer.PlayerGui.Aiming.Regular_Crosshair
 -- // Over-The-Shoulder Camera Offsets (Matches ingameScript_GD Lines 1695-1699, 3852-3868)
 local CameraOffsets = {
 	Third_Person_Right = {
@@ -106,7 +105,7 @@ local InputData = SettingsData:WaitForChild("Input Options")
 local Shoulder_Switch = InputData:WaitForChild("Shoulder Switch")
 local First_Person = InputData:WaitForChild("First Person")
 local Free_Look = InputData:WaitForChild("Free Look")
-
+local isRightMouseDown = false
 
 local HiddenModelCache = {}
 
@@ -209,7 +208,8 @@ function BaseCamera.new(cameraInfo)
 	-- === FOV TWEENING ===
 	self.FOVTween = nil
 	self.CurrentFOV = FOV_Config.BASE
-
+	self.TargetFOV = FOV_Config.BASE
+	
 	-- === CONNECTIONS ===
 	self.CharacterDeathConnection = nil
 	self.InputBeganConnection = nil
@@ -248,6 +248,52 @@ function BaseCamera:_bind(callback)
 	RunService:BindToRenderStep(RENDER_STEP_NAME, RENDER_PRIORITY, callback)
 end
 
+function BaseCamera:_applyTransition(
+	root: BasePart,
+	targetCFrame: CFrame,
+	dt: number
+)
+	if self.IsTransitioning then
+		self.TransitionElapsed += dt
+
+		local alpha = math.clamp(
+			self.TransitionElapsed / TRANSITION_SPEED,
+			0,
+			1
+		)
+
+		-- Convert to root-local space
+		local startLocal = root.CFrame:ToObjectSpace(self.TransitionStartCFrame)
+		local targetLocal = root.CFrame:ToObjectSpace(targetCFrame)
+
+		-- Extract positions
+		local startPos = startLocal.Position
+		local targetPos = targetLocal.Position
+
+		-- Linear positional interpolation
+		local blendedPos = startPos:Lerp(targetPos, alpha)
+
+		-- Extract rotations only
+		local startRot = startLocal - startPos
+		local targetRot = targetLocal - targetPos
+
+		-- Rotation interpolation
+		local blendedRot = startRot:Lerp(targetRot, alpha)
+
+		-- Rebuild local camera transform
+		local blendedLocal = CFrame.new(blendedPos) * blendedRot
+
+		-- Convert back to world space
+		Camera.CFrame = root.CFrame * blendedLocal
+
+		if alpha >= 1 then
+			self.IsTransitioning = false
+			self.TransitionLocalOffset = nil
+		end
+	else
+		Camera.CFrame = targetCFrame
+	end
+end
 --[[
 	Update recoil state with spring physics.
 	Matches ingameScript_GD recoil application where recoil is added to camera angles.
@@ -315,8 +361,7 @@ function BaseCamera:_setupInput()
 
 	self.InputBeganConnection = InputService.InputBegan:Connect(function(input, gp)
 		if gp then return end
-
-		-- FIX: Prevent shift lock toggle from eating the next input hold
+		
 		if input.KeyCode == self.shoulder_switch_key then
 			self:_switch_shoulder(
 				LocalPlayer:GetAttribute("Current_Shoulder") == "Left" and "Right" or "Left"
@@ -327,6 +372,23 @@ function BaseCamera:_setupInput()
 
 		elseif input.KeyCode == self.free_look_key then
 			self:Switch_Camera(self.CurrentMode == "CustomCamera" and "OverTheShoulder" or "CustomCamera")
+		end
+	end)
+	
+
+	local mouseConn1 = InputService.InputBegan:Connect(function(input, gp)
+		if gp then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			isRightMouseDown = true
+			InputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+		end
+	end)
+
+	local mouseConn2 = InputService.InputEnded:Connect(function(input, gp)
+		if gp then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			isRightMouseDown = false
+			InputService.MouseBehavior = Enum.MouseBehavior.Default
 		end
 	end)
 end
@@ -452,24 +514,61 @@ function BaseCamera:_setupAimingCheck()
 end
 
 function BaseCamera:_onAimingStateChanged()
-	print("Aiming state changed")
-	if not LocalPlayer.Character then return end
+	if not LocalPlayer.Character then
+		return
+	end
 
-	self.is_aiming = LocalPlayer.Character:GetAttribute("Aiming") or false
+	self.is_aiming =
+		LocalPlayer.Character:GetAttribute("Aiming") or false
 
-	-- FOV transitions
+	local humanoid =
+		LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+
+	local walkSpeed =
+		humanoid and humanoid.WalkSpeed or 10
+
+	local minSpeed = 10
+	local maxSpeed = 18
+
+	local minFOV = 90
+	local maxFOV = 105
+
+	local alpha = math.clamp(
+		(walkSpeed - minSpeed) / (maxSpeed - minSpeed),
+		0,
+		1
+	)
+
+	local sprintFOV =
+		minFOV + ((maxFOV - minFOV) * alpha)
+
+	-- PRIORITY:
+	-- Hold Breath > Aim > Sprint
+
+	if self.holding_breath then
+		self.TargetFOV = FOV_Config.HOLD_BREATH
+	elseif self.is_aiming then
+		self.TargetFOV = FOV_Config.AIMING
+	else
+		self.TargetFOV = sprintFOV
+	end
+
 	if self.FOVTween then
 		self.FOVTween:Cancel()
 	end
 
-	local targetFOV = FOV_Config.BASE
-	if self.holding_breath then
-		targetFOV = FOV_Config.HOLD_BREATH
-	elseif self.is_aiming then
-		targetFOV = FOV_Config.AIMING
-	end
+	self.FOVTween = TweenService:Create(
+		Camera,
+		TweenInfo.new(
+			0.25,
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.Out
+		),
+		{
+			FieldOfView = self.TargetFOV
+		}
+	)
 
-	self.FOVTween = TweenService:Create(Camera, TweenInfo.new(0.5), {FieldOfView = targetFOV})
 	self.FOVTween:Play()
 end
 
@@ -499,8 +598,25 @@ function BaseCamera:_onSprintStateChanged(walkSpeed)
 	local minFOV = 90
 	local maxFOV = 105
 
-	local alpha = math.clamp((walkSpeed - minSpeed) / (maxSpeed - minSpeed), 0, 1)
-	local targetFOV = minFOV + ((maxFOV - minFOV) * alpha)
+	local alpha = math.clamp(
+		(walkSpeed - minSpeed) / (maxSpeed - minSpeed),
+		0,
+		1
+	)
+
+	local sprintFOV =
+		minFOV + ((maxFOV - minFOV) * alpha)
+
+	-- PRIORITY:
+	-- Hold Breath > Aim > Sprint
+
+	if self.holding_breath then
+		self.TargetFOV = FOV_Config.HOLD_BREATH
+	elseif self.is_aiming then
+		self.TargetFOV = FOV_Config.AIMING
+	else
+		self.TargetFOV = sprintFOV
+	end
 
 	if self.FOVTween then
 		self.FOVTween:Cancel()
@@ -508,9 +624,13 @@ function BaseCamera:_onSprintStateChanged(walkSpeed)
 
 	self.FOVTween = TweenService:Create(
 		Camera,
-		TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		TweenInfo.new(
+			0.25,
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.Out
+		),
 		{
-			FieldOfView = targetFOV
+			FieldOfView = self.TargetFOV
 		}
 	)
 
@@ -535,27 +655,82 @@ function BaseCamera:_setupHoldBreathCheck()
 end
 
 function BaseCamera:_onHoldBreathStateChanged()
-	if not LocalPlayer.Character then return end
+	if not LocalPlayer.Character then
+		return
+	end
 
-	self.holding_breath = LocalPlayer.Character:GetAttribute("HoldBreathe") or false
+	self.holding_breath =
+		LocalPlayer.Character:GetAttribute("HoldBreathe") or false
+
 	self.hold_breathtime = tick()
 
-	if self.FOVTween then self.FOVTween:Cancel() end
-	if self.FOVTween2 then self.FOVTween2:Cancel() end
+	local humanoid =
+		LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 
-	local isAiming = LocalPlayer.Character:GetAttribute("Aiming")
-	local targetFOV = self.holding_breath and FOV_Config.HOLD_BREATH or (isAiming and FOV_Config.AIMING or FOV_Config.BASE)
-	local targetTransparency = self.holding_breath and 0 or 1
+	local walkSpeed =
+		humanoid and humanoid.WalkSpeed or 10
 
-	self.FOVTween = TweenService:Create(Camera, 
-		TweenInfo.new(HOLD_BREATH_FADE_SPEED, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), 
-		{FieldOfView = targetFOV}
+	local minSpeed = 10
+	local maxSpeed = 18
+
+	local minFOV = 90
+	local maxFOV = 105
+
+	local alpha = math.clamp(
+		(walkSpeed - minSpeed) / (maxSpeed - minSpeed),
+		0,
+		1
 	)
 
-	self.FOVTween2 = TweenService:Create(hold_breath, 
-		TweenInfo.new(HOLD_BREATH_FADE_SPEED, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), 
-		{ImageTransparency = targetTransparency}
+	local sprintFOV =
+		minFOV + ((maxFOV - minFOV) * alpha)
+
+	-- PRIORITY:
+	-- Hold Breath > Aim > Sprint
+
+	if self.holding_breath then
+		self.TargetFOV = FOV_Config.HOLD_BREATH
+	elseif self.is_aiming then
+		self.TargetFOV = FOV_Config.AIMING
+	else
+		self.TargetFOV = sprintFOV
+	end
+
+	local targetTransparency =
+		self.holding_breath and 0 or 1
+
+	if self.FOVTween then
+		self.FOVTween:Cancel()
+	end
+
+	if self.FOVTween2 then
+		self.FOVTween2:Cancel()
+	end
+
+	self.FOVTween = TweenService:Create(
+		Camera,
+		TweenInfo.new(
+			HOLD_BREATH_FADE_SPEED,
+			Enum.EasingStyle.Linear,
+			Enum.EasingDirection.Out
+		),
+		{
+			FieldOfView = self.TargetFOV
+		}
 	)
+
+	self.FOVTween2 = TweenService:Create(
+		hold_breath,
+		TweenInfo.new(
+			HOLD_BREATH_FADE_SPEED,
+			Enum.EasingStyle.Linear,
+			Enum.EasingDirection.Out
+		),
+		{
+			ImageTransparency = targetTransparency
+		}
+	)
+
 	self.FOVTween:Play()
 	self.FOVTween2:Play()
 end
@@ -756,6 +931,7 @@ function BaseCamera:CustomCamera()
 	self.CurrentMode = "CustomCamera"
 	self.IsTransitioning = true
 	self.TransitionElapsed = 0
+	self.TransitionStartCFrame = Camera.CFrame
 
 	local character, root = self:_getCharacterParts()
 	if not root then return end
@@ -768,7 +944,6 @@ function BaseCamera:CustomCamera()
 	self:_resetAllTransparency()
 
 	local currentZoom = MAX_ZOOM 
-	local isRightMouseDown = false
 	local zoomSensitivity = 1
 
 	LocalPlayer:SetAttribute("FreeLook", true)
@@ -778,26 +953,12 @@ function BaseCamera:CustomCamera()
 			currentZoom = math.clamp(
 				currentZoom - (input.Position.Z * zoomSensitivity),
 				MIN_ZOOM,
-				MAX_ZOOM
+				MAX_ZOOM * 1.8
 			)
 		end
 	end)
 
-	local mouseConn1 = InputService.InputBegan:Connect(function(input, gp)
-		if gp then return end
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			isRightMouseDown = true
-			InputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
-		end
-	end)
-
-	local mouseConn2 = InputService.InputEnded:Connect(function(input, gp)
-		if gp then return end
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			isRightMouseDown = false
-			InputService.MouseBehavior = Enum.MouseBehavior.Default
-		end
-	end)
+	
 
 	self:_bind(function(dt)
 		local character, root = self:_getCharacterParts()
@@ -836,25 +997,10 @@ function BaseCamera:CustomCamera()
 		self.TransitionTargetCFrame = targetCFrame
 
 		-- Linear transition
-		if self.IsTransitioning then
-			self.TransitionElapsed = math.min(self.TransitionElapsed + dt, TRANSITION_SPEED)
-			local alpha = self.TransitionElapsed / TRANSITION_SPEED
-			Camera.CFrame = self.TransitionStartCFrame:Lerp(
-				self.TransitionTargetCFrame,
-				alpha
-			)
-
-			if self.TransitionElapsed >= TRANSITION_SPEED then
-				self.IsTransitioning = false
-			end
-		else
-			Camera.CFrame = targetCFrame
-		end
+		self:_applyTransition(root, targetCFrame, dt)
 
 		if self.CurrentMode ~= "CustomCamera" then
 			zoomConn:Disconnect()
-			mouseConn1:Disconnect()
-			mouseConn2:Disconnect()
 			LocalPlayer:SetAttribute("FreeLook", false)
 			self:_unbind()
 		end
@@ -870,6 +1016,7 @@ function BaseCamera:FirstPerson()
 	self.IsFirstPerson = true
 	self.IsTransitioning = true
 	self.TransitionElapsed = 0
+	self.TransitionStartCFrame = Camera.CFrame
 
 	local character, root = self:_getCharacterParts()
 	if not root then return end
@@ -935,20 +1082,7 @@ function BaseCamera:FirstPerson()
 		self.TransitionTargetCFrame = targetCFrame
 
 		-- Linear transition
-		if self.IsTransitioning then
-			self.TransitionElapsed = math.min(self.TransitionElapsed + dt, TRANSITION_SPEED)
-			local alpha = self.TransitionElapsed / TRANSITION_SPEED
-			Camera.CFrame = self.TransitionStartCFrame:Lerp(
-				self.TransitionTargetCFrame,
-				alpha
-			)
-
-			if self.TransitionElapsed >= TRANSITION_SPEED then
-				self.IsTransitioning = false
-			end
-		else
-			Camera.CFrame = targetCFrame
-		end
+		self:_applyTransition(root, targetCFrame, dt)
 
 		-- Rotate character body to face camera direction
 		if humanoid and humanoid.Health > 0 then
@@ -974,12 +1108,12 @@ end
 	
 	FIX: Improved body turning responsiveness via AlignOrientation tuning.
 ]]
--- [[ Over The Shoulder Camera Mode ]]
 function BaseCamera:OverTheShoulder()
 	self:_unbind()
 	self.IsFirstPerson = false
 	self.IsTransitioning = true
 	self.TransitionElapsed = 0
+	self.TransitionStartCFrame = Camera.CFrame
 
 	-- Reset recoil on mode switch
 	self.RecoilPitch = 0
@@ -1053,19 +1187,10 @@ function BaseCamera:OverTheShoulder()
 
 		local targetCFrame = CFrame.new(finalPos) * rotation
 
-		-- 5. Linear Transition Handling
-		if self.IsTransitioning then
-			self.TransitionElapsed = math.min(self.TransitionElapsed + dt, TRANSITION_SPEED)
-			local alpha = self.TransitionElapsed / TRANSITION_SPEED
-			Camera.CFrame = self.TransitionStartCFrame:Lerp(targetCFrame, alpha)
+		self.TransitionTargetCFrame = targetCFrame
 
-			if self.TransitionElapsed >= TRANSITION_SPEED then
-				self.IsTransitioning = false
-			end
-		else
-			-- Regular tracking: 1:1 match with target position
-			Camera.CFrame = targetCFrame
-		end
+		-- 5. Linear Transition Handling
+		self:_applyTransition(root, targetCFrame, dt)
 
 		-- 6. Character Alignment
 		if self._align then
@@ -1091,17 +1216,19 @@ function BaseCamera:Switch_Camera(target: string)
 	self.CameraYaw = math.atan2(-look.X, -look.Z)
 	self.CameraPitch = math.asin(look.Y)
 
-	-- Set the transition start and target
+	-- FIXED: Set transition BEFORE unbinding
 	self.TransitionStartCFrame = Camera.CFrame
 	self.IsTransitioning = true
 	self.TransitionElapsed = 0
 	self.CurrentMode = target
-	self:_unbind()
 
 	-- Apply preset settings
 	local preset = Presets[target]
 	Camera.CameraType = preset.CameraType
-	Camera.FieldOfView = preset.FOV or FOV_Config.BASE
+	Camera.FieldOfView =
+		self.TargetFOV
+		or preset.FOV
+		or FOV_Config.BASE
 	InputService.MouseIconEnabled = preset.MouseVisible or false
 	InputService.MouseBehavior = preset.MouseLocked and Enum.MouseBehavior.LockCenter or Enum.MouseBehavior.Default
 
@@ -1126,10 +1253,14 @@ function BaseCamera:Switch_Camera(target: string)
 	if humanoid then
 		task.defer(function() humanoid.AutoRotate = preset.AutoRotate or false end)
 	end
+	
+	-- // UI handlers
+	cursor_ui.Visible = preset.Cursor_UI or false
 
 	LocalPlayer:SetAttribute("FreeLook", nil)
 
-	-- Switch to new mode
+	-- FIXED: Unbind AFTER setting up transition, then switch to new mode
+	self:_unbind()
 	self[target](self)
 end
 
@@ -1276,7 +1407,7 @@ end
 --[[
 	Apply recoil to the camera.
 	Called by weapon scripts to add bullet kick.
-	Matches Util.applyRecoil() system.
+	Matches Util.applyaRecoil() system.
 ]]
 function BaseCamera:ApplyRecoil(vertical: number, horizontal: number)
 	self.RecoilTargetPitch += vertical
