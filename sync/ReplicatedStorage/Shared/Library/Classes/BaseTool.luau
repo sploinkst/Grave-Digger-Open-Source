@@ -604,7 +604,7 @@ end
 -- Returns true if any exclusive action is running.
 -- Subclasses can override to include custom flags.
 function BaseTool:_isBusy(): boolean
-	return self.Firing or self.Reloading or self.Cycling or self.Alting or self.Spinning
+	return self.Firing or self.Reloading or self.Cycling or self.Alting or self.Spinning or self.RegisteredAnimations and self.RegisteredAnimations.Draw.IsPlaying or self.Checking 
 end
 
 function BaseTool:_if_sprinting(): boolean
@@ -823,6 +823,7 @@ function BaseTool:aim()
 	if self:_if_sprinting() then return end
 	if self.Aiming or self:_isBusy() then return end
 	if not self.RegisteredAnimations.Aim then return end
+	if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
 	
 	if self.Equipping then 
 		return 	
@@ -839,9 +840,9 @@ function BaseTool:aim()
 	local anims = self.RegisteredAnimations
 	if not anims then return end
 	self:_killAimTracks()
-	if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT) end
+	if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT * 1.5) end
 	local aimTrack = self:_aimTrack()
-	if aimTrack then aimTrack:Play(CUT) end
+	if aimTrack then aimTrack:Play(CUT * 1.5) end
 	local char = LOCAL_PLAYER.Character
 	if char then char:SetAttribute("Aiming", true) end
 
@@ -852,6 +853,12 @@ function BaseTool:aim()
 
 	LOCAL_PLAYER:GetAttributeChangedSignal("Jumping"):Connect(function()
 		if LOCAL_PLAYER:GetAttribute("Jumping") then
+			self:endAiming()
+		end
+	end)
+	
+	LOCAL_PLAYER:GetAttributeChangedSignal("FreeLook"):Connect(function()
+		if LOCAL_PLAYER:GetAttribute("FreeLook") then
 			self:endAiming()
 		end
 	end)
@@ -1673,10 +1680,10 @@ end
 --------------------------------------------------------------------------------
 
 function BaseTool:ammo_check()
-	if not self.RegisteredAnimations or not self.RegisteredAnimations.Check then return end
-	if self:_isBusy() then return end
-	if self.Checking == true then return end
-	if self.Check_Delayed == true then return end
+	if not self.RegisteredAnimations or not self.RegisteredAnimations.Check then print("No check anim.") return end
+	if self:_isBusy() then print("Is busy") return end
+	if self.Checking == true then print("Is checking") return end
+	if self.Check_Delayed == true then print("Check delayed") return end
 
 	self.Checking = true
 	self.Check_Delayed = true
@@ -1692,7 +1699,9 @@ function BaseTool:ammo_check()
 
 	self:_stopAllExcept()
 	self.RegisteredAnimations.Check:Play()
-
+	self.RegisteredAnimations.Check:AdjustWeight(1)
+	self.RegisteredAnimations.Check.Stopped:Wait()
+	
 	self.Checking = false
 	local hrp = LOCAL_PLAYER.Character.HumanoidRootPart
 	ammo_check_part.Position = self.actual_model:FindFirstChild(self.MuzzlePartName).Position + self.actual_model:FindFirstChild(self.MuzzlePartName).CFrame.RightVector * 2 + Vector3.new(0, 1.5, 0)
@@ -1711,11 +1720,9 @@ function BaseTool:ammo_check()
 
 	self:_restoreBase()
 
-	if self.Check_Delayed and self.Check_Delay then
-		task.delay(self.Check_Delay, function()
-			self.Check_Delayed = false
-		end)
-	end
+	task.delay(self.Check_Delay or 1, function()
+		self.Check_Delayed = false
+	end)
 end
 
 
