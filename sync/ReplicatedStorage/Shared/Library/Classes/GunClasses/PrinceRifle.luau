@@ -278,6 +278,8 @@ function PrinceRifle:cycle()
 end
 
 function PrinceRifle:fire()
+	if self.Checking then return end
+	
 	if self.Capacity <= 0 then
 		self:reload()
 		return
@@ -369,6 +371,7 @@ end
 
 function PrinceRifle:melee()
 	if self.Meleeing then return end
+	if game.Players.LocalPlayer:GetAttribute("FreeLook") then return end
 	self.Meleeing = true
 	local random_animation = math.random(1, 2)
 
