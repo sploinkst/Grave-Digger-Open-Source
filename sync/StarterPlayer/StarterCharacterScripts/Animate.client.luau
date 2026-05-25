@@ -35,6 +35,8 @@ local animations_table = {
 	animations_folder.Jumping.Jump_Arms,
 	animations_folder.Jumping.Jump_Land,
 	animations_folder.Jumping.Jump_MidAir,
+	
+	animations_folder.Jumping.Climb,
 
 	animations_folder.Sprint.Sprint,
 	animations_folder.Sprint.Sprint_Lean,
@@ -62,7 +64,7 @@ local current_state = nil
 
 local is_airborne = false
 local crouching = false
-
+local is_climbing = false
 -- hip system
 local left_hip: Motor6D?
 local right_hip: Motor6D?
@@ -73,6 +75,7 @@ local hip_adjustment_speed = 0.12
 
 local left_hip_original_c1: CFrame?
 local right_hip_original_c1: CFrame?
+local climb_connection
 
 local ORIGINAL_HIP_HEIGHT = humanoid.HipHeight
 
@@ -81,17 +84,29 @@ local ORIGINAL_HIP_HEIGHT = humanoid.HipHeight
 --------------------------------------------------
 local function load_animations()
 	for _, animation in pairs(animations_table) do
-		if not animation then continue end
+		if not animation then
+			continue
+		end
 
 		local track = animator:LoadAnimation(animation)
 
-		if string.find(animation.Name, "Jump") or string.find(animation.Name, "Sprint") then
+		-- PRIORITIES
+		if animation.Name == "Climb" then
 			track.Priority = Enum.AnimationPriority.Action
+
+		elseif string.find(animation.Name, "Jump")
+			or string.find(animation.Name, "Sprint") then
+
+			track.Priority = Enum.AnimationPriority.Action
+
 		else
 			track.Priority = Enum.AnimationPriority.Movement
 		end
 
-		if animation.Name == "Jump_MidAir" then
+		-- LOOPING
+		if animation.Name == "Jump_MidAir"
+			or animation.Name == "Climb" then
+
 			track.Looped = true
 		end
 
@@ -231,7 +246,7 @@ local function play_base(name: string, fade: number?, reversed: boolean?, speed:
 	current_base_name = name
 end
 
-local function play_overlay(name: string, fade: number?)
+local function play_overlay(name: string, fade: number?, speed: number?)
 	local track = loaded_animations[name]
 	if not track then return end
 
@@ -241,6 +256,9 @@ local function play_overlay(name: string, fade: number?)
 
 	track:Play(fade or 0.12)
 	active_overlays[name] = track
+	if speed then
+		track:AdjustSpeed(speed)
+	end
 end
 
 local function stop_overlay(name: string, fade: number?)
@@ -264,7 +282,14 @@ end
 -- MOVEMENT 
 --------------------------------------------------
 local function update_movement(speed: number)
-	if is_airborne then return end
+	-- HARD BLOCKS
+	if is_airborne then
+		return
+	end
+
+	if is_climbing then
+		return
+	end
 
 	local moving = humanoid.MoveDirection.Magnitude > 0.1 and speed > 1
 
@@ -275,40 +300,46 @@ local function update_movement(speed: number)
 			if crouching then
 				play_base("Crouch_Idle", nil, nil, 0.1)
 				set_target_hip_offset(-0.85)
+
 				clear_overlays()
 				play_overlay("Crouch_Arms")
+
 			else
 				play_base("Stand_Idle", nil, nil, 0.1)
 				set_target_hip_offset(0)
+
 				clear_overlays()
 			end
 		end
+
 		return
 	end
-	
+
 	local freelook = local_player:GetAttribute("FreeLook") == true
 
-	
+	-- CROUCH
 	if crouching then
 		if set_state("CROUCH_WALK") then
 			set_target_hip_offset(-0.85)
+
 			clear_overlays()
 			play_overlay("Crouch_Arms")
 		end
 
-		-- ALWAYS update animation
 		if freelook then
 			play_base("Walk_Forward")
 		else
 			play_base(get_crouch_animation())
 		end
+
 		return
 	end
-	
-	if speed < 13 then
 
+	-- WALK
+	if speed < 13 then
 		if set_state("WALK") then
 			set_target_hip_offset(0)
+
 			clear_overlays()
 		end
 
@@ -317,42 +348,37 @@ local function update_movement(speed: number)
 		else
 			play_base(get_walk_animation())
 		end
+
 		return
 	end
 
-	-- // lean + walkspeed slow speedup
+	-- TRANSITION
 	if speed >= 14 and speed <= 17 then
 		play_overlay("Sprint_Lean", 0.15)
-		play_base("Walk_Forward", 0, 0, 1 - speed / 100)
+		play_base("Walk_Forward", 0, nil, 1 - speed / 100)
+
+		return
 	end
-	
+
 	-- SPRINT
 	if speed >= 17 then
 		if set_state("SPRINT") then
+			set_target_hip_offset(0)
+
 			clear_overlays()
+
 			play_base("Sprinting_Full", 0.15)
-			play_overlay(sprint_arms_overlay(), 0.15)
+
+			if not character:GetAttribute("No_Sprint_Animation") then
+				play_overlay(sprint_arms_overlay(), 0.15)
+			end
+
 			play_overlay("Sprint_Lean", 0.15)
-			
+
 			playing_sprint_arms = true
-			
-			character:GetAttributeChangedSignal("Sprint_Animation"):Connect(function()
-				if character:GetAttribute("Sprint_Animation") then
-					stop_overlay("Sprint_Arms")
-					play_overlay(sprint_arms_overlay())
-				end
-				
-				if character:GetAttribute("Sprint_Animation") == nil and current_state == "SPRINT" then
-					print("Sprint_Animation")
-					clear_overlays()
-					play_base("Sprinting_Full")
-					play_overlay("Sprint_Lean")
-					play_overlay("Sprint_Arms")
-				else
-					clear_overlays()
-				end
-			end)
 		end
+
+		return
 	end
 end
 
@@ -419,36 +445,119 @@ end)
 -- HUMANOID STATES
 --------------------------------------------------
 humanoid.StateChanged:Connect(function(_, new_state)
+
+	-- JUMP
 	if new_state == Enum.HumanoidStateType.Jumping then
 		is_airborne = true
-		--clear_overlays()
-		
+		is_climbing = false
+
+		if current_base_name == "Climb" and active_base then
+			active_base:Stop(0.1)
+			active_base = nil
+			current_base_name = nil
+		end
+
 		if not if_tool_equipped() then
 			play_overlay("Jump_Arms", 0.2)
 		end
 
-	elseif new_state == Enum.HumanoidStateType.Freefall then
+		return
+	end
+
+	-- FREEFALL
+	if new_state == Enum.HumanoidStateType.Freefall then
 		is_airborne = true
+		is_climbing = false
+
+		if current_base_name == "Climb" and active_base then
+			active_base:Stop(0.1)
+			active_base = nil
+			current_base_name = nil
+		end
+
 		play_overlay("Jump_MidAir", 0.2)
 
-	elseif new_state == Enum.HumanoidStateType.Landed then
+		return
+	end
+
+	-- LANDED
+	if new_state == Enum.HumanoidStateType.Landed then
 		is_airborne = false
+		is_climbing = false
+
 		stop_overlay("Jump_MidAir")
 		stop_overlay("Jump_Arms")
+
 		play_overlay("Jump_Land")
+
+		current_state = nil
+		return
+	end
+
+	-- CLIMBING
+	if new_state == Enum.HumanoidStateType.Climbing then
+
+		if is_climbing then
+			return
+		end
+
+		is_climbing = true
+		is_airborne = false
+
+		current_state = "CLIMB"
+
+		clear_overlays()
+
+		if active_base then
+			active_base:Stop(0.1)
+		end
+
+		active_base = nil
+		current_base_name = nil
+
+		play_base("Climb", 0.1, nil, 0.5)
+		play_overlay("Walk_Forward")
+		
+		climb_connection = run_service.RenderStepped:Connect(function()
+
+			if not active_base then
+				return
+			end
+
+			local verticalVelocity = math.abs(character.HumanoidRootPart.AssemblyLinearVelocity.Y)
+
+			if verticalVelocity < 0.05 then
+				active_base:AdjustSpeed(0)
+				loaded_animations["Walk_Forward"]:AdjustSpeed(0)
+			else
+				active_base:AdjustSpeed(0.5)
+				loaded_animations["Walk_Forward"]:AdjustSpeed(0.5)
+			end
+		end)
+
+		return
+	end
+
+	if is_climbing then
+		is_climbing = false
+		climb_connection:Disconnect()
+
+		if current_base_name == "Climb" and active_base then
+			active_base:Stop(0.1)
+			active_base = nil
+			current_base_name = nil
+		end
+
+		current_state = nil
 	end
 end)
 
---------------------------------------------------
--- DEATH
---------------------------------------------------
+-- // Died
 humanoid.Died:Connect(function()
 	if active_base then active_base:Stop(0) end
 	clear_overlays()
 end)
 
---------------------------------------------------
--- INIT
---------------------------------------------------
+--// Init
 load_animations()
 initialize_hips()
