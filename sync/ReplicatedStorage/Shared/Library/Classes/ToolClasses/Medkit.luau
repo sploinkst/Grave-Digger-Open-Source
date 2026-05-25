@@ -41,9 +41,10 @@ function Medkit.new(info: { name: string }): Medkit
 	self.Aiming = false
 	self.locked_in = false
 
+	self.Checking = false
 	self.original_walkspeed = nil
 
-	self.item_image = "rbxassetid://17496049481"
+	self.item_image = "rbxassetid://17778483663"
 	self.Designation = "Medkit"
 
 	self.holster_reference = Holster_Folder and Holster_Folder:FindFirstChild("MedkitHolster")
@@ -377,10 +378,14 @@ function Medkit:_begin_heal_loop(target: Model?)
 end
 
 function Medkit:ammo_check()
+	if self.Checking then return end
+	
+	self.Checking = true
 	print("[MEDKIT] Performing Health Check animation.")
 	local health = self.Character.Humanoid.Health
 	self.RegisteredAnimations.Check:Play()
 	self.RegisteredAnimations.Check.Stopped:Wait()
+	self.Checking = false
 
 	if health >= 200 then
 		self:notify("I'm all good.")
