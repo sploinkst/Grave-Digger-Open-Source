@@ -309,7 +309,7 @@ local function sprintLoop()
 			local sprintSpeed = lerp(0, MaxSpeed - BaseSpeed, t)
 			Humanoid.WalkSpeed = BaseSpeed + sprintSpeed
 
-			if t >= 1 then
+			if t >= 0.8 then
 				setSprintAttribute(true)
 			end
 		else
