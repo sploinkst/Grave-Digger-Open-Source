@@ -499,7 +499,6 @@ function PrinceRifle:_on_equip()
 	self:_initShoulderTracking()
 
 	local char = game.Players.LocalPlayer.Character
-	char:SetAttribute("Sprint_Animation", "PrinceRifle")
 
 	-- Setup FastCast
 	self:_setupFastCast(FxFolder, function(cast, result, velocity)
