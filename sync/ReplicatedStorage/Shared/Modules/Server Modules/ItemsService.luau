@@ -100,11 +100,13 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 				object_bullet_clone.Parent = player.Character["Right Arm"]
 				
 				local motor6d = Instance.new("Motor6D")
-				motor6d.Parent = player.Character["Right Arm"]
-				motor6d.Part0 = player.Character["Right Arm"]
+				
+				
+				motor6d.Parent = player.Character[object.Round_Target_Part] or player.Character["Right Arm"]
+				motor6d.Part0 =  player.Character[object.Round_Target_Part] or player.Character["Right Arm"]
 				motor6d.Part1 = object_bullet_clone
 				
-				motor6d.C1 = CFrame.new(0, 0, -0.15)
+				motor6d.C1 = CFrame.new(0, 0, 0)
 				motor6d.Name = "Round_Motor6d"
 			end
 		end)

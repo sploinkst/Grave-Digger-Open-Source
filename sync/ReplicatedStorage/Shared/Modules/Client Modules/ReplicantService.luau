@@ -875,6 +875,7 @@ function module.connect_sfx(...)
 end
 
 
+
 function module.start_module()
 	rebind_ui()
 
