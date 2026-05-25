@@ -24,6 +24,10 @@ local status_service = require(script.Parent.StatusService)
 
 local item_service = require(script.Parent.ItemsService)
 
+local stumble_animation = ReplicatedStorage:WaitForChild("Shared").Assets.Animations.Character.Miscellanous.Stumble
+
+-- // funcs
+
 local function getModelFromInstance(instance: Instance)
 	if not instance then return nil end
 	if instance:IsA("Model") then
@@ -85,9 +89,9 @@ function module.check_for_helmet(character)
 				-- // check to see if its welded, if it isnt welded assume it was knocked off
 				if part_1.Parent:FindFirstChild("Head") then
 					if part_1.Parent.Head:FindFirstChild("Helmet") then
-						return part_1.Parent
+						return part_1.Parent, true
 					else
-						return false
+						return part_1.Parent, false
 					end
 				end
 				
@@ -102,64 +106,80 @@ function module.check_for_helmet(character)
 	end
 end
 
-function module.pop_helmet(character, helmet_model)
+function module.stumble_player(character)
+	character.Humanoid.WalkSpeed = 0
+	
+	local loaded_animation = character:FindFirstChildOfClass("Humanoid"):LoadAnimation(stumble_animation)
+	loaded_animation:Play()
+	
+	loaded_animation.Stopped:Connect(function()
+		character.Humanoid.WalkSpeed = 10
+	end)
+end
+
+function module.pop_helmet(character, helmet_model, knockable: boolean)
 	local Debris = game:GetService("Debris")
 
-	local head_part = helmet_model:FindFirstChild("Head")
-	if not head_part then
-		warn("Helmet head part missing")
-		return
-	end
-
-	for _, child in helmet_model:GetChildren() do
-		if not child:GetAttribute("Knock") then
-			continue
+	if knockable then
+		local head_part = helmet_model:FindFirstChild("Head")
+		if not head_part then
+			warn("Helmet head part missing")
+			return
 		end
 
-		if not child:IsA("BasePart") then
-			continue
+		for _, child in helmet_model:GetChildren() do
+			if not child:GetAttribute("Knock") then
+				continue
+			end
+
+			if not child:IsA("BasePart") then
+				continue
+			end
+
+			print(child.Name, "is marked to be knocked...")
+
+			local reference_weld = head_part:FindFirstChild(child.Name)
+
+			if not reference_weld then
+				print("No reference weld found for:", child.Name)
+				continue
+			end
+
+			reference_weld:Destroy()
+
+			print("Weld destroyed for:", child.Name)
+
+			child.CanCollide = true
+			child.Anchored = false
+
+			-- Randomized pop direction
+			local randomDirection = Vector3.new(
+				math.random(-100, 100) / 100,
+				1,
+				math.random(-100, 100) / 100
+			).Unit
+
+			-- Apply instant velocity
+			local velocity = Instance.new("LinearVelocity")
+			velocity.Attachment0 = child:FindFirstChildOfClass("Attachment") or Instance.new("Attachment", child)
+			velocity.MaxForce = math.huge
+			velocity.VectorVelocity = randomDirection * 15
+			velocity.RelativeTo = Enum.ActuatorRelativeTo.World
+			velocity.Parent = child
+
+			-- Add some spin
+			child.AssemblyAngularVelocity = Vector3.new(
+				math.random(-20, 20),
+				math.random(-20, 20),
+				math.random(-20, 20)
+			)
+
+			-- Remove velocity object shortly after
+			Debris:AddItem(velocity, 0.15)
 		end
-
-		print(child.Name, "is marked to be knocked...")
-
-		local reference_weld = head_part:FindFirstChild(child.Name)
-
-		if not reference_weld then
-			print("No reference weld found for:", child.Name)
-			continue
-		end
-
-		reference_weld:Destroy()
-
-		print("Weld destroyed for:", child.Name)
-
-		child.CanCollide = true
-		child.Anchored = false
-
-		-- Randomized pop direction
-		local randomDirection = Vector3.new(
-			math.random(-100, 100) / 100,
-			1,
-			math.random(-100, 100) / 100
-		).Unit
-
-		-- Apply instant velocity
-		local velocity = Instance.new("LinearVelocity")
-		velocity.Attachment0 = child:FindFirstChildOfClass("Attachment") or Instance.new("Attachment", child)
-		velocity.MaxForce = math.huge
-		velocity.VectorVelocity = randomDirection * 15
-		velocity.RelativeTo = Enum.ActuatorRelativeTo.World
-		velocity.Parent = child
-
-		-- Add some spin
-		child.AssemblyAngularVelocity = Vector3.new(
-			math.random(-20, 20),
-			math.random(-20, 20),
-			math.random(-20, 20)
-		)
-
-		-- Remove velocity object shortly after
-		Debris:AddItem(velocity, 0.15)
+	else
+		-- // force stumble character
+		module.stumble_player(character)
 	end
 end
 
@@ -246,10 +266,10 @@ function module.start_module()
 
 		-- // Headshot / helmet logic
 		if hitPlayer and instance.Name == "Head" then
-			local helmet = module.check_for_helmet(hitCharacter)
+			local helmet, knockable = module.check_for_helmet(hitCharacter)
 
 			if helmet then
-				module.pop_helmet(hitCharacter, helmet)
+				module.pop_helmet(hitCharacter, helmet, knockable)
 
 				status_service.give_status(hitPlayer, "ConcussionStatus")
 
