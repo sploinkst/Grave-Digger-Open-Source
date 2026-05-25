@@ -5,6 +5,7 @@ local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService        = game:GetService("RunService")
 local UserInputService  = game:GetService("UserInputService")
+local TweenService		= game:GetService("TweenService")
 
 local Types            = require(script.Parent.Parent.Types)
 local utilities_module = require(
@@ -171,6 +172,8 @@ function BaseTool.new(BaseToolCreateInfo: Types.BaseToolCreateInfo): BaseTool
 	-- FastCast (initialized by subclass)
 	self.Caster         = nil
 	self.CasterBehavior = nil
+	
+	self.keyframe_connections = {}
 
 	return self
 end
@@ -452,6 +455,7 @@ function BaseTool:equip()
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
 
+	character:SetAttribute("Sprint_Animation", self.className)
 	humanoid:EquipTool(self.tool)
 	if self._on_equip then
 		self:_on_equip() 
@@ -482,7 +486,6 @@ function BaseTool:equip()
 
 	character:GetAttributeChangedSignal("Sprinting"):Connect(function()
 		if character:GetAttribute("Sprinting") == true then
-			task.wait(1)
 			self:_stopAllExcept()
 		else
 			if not self.Equipped then return end
@@ -502,23 +505,86 @@ function BaseTool:equip()
 	end)
 	
 	
-	-- Keyframe-driven round visibility
+	-- 
 	for _, track in pairs(self.RegisteredAnimations) do
-		if not self.SoundFolder then return end
-		
 		if not track:IsA("AnimationTrack") then continue end
-		track.KeyframeReached:Connect(function(keyframe)
+		
+		table.insert(self.keyframe_connections, track.KeyframeReached:Connect(function(keyframe)
+			print("Keyframe reached:", keyframe)
 			local rightArm = LOCAL_PLAYER.Character:FindFirstChild("Right Arm")
 			if not rightArm then return end
 			local round = rightArm:FindFirstChild(self.Round.Name)
-			if not round then return end
+			if not round then warn("No self.Round found in the Right_Arm")		return end
+			
+			
 			if keyframe == "vfx_hand_shell_visible" then
-				round.Transparency = 0
+				round.Transparency = 0	
 			elseif keyframe == "vfx_hand_shell_invisible" then
 				round.Transparency = 1
-			end
+			elseif keyframe == "vfx_eject_casing" then
+				local casing = self.actual_model:FindFirstChild(self.className .. "_Ejection")
+				
+				if not casing then warn("[BASETOOL] vfx_eject_casing called but no recorded casing for:", self.className) end
+				
+				BaseTool:emit_casing(casing,casing.CFrame)
+				
+			elseif keyframe == "vfx_cylinder_rotate_other" then
+				local clylinder_motor6d: Motor6D =
+					self.actual_model
+					:FindFirstChild(self.className .. "_Middle")
+					:FindFirstChild(self.className .. "_Cylinder")
+				
+				local currentC0 = clylinder_motor6d.C0
 
-			if keyframe:sub(1,4) == "sfx_" then
+				-- calculates the rotated degrees
+				if not self.cylinder_rotation_degree then
+					self.cylinder_rotation_degree = (360/self.Max_Capacity)
+				end
+				
+				local newC0 = currentC0 * CFrame.Angles(math.rad(self.cylinder_rotation_degree), 0, 0)
+				if self.cylinder_rotation then
+					self.cylinder_rotation += 1
+				end
+			
+				local tween = TweenService:Create(
+					clylinder_motor6d,
+					TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+					{ C0 = newC0 }
+				)
+
+				tween:Play()
+
+				print("rotated the cylinder")
+			elseif keyframe == "vfx_cylinder_load" then
+				local cylinder = self.actual_model:FindFirstChild(self.className .."_Cylinder")
+				local round_reference = cylinder:FindFirstChild(self.className .. "_Round" .. self.cylinder_rotation)
+				round_reference.Transparency = 0
+				round_reference.bullet.Transparency = 0
+				print("loaded a round", round_reference.Name)
+				
+			elseif keyframe == "vfx_cylinder_empty" then
+				local cylinder = self.actual_model:FindFirstChild(self.className .."_Cylinder")
+				local ejector = cylinder:FindFirstChild(self.className .. "_Ejector")
+				
+				for _, round in pairs(cylinder:GetChildren()) do
+					if not round:IsA("MeshPart") or not string.find(round.Name, "Round") then
+						continue
+					end
+					if round.Transparency == 1 then continue end
+					
+					round.Transparency = 1
+					round.bullet.Transparency = 1
+					round.CanCollide = true
+					
+					-- // direction is bacckwards of where the round is facing, and slightly up
+					local direction = round.CFrame.RightVector * math.random(0, 8)
+					
+					BaseTool:emit_casing(round,round.CFrame, direction)
+				end
+				
+				self.cylinder_rotation = 1
+				
+			elseif keyframe:sub(1,4) == "sfx_" then
 				local soundName = keyframe:sub(5)
 				local sound = self.SoundFolder:FindFirstChild(soundName)
 				if sound then
@@ -546,7 +612,7 @@ function BaseTool:equip()
 					warn("No GSFX matches found for:", baseName)
 				end
 			end
-		end)
+		end))
 	end
 	
 	
@@ -594,6 +660,13 @@ function BaseTool:unequip()
 	
 	if workspace.CurrentCamera:FindFirstChild("Ammo_Check") then
 		workspace.CurrentCamera.Ammo_Check:Destroy()
+	end
+	
+	if #self.keyframe_connections > 0 then
+		for _, connection in pairs(self.keyframe_connections) do
+			connection:Disconnect()
+		end
+		self.keyframe_connections = {}
 	end
 end
 
@@ -770,6 +843,14 @@ function BaseTool:_restoreBaseDeferred()
 	task.defer(function()
 		self:_restoreBase()
 	end)
+end
+
+function BaseTool:_set_sprint_arms(boolean)
+	if boolean then
+		LOCAL_PLAYER.Character:SetAttribute("No_Sprint_Animation", true)
+	else
+		LOCAL_PLAYER.Character:SetAttribute("No_Sprint_Animation", nil)
+	end
 end
 
 --------------------------------------------------------------------------------
@@ -1293,11 +1374,11 @@ function BaseTool:_stopAimTracking()
 		local resetInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 		if leftShoulder and self._restLeftC0 then
-			game:GetService("TweenService"):Create(leftShoulder, resetInfo, {C0 = self._restLeftC0}):Play()
+			TweenService:Create(leftShoulder, resetInfo, {C0 = self._restLeftC0}):Play()
 		end
 
 		if rightShoulder and self._restRightC0 then
-			game:GetService("TweenService"):Create(rightShoulder, resetInfo, {C0 = self._restRightC0}):Play()
+			TweenService:Create(rightShoulder, resetInfo, {C0 = self._restRightC0}):Play()
 		end
 	end
 	task.delay(0.15, function()
@@ -1685,6 +1766,7 @@ function BaseTool:ammo_check()
 	if self.Checking == true then print("Is checking") return end
 	if self.Check_Delayed == true then print("Check delayed") return end
 
+	self:_set_sprint_arms(true)
 	self.Checking = true
 	self.Check_Delayed = true
 	local ammo_check_part, ammo_check_utils
@@ -1697,11 +1779,20 @@ function BaseTool:ammo_check()
 		ammo_check_utils = require(workspace.CurrentCamera.Ammo_Check.Utils)
 	end
 
-	self:_stopAllExcept()
-	self.RegisteredAnimations.Check:Play()
+	-- Stop all animations at layer 0 and 1 (Hold, Aim, Fire, etc.)
+	self:_stopLayer(1)
+	self:_killAimTracks()
+
+	-- Explicitly stop Hold to prevent it from playing during Check
+	if self.RegisteredAnimations.Hold and self.RegisteredAnimations.Hold.IsPlaying then
+		self.RegisteredAnimations.Hold:Stop(CUT)
+	end
+
+	-- Play Check animation using layer-aware system (layer 2)
 	self.RegisteredAnimations.Check:AdjustWeight(1)
+	self:_playAnim("Check")
 	self.RegisteredAnimations.Check.Stopped:Wait()
-	
+
 	self.Checking = false
 	local hrp = LOCAL_PLAYER.Character.HumanoidRootPart
 	ammo_check_part.Position = self.actual_model:FindFirstChild(self.MuzzlePartName).Position + self.actual_model:FindFirstChild(self.MuzzlePartName).CFrame.RightVector * 2 + Vector3.new(0, 1.5, 0)
@@ -1719,6 +1810,7 @@ function BaseTool:ammo_check()
 	print("Bar Size will be:", self.Max_Capacity * 3, self.tool:FindFirstChild("Reserve_Ammo").Value, self.tool:FindFirstChild("Reserve_Ammo").Value / (self.Max_Capacity * 3))
 
 	self:_restoreBase()
+	self:_set_sprint_arms(false)
 
 	task.delay(self.Check_Delay or 1, function()
 		self.Check_Delayed = false
@@ -1791,6 +1883,31 @@ function BaseTool:bullet_hole(position: Vector3, normal: Vector3)
 	clone.CFrame = CFrame.new(position, position + normal)
 	clone.Parent = folder
 	texture_event:FireServer(FX_BULLET_HOLE, position, normal, folder)
+end
+
+function BaseTool:emit_casing(casing: Part, origin: CFrame, direction: Vector3)
+	local casing_clone = casing:Clone()
+	casing_clone.Parent = workspace
+	casing_clone.CFrame = origin
+	casing_clone.Anchored = false
+	casing_clone.CanCollide = true
+	casing_clone.Transparency = 0
+	
+	
+	-- applies the wanted velocity, or, applies the base velocity for a casing leaving to the right
+	local direction = direction or origin.LookVector * math.random(10, 15) + Vector3.new(0, math.random(10, 15), 0)
+
+	local bv = Instance.new("BodyVelocity")
+	bv.Velocity = direction
+	bv.Parent = casing_clone
+	
+	casing_clone.AssemblyAngularVelocity = Vector3.new(math.random(-10, 10), math.random(-10, 10), math.random(-10, 10))
+	
+	task.delay(0.1, function()
+		bv:Destroy()
+	end)
+	
+	print("casing emitted")
 end
 
 --------------------------------------------------------------------------------
