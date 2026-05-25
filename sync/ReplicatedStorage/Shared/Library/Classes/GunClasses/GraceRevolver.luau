@@ -129,6 +129,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.holster_reference = Holster_Folder and Holster_Folder:FindFirstChild("GraceRevolverHolster")
 	self.model_reference   = Tool_Folder:FindFirstChild("GraceRevolver")
 	self.Round             = Assets.Guns.Rounds.GraceRevolver_Round
+	self.Round_Target_Part = "Left Arm"
 
 	self.motor_6d_data = {
 		Parent = "Right Arm",
@@ -159,6 +160,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 
 		Reload_Start = Anim_Folder.GraceRevolver_Reload_start,
 		Reload_Loop  = Anim_Folder.GraceRevolver_Reload_loop,
+		Reload_Loop_After = Anim_Folder.GraceRevolver_Reload_loop_after,
 		Reload_End   = Anim_Folder.GraceRevolver_Reload_end,
 
 		Check  = Anim_Folder.GraceRevolver_Check,
@@ -315,24 +317,37 @@ end
 function GraceRevolver:reload()
 	if self.Reloading then return end
 	if self.Capacity >= self.Max_Capacity then return end
-
+	if self.Equipping then return end
 	if self.Spinning then self:_cancelSpin() end
 	if self.Aiming   then self:endAiming()   end
 
+	self.RegisteredAnimations["Reload_Start"]:AdjustWeight(1)
+	self.RegisteredAnimations["Reload_Loop"]:AdjustWeight(1)
+	self:_set_sprint_arms(true)
 	self:_stopLayer(2)
 	self.Reloading        = true
 	self._reloadCancelled = false
 
 	self:_playAnim("Reload_Start").Stopped:Wait()
-
+	self.Capacity = 0
+	
 	while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
 		self:_playAnim("Reload_Loop").Stopped:Wait()
 		if self._reloadCancelled then break end
 		self.Capacity += 1
+		self:_playAnim("Reload_Loop_After").Stopped:Wait()
 	end
 
 	if not self._reloadCancelled then
 		self:_playAnim("Reload_End").Stopped:Wait()
+		-- // reset cylinder
+		local clylinder_motor6d: Motor6D =
+			self.actual_model
+			:FindFirstChild(self.className .. "_Middle")
+			:FindFirstChild(self.className .. "_Cylinder")
+		
+		local pos = clylinder_motor6d.C0.Position
+		clylinder_motor6d.C0 = CFrame.new(pos)
 	else
 		local anims = self.RegisteredAnimations
 		if anims.Reload_Loop  and anims.Reload_Loop.IsPlaying  then anims.Reload_Loop:Stop(0)  end
@@ -342,6 +357,7 @@ function GraceRevolver:reload()
 	self.Reloading        = false
 	self._reloadCancelled = false
 	self:_restoreBaseDeferred()
+	self:_set_sprint_arms(false)
 end
 
 function GraceRevolver:activate()
@@ -356,13 +372,11 @@ end
 --------------------------------------------------------------------------------
 
 function GraceRevolver:_on_equip()
-	-- FIX: Set Equipped BEFORE calling animations to prevent Hold from playing post-unequip
 	self.Equipped = true
 
 	self:_cacheMotor6D()
 	self:_connectInput()
 	self:_initShoulderTracking()
-	game.Players.LocalPlayer.Character:SetAttribute("Sprint_Animation", "GraceRevolver")
 
 	-- Setup FastCast
 	self:_setupFastCast(FxFolder, function(cast, result, velocity)
@@ -375,9 +389,6 @@ function GraceRevolver:_on_equip()
 			self.KnockBack_Force
 		)
 	end)
-
-	-- Use _restoreBase instead of direct _playAnim to properly integrate with the animation layer system
-	self:_restoreBase()
 end
 
 function GraceRevolver:_on_unequip()
