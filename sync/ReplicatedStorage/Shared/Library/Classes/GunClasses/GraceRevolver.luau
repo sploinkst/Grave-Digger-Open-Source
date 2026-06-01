@@ -1,12 +1,11 @@
+-----------------------
+--@Praxitos
+--GraceRevolver
+------------------------
+
 --!strict
 --!native
 --!optimize 2
-
---------------------------------------------------------------------------------
--- GraceRevolver
--- Single-action revolver with shoulder-swappable aiming, 6-round cylinder,
--- manual cycling via hammer, gun-spinning, and penetration support.
---------------------------------------------------------------------------------
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -14,9 +13,7 @@ local Types    = require(script.Parent.Parent.Parent.Types)
 local BaseTool = require(script.Parent.Parent.BaseTool)
 local Util     = require(script.Parent.Parent.Parent.Util)
 
---------------------------------------------------------------------------------
--- Asset paths
---------------------------------------------------------------------------------
+-- // Assets
 
 local Assets         = ReplicatedStorage.Shared.Assets
 local Holster_Folder = Assets.Guns.Holsters:FindFirstChild("Gun Holsters")
@@ -24,25 +21,16 @@ local Tool_Folder    = Assets.Guns.ToolModels
 local Anim_Folder    = Assets.Animations.Tools.Guns.GraceRevolver
 local FxFolder       = Assets.Guns.Effects.Shooting
 
-local FX_MUZZLE_FLASH = FxFolder.Muzzle_Flash
-
---------------------------------------------------------------------------------
--- Tuning
---------------------------------------------------------------------------------
+-- // Tuning
 
 local FIRE_RATE    = 0.25
 local BULLET_SPEED = 800
 
---------------------------------------------------------------------------------
--- Animation layers
--- Layer 0 = base pose  (Hold, Aim, Aim_Left)
--- Layer 1 = overlay    (Fire*, Spin*)
--- Layer 2 = full takeover (Draw, Unequip, Check, Reload*, Melee*)
---------------------------------------------------------------------------------
+-- // Animation layers
 
 local ANIM_LAYERS: { [string]: number } = {
-	Hold    = 0,
-	Aim     = 0,
+	Hold     = 0,
+	Aim      = 0,
 	Aim_Left = 0,
 
 	Fire            = 1,
@@ -64,9 +52,7 @@ local ANIM_LAYERS: { [string]: number } = {
 	Reload_End   = 2,
 }
 
---------------------------------------------------------------------------------
--- Class
---------------------------------------------------------------------------------
+-- // Class
 
 local GraceRevolver = {}
 GraceRevolver.__index = GraceRevolver
@@ -99,12 +85,12 @@ export type GraceRevolver = typeof(setmetatable({} :: {
 	Firing:    boolean,
 	Reloading: boolean,
 	Spinning:  boolean,
+	Meleeing:  boolean,
 
 	_reloadCancelled: boolean,
 	_spinCancelled:   boolean,
 
-	ANIM_LAYERS: { [string]: number },
-
+	ANIM_LAYERS:      { [string]: number },
 	current_shoulder: string,
 
 	Caster:         any,
@@ -114,9 +100,7 @@ export type GraceRevolver = typeof(setmetatable({} :: {
 	_motorOriginal: { C0: CFrame, C1: CFrame, Part0: BasePart?, Part1: BasePart? }?,
 }, {} :: typeof(GraceRevolver)))
 
---------------------------------------------------------------------------------
--- Constructor
---------------------------------------------------------------------------------
+-- // Constructor
 
 function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	local self = setmetatable(BaseTool.new(info), GraceRevolver)
@@ -135,8 +119,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 		Parent = "Right Arm",
 		Part0  = "Right Arm",
 		Part1  = self.model_reference and self.model_reference:FindFirstChild("GraceRevolver_Middle"),
-		C0     = CFrame.new(-0.258, -1.438, -0.506)
-			* CFrame.Angles(math.rad(0), math.rad(-90), math.rad(90)),
+		C0     = CFrame.new(-0.258, -1.438, -0.506) * CFrame.Angles(math.rad(0), math.rad(-90), math.rad(90)),
 	}
 
 	self.animations = {
@@ -158,24 +141,36 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 		Spin       = Anim_Folder.GraceRevolver_Spin,
 		Spin_Start = Anim_Folder.GraceRevolver_Spin_start,
 
-		Reload_Start = Anim_Folder.GraceRevolver_Reload_start,
-		Reload_Loop  = Anim_Folder.GraceRevolver_Reload_loop,
+		Reload_Start      = Anim_Folder.GraceRevolver_Reload_start,
+		Reload_Loop       = Anim_Folder.GraceRevolver_Reload_loop,
 		Reload_Loop_After = Anim_Folder.GraceRevolver_Reload_loop_after,
-		Reload_End   = Anim_Folder.GraceRevolver_Reload_end,
+		Reload_End        = Anim_Folder.GraceRevolver_Reload_end,
 
 		Check  = Anim_Folder.GraceRevolver_Check,
 		Melee1 = Anim_Folder.GraceRevolver_Melee1,
 		Melee2 = Anim_Folder.GraceRevolver_Melee2,
-		
-		Drop = Anim_Folder.Parent.Parent.Misc.Drop_Pistol
+
+		Drop = Anim_Folder.Parent.Parent.Misc.Drop_Pistol,
+	}
+
+	self.animation_speeds = {
+		Melee1            = 0.7,
+		Melee2            = 0.7,
+		Draw              = 0.2,
+		Aim               = 0.125,
+		Aim_Left          = 0.125,
+		Reload_start      = 1.1,
+		Reload_Loop       = 0.4,
+		Reload_Loop_After = 0.1,
+		Reload_End        = 0.65,
 	}
 
 	self.damage                  = 25
 	self.Max_Capacity            = 6
 	self.Capacity                = 6
 	self.Ammo_Type               = ".45 Lead"
-	self.recoil                  = 8
-	self.recoil_count            = 5
+	self.recoil                  = 15
+	self.recoil_count            = 6
 	self.Penetration_Level       = 1
 	self.Armor_Penetration_Level = 2
 	self.KnockBack_Force         = 8
@@ -188,6 +183,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Firing           = false
 	self.Reloading        = false
 	self.Spinning         = false
+	self.Meleeing         = false
 	self._reloadCancelled = false
 	self._spinCancelled   = false
 
@@ -196,9 +192,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	return self
 end
 
---------------------------------------------------------------------------------
--- Private: key bindings (extends BaseTool defaults)
---------------------------------------------------------------------------------
+-- // Key bindings
 
 function GraceRevolver:_getKeyBindings()
 	local base = BaseTool._getKeyBindings(self)
@@ -206,22 +200,17 @@ function GraceRevolver:_getKeyBindings()
 	return base
 end
 
--- Called by BaseTool._connectInput when F is pressed.
 function GraceRevolver:Spin()
 	task.spawn(function() self:spin() end)
 end
 
---------------------------------------------------------------------------------
--- Private: isBusy (Spinning counts here)
---------------------------------------------------------------------------------
+-- // isBusy override (Spinning counts)
 
 function GraceRevolver:_isBusy(): boolean
-	return self.Firing or self.Reloading or self.Spinning
+	return self.Firing or self.Reloading or self.Spinning or self.Meleeing or self.Checking
 end
 
---------------------------------------------------------------------------------
--- Private: spin cancellation
---------------------------------------------------------------------------------
+-- // Actions
 
 function GraceRevolver:_cancelSpin()
 	self._spinCancelled = true
@@ -230,10 +219,6 @@ function GraceRevolver:_cancelSpin()
 	if anims.Spin       and anims.Spin.IsPlaying       then anims.Spin:Stop(0)       end
 	if anims.Spin_Start and anims.Spin_Start.IsPlaying then anims.Spin_Start:Stop(0) end
 end
-
---------------------------------------------------------------------------------
--- Public: actions
---------------------------------------------------------------------------------
 
 function GraceRevolver:spin()
 	if self:_isBusy() then return end
@@ -249,8 +234,7 @@ function GraceRevolver:spin()
 		return
 	end
 
-	self:_playAnim("Spin")
-	self.RegisteredAnimations.Spin.Stopped:Wait()
+	self:_playAnim("Spin").Stopped:Wait()
 
 	self.Spinning       = false
 	self._spinCancelled = false
@@ -261,31 +245,21 @@ function GraceRevolver:fire()
 	if self.Firing then return end
 	self.Firing = true
 
-	if self.Spinning then
-		self:_cancelSpin()
-	end
+	if self.Spinning then self:_cancelSpin() end
 
-	-- Empty cylinder: dry-fire animation
+	-- Dry fire
 	if self.Capacity <= 0 then
-		if self.current_shoulder == "Right" then
-			self:_playAnim("Fire_Empty").Stopped:Wait()
-		else
-			self:_playAnim("Fire_Empty_Left").Stopped:Wait()
-		end
+		local emptyAnim = (self.current_shoulder == "Right") and "Fire_Empty" or "Fire_Empty_Left"
+		self:_playAnim(emptyAnim).Stopped:Wait()
 		self.Firing = false
 		self:_restoreBaseDeferred()
 		return
 	end
 
 	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
-	if not muzzle or self:_if_sprinting() then
-		self.Firing = false
-		return
-	end
+	if not muzzle or self:_if_sprinting() then self.Firing = false; return end
 
-	-- Projectile
-	local camera   = workspace.CurrentCamera
-	local shootDir = camera.CFrame.LookVector.Unit
+	local shootDir = workspace.CurrentCamera.CFrame.LookVector.Unit
 
 	local activeCast = self.Caster:Fire(muzzle.Position, shootDir, BULLET_SPEED, self.CasterBehavior)
 	activeCast.UserData.Direction  = shootDir
@@ -296,14 +270,12 @@ function GraceRevolver:fire()
 	self.Capacity -= 1
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false)
 
-	local fireTrack = (self.current_shoulder == "Right")
-		and self:_playAnim("Fire")
-		or  self:_playAnim("Fire_Left")
+	local fireAnim = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
+	local fireTrack = self:_playAnim(fireAnim)
 
-	-- Muzzle flash
+	self:_bounce_scoped_ui()
 	self:_fireMuzzleFlash()
 
-	-- Restore after fire finishes (unless something else took over).
 	fireTrack.Stopped:Once(function()
 		if not self.Reloading and not self.Spinning then
 			self:_restoreBaseDeferred()
@@ -315,9 +287,7 @@ function GraceRevolver:fire()
 end
 
 function GraceRevolver:reload()
-	if self.Reloading then return end
-	if self.Capacity >= self.Max_Capacity then return end
-	if self.Equipping then return end
+	if self.Reloading or self.Capacity >= self.Max_Capacity or self.Equipping then return end
 	if self.Spinning then self:_cancelSpin() end
 	if self.Aiming   then self:endAiming()   end
 
@@ -325,12 +295,13 @@ function GraceRevolver:reload()
 	self.RegisteredAnimations["Reload_Loop"]:AdjustWeight(1)
 	self:_set_sprint_arms(true)
 	self:_stopLayer(2)
+
 	self.Reloading        = true
 	self._reloadCancelled = false
 
 	self:_playAnim("Reload_Start").Stopped:Wait()
 	self.Capacity = 0
-	
+
 	while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
 		self:_playAnim("Reload_Loop").Stopped:Wait()
 		if self._reloadCancelled then break end
@@ -340,14 +311,15 @@ function GraceRevolver:reload()
 
 	if not self._reloadCancelled then
 		self:_playAnim("Reload_End").Stopped:Wait()
-		-- // reset cylinder
-		local clylinder_motor6d: Motor6D =
+
+		-- Reset cylinder rotation
+		local cylinder_motor: Motor6D =
 			self.actual_model
 			:FindFirstChild(self.className .. "_Middle")
 			:FindFirstChild(self.className .. "_Cylinder")
-		
-		local pos = clylinder_motor6d.C0.Position
-		clylinder_motor6d.C0 = CFrame.new(pos)
+
+		local pos = cylinder_motor.C0.Position
+		cylinder_motor.C0 = CFrame.new(pos)
 	else
 		local anims = self.RegisteredAnimations
 		if anims.Reload_Loop  and anims.Reload_Loop.IsPlaying  then anims.Reload_Loop:Stop(0)  end
@@ -362,38 +334,32 @@ end
 
 function GraceRevolver:activate()
 	if not self.actual_model then return end
-	if self:_isBusy() then return end
-	if not self.Aiming then return end
-	task.spawn(function() self:fire() end)
+	if self:_isBusy() or self.Firing then return end
+
+	if self.Aiming then
+		self:fire()
+	else
+		self:melee()
+	end
 end
 
---------------------------------------------------------------------------------
--- BaseTool lifecycle hooks
---------------------------------------------------------------------------------
+-- // Lifecycle hooks
 
 function GraceRevolver:_on_equip()
 	self.Equipped = true
-
 	self:_cacheMotor6D()
 	self:_connectInput()
 	self:_initShoulderTracking()
 
-	-- Setup FastCast
 	self:_setupFastCast(FxFolder, function(cast, result, velocity)
 		local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
-		self:_onBulletHit(
-			cast, result, velocity,
-			muzzle,
-			self.Penetration_Level,
-			self.damage,
-			self.KnockBack_Force
-		)
+		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, self.damage, self.KnockBack_Force)
 	end)
 end
 
 function GraceRevolver:_on_unequip()
 	self._reloadCancelled = true
-	self.Equipped = false  -- Set before stopping animations
+	self.Equipped         = false
 
 	self:_disconnectInput()
 	self:_stopShoulderTracking()
@@ -414,18 +380,12 @@ function GraceRevolver:_on_unequip()
 	end
 end
 
---------------------------------------------------------------------------------
--- Cleanup
---------------------------------------------------------------------------------
+-- // Cleanup
 
 function GraceRevolver:Destroy()
 	self:_disconnectInput()
 	BaseTool.destroy(self)
 end
-
---------------------------------------------------------------------------------
--- Static metadata
---------------------------------------------------------------------------------
 
 GraceRevolver.Tool_Image = "rbxassetid://17601078078"
 GraceRevolver.Medal_Cost = 1
