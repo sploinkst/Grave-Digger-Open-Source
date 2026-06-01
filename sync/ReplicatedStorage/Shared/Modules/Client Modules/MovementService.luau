@@ -276,7 +276,8 @@ local function sprintLoop()
 	while Sprinting do
 		if not Character or not Humanoid or not RootPart then break end
 
-		if Character:GetAttribute("Aiming") then
+		-- // if aiming and not moving
+		if Character:GetAttribute("Aiming") and Character.Humanoid.MoveDirection.Magnitude <= 0 then
 			print("[SprintLoop] Stopped: Aiming")
 			setHoldBreathe(true)
 			break
@@ -402,6 +403,16 @@ function module.start_module()
 	if Humanoid then
 		Humanoid.WalkSpeed = BaseSpeed
 	end
+	
+	Character:GetAttributeChangedSignal("Aiming"):Connect(function()
+		if Character:GetAttribute("Aiming") then
+			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+			print("[Module] Jumping disabled for aiming")
+		else
+			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+			print("[Module] Jumping enabled for aiming")
+		end
+	end)
 
 	fall_time = tick()
 
@@ -410,7 +421,7 @@ function module.start_module()
 
 	Character:GetAttributeChangedSignal("Aiming"):Connect(function()
 		local aiming = Character:GetAttribute("Aiming")
-		if aiming and SprintKeyHeld then
+		if aiming and SprintKeyHeld and Character.Humanoid.MoveDirection.Magnitude <= 0 then
 			setHoldBreathe(true)
 		else
 			setHoldBreathe(false)
@@ -438,7 +449,7 @@ function module.start_module()
 			SprintKeyHeld = true
 			tryStartSprint()
 
-			if Character:GetAttribute("Aiming") then
+			if Character:GetAttribute("Aiming") and Character.Humanoid.MoveDirection.Magnitude <= 0 then
 				setHoldBreathe(true)
 			else
 				setHoldBreathe(false)
@@ -481,6 +492,10 @@ function module.start_module()
 				Character:SetAttribute("Crouching", nil)
 			end
 
+			if Character:GetAttribute("Aiming") then
+				return
+			end
+			
 			LocalPlayer:SetAttribute("Jumping", true)
 			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
 			IsJumping = true
@@ -521,6 +536,7 @@ function module.start_module()
 		end
 		if SprintKeyHeld then tryStartSprint() end
 	end)
+
 end
 
 return module
