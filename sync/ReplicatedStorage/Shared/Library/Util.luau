@@ -308,22 +308,13 @@ end
 
 local Camera_Service = require(game.ReplicatedStorage.Shared.Modules["Client Modules"].CameraService)
 
+-- Recoil
 function Util.applyRecoil(recoil: number, recoilCount: number, spread: number, doRoll: boolean?)
-	-- Calculate base recoil amounts (matching original calculation)
-	local vertical = recoil / 10
+	local vertical   = recoil / 10
 	local horizontal = math.random(-spread * 10, spread * 10) / 100
 
-	Camera_Service.apply_recoil(math.rad(vertical), math.rad(horizontal))
+	Camera_Service.apply_recoil(math.rad(vertical), math.rad(horizontal), recoilCount)
 
-	-- Stepped recoil application over time
-	task.spawn(function()
-		for _ = 1, recoilCount do
-			Camera_Service.apply_recoil(math.rad(vertical), math.rad(horizontal))
-			task.wait(0.015)
-		end
-	end)
-
-	-- Optional roll effect
 	if doRoll then
 		task.spawn(function()
 			for _ = 1, 4 do
