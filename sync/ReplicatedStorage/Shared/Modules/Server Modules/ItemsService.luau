@@ -101,9 +101,15 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 				
 				local motor6d = Instance.new("Motor6D")
 				
+				local reference_part = player.Character["Right Arm"]
 				
-				motor6d.Parent = player.Character[object.Round_Target_Part] or player.Character["Right Arm"]
-				motor6d.Part0 =  player.Character[object.Round_Target_Part] or player.Character["Right Arm"]
+				if object.Round_Target_Part then
+					if not player.Character:FindFirstChild(object.Round_Target_Part) then return end
+					reference_part = player.Character:FindFirstChild(object.Round_Target_Part)
+				end
+
+				motor6d.Parent = reference_part
+				motor6d.Part0 =  reference_part
 				motor6d.Part1 = object_bullet_clone
 				
 				motor6d.C1 = CFrame.new(0, 0, 0)
@@ -116,6 +122,17 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 			
 			if player.Character.CharacterData.Equipment:FindFirstChild(object.model_reference.Name) then
 				player.Character.CharacterData.Equipment:FindFirstChild(object.model_reference.Name):Destroy()
+			end
+			
+			if object.Round then
+				if object.Round_Target_Part then
+					if not player.Character:FindFirstChild(object.Round_Target_Part) then return end
+					player.Character:FindFirstChild(object.Round_Target_Part):FindFirstChild(object.Round.Name):Destroy()
+					player.Character:FindFirstChild(object.Round_Target_Part):FindFirstChild("Round_Motor6d"):Destroy()
+				else
+					player.Character["Right Arm"]:FindFirstChild(object.Round.Name):Destroy()
+					player.Character["Right Arm"]:FindFirstChild("Round_Motor6d"):Destroy()
+				end
 			end
 		end)
 	end

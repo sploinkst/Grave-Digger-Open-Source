@@ -151,6 +151,7 @@ local function setup_hitboxes(character: Model)
 	head_hitbox.CanCollide = false
 	head_hitbox.Massless = true
 	head_hitbox.BrickColor = BrickColor.new("Bright red")
+	head_hitbox:SetAttribute("Transparency_Skip", true)
 	
 	util_module.quick_weld(character.Head, head_hitbox, character.Head, "HeadHitbox")
 end
