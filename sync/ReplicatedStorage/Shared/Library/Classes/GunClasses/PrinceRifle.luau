@@ -1,52 +1,41 @@
+-----------------------
+--@Praxitos
+--PrinceRifle
+------------------------
+
 --!strict
 --!native
 --!optimize 2
 
---------------------------------------------------------------------------------
--- PrinceRifle
--- Bolt-action rifle with manual cycling, shoulder-swappable aiming, and an
--- alt (repeating) fire mode that auto-cycles via lever-action animation.
---------------------------------------------------------------------------------
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService =  game:GetService("UserInputService")
+local UserInputService  = game:GetService("UserInputService")
 
 local Types    = require(script.Parent.Parent.Parent.Types)
 local BaseTool = require(script.Parent.Parent.BaseTool)
 local Util     = require(script.Parent.Parent.Parent.Util)
 
---------------------------------------------------------------------------------
--- Asset paths
---------------------------------------------------------------------------------
+-- // Assets
 
-local Assets      = ReplicatedStorage.Shared.Assets
-local SoundFolder = Assets.Guns:WaitForChild("Sounds"):WaitForChild("PrinceRifle")
+local Assets        = ReplicatedStorage.Shared.Assets
+local SoundFolder   = Assets.Guns:WaitForChild("Sounds"):WaitForChild("PrinceRifle")
 local HolsterFolder = Assets.Guns.Holsters:FindFirstChild("Gun Holsters")
-local ToolFolder  = Assets.Guns.ToolModels
-local AnimFolder  = Assets.Animations.Tools.Guns.PrinceRifle
-local FxFolder    = Assets.Guns.Effects.Shooting
-
-local FX_MUZZLE_FLASH = FxFolder.Muzzle_Flash
+local ToolFolder    = Assets.Guns.ToolModels
+local AnimFolder    = Assets.Animations.Tools.Guns.PrinceRifle
+local FxFolder      = Assets.Guns.Effects.Shooting
 
 local fire_sound = SoundFolder.fire
---------------------------------------------------------------------------------
--- Tuning
---------------------------------------------------------------------------------
+
+-- // Tuning
 
 local CYCLE_REST_TIME = 1
 local FIRE_RATE       = 0.30
 local BULLET_SPEED    = 1000
 
---------------------------------------------------------------------------------
--- Animation layers
--- Layer 0 = base pose  (Hold, Aim, Aim_Left)
--- Layer 1 = fire/cycle overlay (stops only same-layer peers)
--- Layer 2 = full takeover (Draw, Unequip, Reload*, Alt_Mode*, Check)
---------------------------------------------------------------------------------
+-- // Animation layers
 
 local ANIM_LAYERS: { [string]: number } = {
-	Hold    = 0,
-	Aim     = 0,
+	Hold     = 0,
+	Aim      = 0,
 	Aim_Left = 0,
 
 	Fire      = 1,
@@ -63,13 +52,11 @@ local ANIM_LAYERS: { [string]: number } = {
 	Reload_Alt   = 2,
 	Alt_Mode_On  = 2,
 	Alt_Mode_Off = 2,
-	Melee1  = 2,
-	Melee2  = 2,
+	Melee1       = 2,
+	Melee2       = 2,
 }
 
---------------------------------------------------------------------------------
--- Class
---------------------------------------------------------------------------------
+-- // Class
 
 local PrinceRifle = {}
 PrinceRifle.__index = PrinceRifle
@@ -96,7 +83,7 @@ export type PrinceRifle = typeof(setmetatable({} :: {
 	Armor_Penetration_Level: number,
 	KnockBack_Force:         number,
 	Aiming_Number:           number,
-	Check_Delay: 			 number,
+	Check_Delay:             number,
 	MuzzlePartName:          string,
 
 	Aiming:    boolean,
@@ -106,12 +93,11 @@ export type PrinceRifle = typeof(setmetatable({} :: {
 	Reloading: boolean,
 	Alt_Mode:  boolean,
 	Alting:    boolean,
-	Checking: boolean,
+	Checking:  boolean,
+	Meleeing:  boolean,
 
 	_reloadCancelled: boolean,
-
-	ANIM_LAYERS: { [string]: number },
-
+	ANIM_LAYERS:      { [string]: number },
 	current_shoulder: string,
 
 	Caster:         any,
@@ -121,12 +107,11 @@ export type PrinceRifle = typeof(setmetatable({} :: {
 	_motorOriginal: { C0: CFrame, C1: CFrame, Part0: BasePart?, Part1: BasePart? }?,
 }, {} :: typeof(PrinceRifle)))
 
---------------------------------------------------------------------------------
--- Constructor
---------------------------------------------------------------------------------
+-- // Constructor
 
 function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	local self = setmetatable(BaseTool.new(info), PrinceRifle)
+
 	self.className   = "PrinceRifle"
 	self.item_image  = "rbxassetid://17496049645"
 	self.Designation = "Primary"
@@ -140,8 +125,7 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 		Parent = "Left Arm",
 		Part0  = "Left Arm",
 		Part1  = self.model_reference and self.model_reference:FindFirstChild("PrinceRifle_Middle"),
-		C0     = CFrame.new(0.254, -1.703, -0.566)
-			* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90)),
+		C0     = CFrame.new(0.254, -1.703, -0.566) * CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90)),
 	}
 
 	self.animations = {
@@ -155,7 +139,7 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 		Fire      = AnimFolder.PrinceRifle_Fire,
 		Fire_Left = AnimFolder.PrinceRifle_Fire_Left,
 
-		Cycle = AnimFolder.PrinceRifle_Cycle, 
+		Cycle = AnimFolder.PrinceRifle_Cycle,
 
 		Reload_Empty = AnimFolder.PrinceRifle_Reload_Empty,
 		Reload_Start = AnimFolder.PrinceRifle_Reload_Start,
@@ -166,14 +150,26 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 		Alt_Mode_On  = AnimFolder.PrinceRifle_Alt_Mode_On,
 		Alt_Mode_Off = AnimFolder.PrinceRifle_Alt_Mode_Off,
 
-		Check = AnimFolder.PrinceRifle_Check,
-
+		Check  = AnimFolder.PrinceRifle_Check,
 		Melee1 = AnimFolder.PrinceRifle_Melee1,
 		Melee2 = AnimFolder.PrinceRifle_Melee2,
-		
-		Drop = AnimFolder.Parent.Parent.Misc.Drop_Rifle,
-		
+
+		Drop  = AnimFolder.Parent.Parent.Misc.Drop_Rifle,
 		Short = AnimFolder.PrinceRifle_Short,
+	}
+
+	self.animation_speeds = {
+		Cycle        = 0.55,
+		Draw         = 0.75,
+		Aim          = 0.35,
+		Aim_Left     = 0.35,
+		Reload_Start = 1.6,
+		Reload_Empty = 1.45,
+		Reload_Loop  = 0.65,
+		Reload_End   = 1.45,
+		Reload_Alt   = 1.4,
+		Melee1       = 0.7,
+		Melee2       = 0.7,
 	}
 
 	self.damage                  = 105
@@ -186,11 +182,11 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.Armor_Penetration_Level = 3
 	self.KnockBack_Force         = 10
 	self.Aiming_Number           = 100
-	self.Check_Delay			 = 1
+	self.Check_Delay             = 1
 	self.MuzzlePartName          = "PrinceRifle_Muzzle"
-	self.Can_Drop 				 = true
-	self.SoundFolder 			 = SoundFolder
-	self.Short_Distance			 = 2.3
+	self.Can_Drop                = true
+	self.SoundFolder             = SoundFolder
+	self.Short_Distance          = 2.3
 
 	self.unequip_wait     = false
 	self.Cycled           = true
@@ -200,18 +196,16 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.Alt_Mode         = true
 	self.Alting           = false
 	self._reloadCancelled = false
-	self.Checking		  = false
-	self.Check_Delayed 	  = false
-	self.Meleeing		  = false
+	self.Checking         = false
+	self.Check_Delayed    = false
+	self.Meleeing         = false
 
 	self:_initShoulderTracking()
 
 	return self
 end
 
---------------------------------------------------------------------------------
--- Private: key bindings (extends BaseTool defaults)
---------------------------------------------------------------------------------
+-- // Key bindings
 
 function PrinceRifle:_getKeyBindings()
 	local base = BaseTool._getKeyBindings(self)
@@ -219,37 +213,26 @@ function PrinceRifle:_getKeyBindings()
 	return base
 end
 
--- Called by BaseTool._connectInput when Q is pressed.
 function PrinceRifle:AltMode()
 	self:setAltMode()
 end
 
-
---------------------------------------------------------------------------------
--- Public: Actions
---------------------------------------------------------------------------------
+-- // Actions
 
 function PrinceRifle:setAltMode()
 	if self:_isBusy() then return end
 	self.Alting = true
-
-	local anims = self.RegisteredAnimations
 	self:_stopAllExcept()
 
-	if self.Alt_Mode == true then
-		anims.Alt_Mode_Off:Play()
-		anims.Alt_Mode_Off.Stopped:Wait()
+	if self.Alt_Mode then
+		self:_playAnim("Alt_Mode_Off").Stopped:Wait()
 		self.Alt_Mode = false
 		self:notify("Firemode: Single Fire")
 	else
-		anims.Alt_Mode_On:Play()
-		anims.Alt_Mode_On.Stopped:Wait()
+		self:_playAnim("Alt_Mode_On").Stopped:Wait()
 		self.Alt_Mode = true
 		self:notify("Firemode: Repeating Fire")
-		
-		if not self.Cycled == true then
-			self:cycle()
-		end
+		if not self.Cycled then self:cycle() end
 	end
 
 	self.Alting = false
@@ -258,152 +241,96 @@ end
 
 function PrinceRifle:cycle()
 	if self.Cycling then return end
-
 	self.Cycling = true
 
 	local anims = self.RegisteredAnimations
-	if not anims then self.Cycling = false; print("Anims not found.") return end
+	if not anims then self.Cycling = false; return end
 
 	self:_stopAllExcept()
-
-	
-	anims.Cycle:Play(0.15)
+	self:_playAnim("Cycle")
 	self.tool:FindFirstChild("Reserve_Ammo").Value -= 1
 
 	task.delay(CYCLE_REST_TIME, function()
 		self.Cycled  = true
-		self.Cycling = false  
+		self.Cycling = false
 		self:_restoreBase()
 	end)
 end
 
 function PrinceRifle:fire()
 	if self.Checking then return end
-	
-	if self.Capacity <= 0 then
-		self:reload()
-		return
-	end
+	if self.Capacity <= 0 then self:reload() return end
 	if self.Firing then return end
 	self.Firing = true
 
-	if self:_if_sprinting() then
+	if self:_if_sprinting() or self.ForceBlockFire then
 		self.Firing = false
 		return
 	end
 
 	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
-	if not muzzle then
-		self.Firing = false
-		return
-	end
+	if not muzzle then self.Firing = false; return end
 
 	local camera = workspace.CurrentCamera
-	if not camera then
-		self.Firing = false
-		return
-	end
+	if not camera then self.Firing = false; return end
 
-	if self.ForceBlockFire == true then
-		self.Firing = false
-		return
-	end
-	-- === AIMLOGIC ===
-
+	-- Aim logic
 	local mousePos = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+	local ray      = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
 
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 	raycastParams.FilterDescendantsInstances = { game.Players.LocalPlayer.Character }
 
-	local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+	local result   = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+	local shootDir = ((result and result.Position or ray.Origin + ray.Direction * 1000) - muzzle.Position).Unit
 
-	local targetPos = result and result.Position or (ray.Origin + ray.Direction * 1000)
+	-- Fire
+	self:_play_sfx(fire_sound, muzzle, nil, self.Alt_Mode and 0.5 or nil)
 
-	local shootDir = (targetPos - muzzle.Position).Unit
-
-	-- === FIRE ===
-	if self.Alt_Mode then
-		self:_play_sfx(fire_sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.5)
-	else
-		self:_play_sfx(fire_sound, self.actual_model:WaitForChild(self.MuzzlePartName))
-	end
-
+	self:_bounce_scoped_ui()
 	local activeCast = self.Caster:Fire(muzzle.Position, shootDir, BULLET_SPEED, self.CasterBehavior)
 	activeCast.UserData.Direction  = shootDir
 	activeCast.UserData.Penetrated = false
 
-
 	self:_connect_FastCast(muzzle.Position, shootDir, BULLET_SPEED, {
-		bulletTemplate = FxFolder.Bullet,
-		bulletContainer = workspace.Game_Details.Effects.Bullets,
-		isPenetration = false,
+		bulletTemplate   = FxFolder.Bullet,
+		bulletContainer  = workspace.Game_Details.Effects.Bullets,
+		isPenetration    = false,
 		penetrationLevel = self.Penetration_Level,
-		damage = self.damage,
-		knockbackForce = self.KnockBack_Force
+		damage           = self.damage,
+		knockbackForce   = self.KnockBack_Force,
 	})
 
-	self.Cycled   = false
+	self.Cycled    = false
 	self.Capacity -= 1
 
-	local anims    = self.RegisteredAnimations
-	local fireAnim = (self.current_shoulder == "Right") and anims.Fire or anims.Fire_Left
+	local fireAnim = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 	self:_stopAllExcept()
-	fireAnim:Play()
-	
+	self:_playAnim(fireAnim)
 
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false)
 
-	if self.Alt_Mode == true then
-		self:cycle()
-	end
-	
-	-- Muzzle flash
-	self:_fireMuzzleFlash()
-	
+	if self.Alt_Mode then self:cycle() end
 
+	self:_fireMuzzleFlash()
 
 	task.wait(FIRE_RATE)
 	self.Firing = false
 	self:_restoreBase()
 end
 
-function PrinceRifle:melee()
-	if self.Meleeing then return end
-	if game.Players.LocalPlayer:GetAttribute("FreeLook") then return end
-	self.Meleeing = true
-	local random_animation = math.random(1, 2)
-
-	local anims = self.RegisteredAnimations
-	self:_stopAllExcept()
-	anims["Melee"..random_animation]:Play()
-	anims["Melee"..random_animation].Stopped:Wait()
-	self.Meleeing = false
-	self:_restoreBase()
-end
-
 function PrinceRifle:_autoCycle()
-	if self.Capacity >= self.Max_Capacity then
-		self.Cycled = true
-		return
-	end
-
+	if self.Capacity >= self.Max_Capacity then self.Cycled = true; return end
 	if self.Cycling then return end
 
 	self.Cycling = true
-	self.Cycled = false
+	self.Cycled  = false
 
-	local anims = self.RegisteredAnimations
-	if not anims then
-		self.Cycling = false
-		return
-	end
+	if not self.RegisteredAnimations then self.Cycling = false; return end
 
 	self:_stopAllExcept()
-
-	anims.Reload_Alt:Play()
-	anims.Reload_Alt.Stopped:Wait()
+	self:_playAnim("Reload_Alt").Stopped:Wait()
 
 	if self.tool:FindFirstChild("Reserve_Ammo").Value > 0 then
 		self.tool:FindFirstChild("Reserve_Ammo").Value -= 1
@@ -411,53 +338,45 @@ function PrinceRifle:_autoCycle()
 	end
 
 	self.Cycling = false
-	self.Cycled = true
-
+	self.Cycled  = true
 	self:_restoreBase()
 end
 
 function PrinceRifle:reload()
-	if self.Reloading then return end
+	if self.Reloading or self.Equipping then return end
+	if self.Capacity >= self.Max_Capacity then return end
+
 	if self.tool:FindFirstChild("Reserve_Ammo").Value <= 0 then
 		self:notify("I don't have any more ammo...")
 		self.Cycling = false
 		self:_restoreBase()
 		return
 	end
-	
-	if self.Capacity >= self.Max_Capacity then return end
-	
 
-
-	if self.Alt_Mode == true then
+	if self.Alt_Mode then
 		self:_stopAllExcept()
 		self.Reloading        = true
 		self._reloadCancelled = false
 
 		if self.Aiming then self:endAiming() end
+
 		local anims = self.RegisteredAnimations
 
 		if self.Capacity == 0 then
-			anims.Reload_Empty:Play()
-			anims.Reload_Empty.Stopped:Wait()
+			self:_playAnim("Reload_Empty").Stopped:Wait()
 		else
-			anims.Reload_Start:Play()
-			anims.Reload_Start.Stopped:Wait()
+			self:_playAnim("Reload_Start").Stopped:Wait()
 		end
 
 		while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
-			anims.Reload_Loop:Play()
-			anims.Reload_Loop.Stopped:Wait()
+			self:_playAnim("Reload_Loop").Stopped:Wait()
 			if self._reloadCancelled then break end
-
 			self.Capacity += 1
 			self.tool:FindFirstChild("Reserve_Ammo").Value -= 1
-			print("Reloaded, removed one.")
 		end
 
 		if not self._reloadCancelled then
-			anims.Reload_End:Play()
-			anims.Reload_End.Stopped:Wait()
+			self:_playAnim("Reload_End").Stopped:Wait()
 		else
 			for _, name in ipairs({ "Reload_Loop", "Reload_Start", "Reload_Empty" }) do
 				local t = anims[name]
@@ -475,11 +394,7 @@ end
 
 function PrinceRifle:activate()
 	if not self.actual_model then return end
-	if self:_isBusy() then return end
-
-	if self.Firing then return end
-	if self.Cycling then return end
-	if not self.Cycled then return end
+	if self:_isBusy() or self.Firing or self.Cycling or not self.Cycled then return end
 
 	if self.Aiming then
 		self:fire()
@@ -488,9 +403,7 @@ function PrinceRifle:activate()
 	end
 end
 
---------------------------------------------------------------------------------
--- BaseTool lifecycle hooks
---------------------------------------------------------------------------------
+-- // Lifecycle hooks
 
 function PrinceRifle:_on_equip()
 	self.Equipped = true
@@ -500,19 +413,12 @@ function PrinceRifle:_on_equip()
 
 	local char = game.Players.LocalPlayer.Character
 
-	-- Setup FastCast
 	self:_setupFastCast(FxFolder, function(cast, result, velocity)
 		local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
-		self:_onBulletHit(
-			cast, result, velocity,
-			muzzle,
-			self.Penetration_Level,
-			self.damage,
-			self.KnockBack_Force
-		)
+		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, self.damage, self.KnockBack_Force)
 	end)
 
-	-- Keyframe-driven round visibility
+	-- Keyframe-driven round visibility (local to equip, before BaseTool keyframe dispatch)
 	for _, track in pairs(self.RegisteredAnimations) do
 		if not track:IsA("AnimationTrack") then continue end
 		track.KeyframeReached:Connect(function(keyframe)
@@ -520,20 +426,19 @@ function PrinceRifle:_on_equip()
 			if not rightArm then return end
 			local round = rightArm:FindFirstChild(self.Round.Name)
 			if not round then return end
+
 			if keyframe == "vfx_hand_shell_visible" then
 				round.Transparency = 0
 			elseif keyframe == "vfx_hand_shell_invisible" then
 				round.Transparency = 1
 			end
-			
-			if keyframe:sub(1,4) == "sfx_" then
-				local soundName = keyframe:sub(5)
-				local sound = SoundFolder:FindFirstChild(soundName)
+
+			if keyframe:sub(1, 4) == "sfx_" then
+				local sound = SoundFolder:FindFirstChild(keyframe:sub(5))
 				if sound then
-					-- For Lebel fire sounds
 					self:_play_sfx(sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
 				else
-					warn("Sound not found for keyframe:", soundName)
+					warn("Sound not found for keyframe: " .. keyframe)
 				end
 			end
 		end)
@@ -563,18 +468,12 @@ function PrinceRifle:_on_unequip()
 	end
 end
 
---------------------------------------------------------------------------------
--- Cleanup
---------------------------------------------------------------------------------
+-- // Cleanup
 
 function PrinceRifle:Destroy()
 	self:_disconnectInput()
 	BaseTool.destroy(self)
 end
-
---------------------------------------------------------------------------------
--- Static metadata
---------------------------------------------------------------------------------
 
 PrinceRifle.Tool_Image = "rbxassetid://17496049645"
 PrinceRifle.Medal_Cost = 0
