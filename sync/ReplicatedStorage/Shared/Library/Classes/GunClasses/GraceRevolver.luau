@@ -8,6 +8,7 @@
 --!optimize 2
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService  = game:GetService("UserInputService")
 
 local Types    = require(script.Parent.Parent.Parent.Types)
 local BaseTool = require(script.Parent.Parent.BaseTool)
@@ -165,7 +166,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 		Reload_End        = 0.65,
 	}
 
-	self.damage                  = 25
+	self.damage                  = 120
 	self.Max_Capacity            = 6
 	self.Capacity                = 6
 	self.Ammo_Type               = ".45 Lead"
@@ -177,6 +178,8 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Aiming_Number           = 80
 	self.MuzzlePartName          = "GraceRevolver_Muzzle"
 	self.Can_Drop                = true
+	self.Accuracy = 8
+	self.Moving_Accuracy = 50
 
 	self.unequip_wait     = false
 	self.Aiming           = false
@@ -243,6 +246,7 @@ end
 
 function GraceRevolver:fire()
 	if self.Firing then return end
+	if self.ForceBlockFire then return end
 	self.Firing = true
 
 	if self.Spinning then self:_cancelSpin() end
@@ -259,8 +263,21 @@ function GraceRevolver:fire()
 	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
 	if not muzzle or self:_if_sprinting() then self.Firing = false; return end
 
-	local shootDir = workspace.CurrentCamera.CFrame.LookVector.Unit
+	local camera = workspace.CurrentCamera
 
+	local mousePos = UserInputService:GetMouseLocation()
+	local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = { game.Players.LocalPlayer.Character }
+
+	local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+	local targetPos = result and result.Position or (ray.Origin + ray.Direction * 1000)
+
+	local shootDir = (targetPos - muzzle.Position).Unit
+	
+	shootDir = self:get_spread(muzzle, shootDir)
 	local activeCast = self.Caster:Fire(muzzle.Position, shootDir, BULLET_SPEED, self.CasterBehavior)
 	activeCast.UserData.Direction  = shootDir
 	activeCast.UserData.Penetrated = false
