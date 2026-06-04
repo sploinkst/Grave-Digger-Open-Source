@@ -187,6 +187,8 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.Can_Drop                = true
 	self.SoundFolder             = SoundFolder
 	self.Short_Distance          = 2.3
+	self.Accuracy = 6
+	self.Moving_Accuracy = 100
 
 	self.unequip_wait     = false
 	self.Cycled           = true
@@ -282,13 +284,15 @@ function PrinceRifle:fire()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 	raycastParams.FilterDescendantsInstances = { game.Players.LocalPlayer.Character }
 
-	local result   = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
-	local shootDir = ((result and result.Position or ray.Origin + ray.Direction * 1000) - muzzle.Position).Unit
+	local result    = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+	local targetPos = result and result.Position or (ray.Origin + ray.Direction * 1000)
+	local shootDir  = (targetPos - muzzle.Position).Unit
 
+	shootDir = self:get_spread(muzzle, shootDir)
 	-- Fire
 	self:_play_sfx(fire_sound, muzzle, nil, self.Alt_Mode and 0.5 or nil)
-
 	self:_bounce_scoped_ui()
+
 	local activeCast = self.Caster:Fire(muzzle.Position, shootDir, BULLET_SPEED, self.CasterBehavior)
 	activeCast.UserData.Direction  = shootDir
 	activeCast.UserData.Penetrated = false
@@ -307,7 +311,7 @@ function PrinceRifle:fire()
 
 	local fireAnim = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 	self:_stopAllExcept()
-	self:_playAnim(fireAnim)
+	local fire_track = self:_playAnim(fireAnim)
 
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false)
 
@@ -315,9 +319,12 @@ function PrinceRifle:fire()
 
 	self:_fireMuzzleFlash()
 
+	fire_track.Stopped:Once(function()
+		self:_restoreBase()
+	end)
+	
 	task.wait(FIRE_RATE)
 	self.Firing = false
-	self:_restoreBase()
 end
 
 function PrinceRifle:_autoCycle()
