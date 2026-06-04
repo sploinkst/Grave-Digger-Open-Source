@@ -356,11 +356,11 @@ function BaseTool:equip()
 	if self.RegisteredAnimations then
 		local draw = self.RegisteredAnimations.Draw
 		local hold = self.RegisteredAnimations.Hold
-		if draw then draw:Play() end
+		if draw then self:_playAnim("Draw", true) end
 		if hold then
 			draw.Stopped:Connect(function()
 				if hold and self.tool and self.tool.Parent == character and self.Equipped then
-					hold:Play()
+					self:_playAnim("Hold", true)
 					hold:AdjustSpeed(0.2)
 					self.Equipping = false
 					self:init_short_mechanic()
@@ -376,10 +376,15 @@ function BaseTool:equip()
 
 	self:_startAimTracking()
 
-	character:GetAttributeChangedSignal("Sprinting"):Connect(function()
+	self.sprint_connection = character:GetAttributeChangedSignal("Sprinting"):Connect(function()
 		if character:GetAttribute("Sprinting") == true then
+			character:GetAttributeChangedSignal("Sprint_Animation"):Wait()
 			self:_stopAllExcept()
+			local hold = self.RegisteredAnimations.Hold
+			hold:Stop()
+			print("Is sprinting animation")
 		else
+			print("Is not sprinting animation")
 			if not self.Equipped then return end
 			if self.Aiming then
 				local aimTrack = self:_aimTrack()
@@ -387,8 +392,8 @@ function BaseTool:equip()
 				return
 			end
 			if self.RegisteredAnimations and self.RegisteredAnimations.Hold then
-				self.RegisteredAnimations.Hold:Play()
 				self.RegisteredAnimations.Hold:AdjustSpeed(0.2)
+				self:_playAnim("Hold", true)
 			end
 		end
 	end)
@@ -474,6 +479,10 @@ function BaseTool:equip()
 			end
 		end))
 	end
+	
+	self.Moving_Connection = character.Humanoid:GetPropertyChangedSignal("MoveDirection"):Connect(function()
+		self.LastMovedTime = tick()
+	end)
 end
 
 function BaseTool:unequip()
@@ -486,6 +495,7 @@ function BaseTool:unequip()
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
 
+	character:SetAttribute("Sprint_Animation", nil)
 	if self._on_unequip then self:_on_unequip() end
 
 	if self.RegisteredAnimations then
@@ -497,6 +507,7 @@ function BaseTool:unequip()
 	self:_disable_aiming_ui()
 	humanoid:UnequipTools()
 
+	self.sprint_connection:Disconnect()
 	if self.RegisteredAnimations and self.RegisteredAnimations.Unequip then
 		if self.Emergency_Drop == true then
 			self:_playAnim("Drop", true)
@@ -519,6 +530,39 @@ function BaseTool:unequip()
 		for _, conn in pairs(self.keyframe_connections) do conn:Disconnect() end
 		self.keyframe_connections = {}
 	end
+	
+	self.Moving_Connection = nil
+end
+
+-- // Automatic Spread
+function BaseTool:get_spread(muzzle, shootDir)
+	local character = game.Players.LocalPlayer.Character
+
+	-- Hold breath
+	local holdingBreath = character and character:GetAttribute("HoldBreathe") == true
+	if holdingBreath then
+		local windedUp = (tick() - (self.HoldBreathStartTime or 0)) >= (self.HoldBreathAccuracyTime or 0.35)
+		if windedUp then
+			return shootDir
+		end
+	end
+
+	-- Original game uses moving_accuracy when moving/in air.
+	-- Assuming LastMovedTime is maintained elsewhere.
+	local isMoving = (tick() - (self.LastMovedTime or 0)) <= 0.1
+
+	local spread = isMoving and self.Moving_Accuracy or self.Accuracy
+
+	local hOffset = math.random(-spread, spread) / 1000
+	local vOffset = math.random(-spread, spread) / 1000
+
+	local muzzleCF = muzzle.CFrame
+
+	return (
+		shootDir
+			+ muzzleCF.RightVector * hOffset
+			+ muzzleCF.UpVector * vOffset
+	).Unit
 end
 
 -- // State helpers
@@ -693,7 +737,6 @@ end
 -- // Aim system
 
 function BaseTool:aim()
-	if self:_if_sprinting() then return end
 	if self.Aiming or self:_isBusy() then return end
 	if not self.RegisteredAnimations.Aim then return end
 	if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
@@ -703,6 +746,7 @@ function BaseTool:aim()
 		self:_killAimTracks()
 
 		if LOCAL_PLAYER:GetAttribute("Jumping") then
+			self.ForceBlockFire = true
 			if self._shortTrack then self._shortTrack:Stop(0) end
 			self._shortTrack = self:_playAnim("Short")
 			if self._shortTrack then self._shortTrack:AdjustSpeed(1) end
@@ -715,7 +759,8 @@ function BaseTool:aim()
 		end
 
 		local aimTrack = self:_aimTrack()
-		if aimTrack then aimTrack:Play(CUT) end
+		if aimTrack then aimTrack:Play(CUT) self.ForceBlockFire = false end
+		
 	end
 
 	self.Aiming = true
@@ -756,6 +801,8 @@ function BaseTool:endAiming()
 	self:_stopTransparencyTracking()
 	self:_killAimTracks()
 
+	self.IsShorted     = false
+	self.ForceBlockFire = false
 	if not self:_isBusy() then
 		local anims = self.RegisteredAnimations
 		if anims and anims.Hold and not anims.Hold.IsPlaying then
@@ -906,22 +953,17 @@ function BaseTool:_startAimTracking()
 	self._wasFreeLook = self._wasFreeLook or false
 	self._freeLookYaw = self._freeLookYaw or 0
 
-	-- first-person smoothing state
-	self._fpAimCF = self._fpAimCF or CAMERA.CFrame
-
-	-- yaw continuity state (FIX for flipping)
 	self._smoothedYaw = self._smoothedYaw or 0
 	self._lastYaw = self._lastYaw or 0
 
+
+	
 	local lerpAlpha = 0.15
 
 	self._aimConnection = RunService.RenderStepped:Connect(function()
 		if not self.Equipped then
 			return
 		end
-
-		-- smooth camera frame (first-person stability)
-		self._fpAimCF = self._fpAimCF:Lerp(CAMERA.CFrame, 0.25)
 
 		local char = LOCAL_PLAYER.Character
 		local r = char and char:FindFirstChild("HumanoidRootPart")
@@ -936,7 +978,6 @@ function BaseTool:_startAimTracking()
 			return
 		end
 
-		-- restore state when not aiming
 		if not self.Aiming then
 			if self._restLeftC0 then
 				ls.C0 = ls.C0:Lerp(self._restLeftC0, lerpAlpha)
@@ -953,7 +994,7 @@ function BaseTool:_startAimTracking()
 		local rightArmCF
 
 		if LOCAL_PLAYER:GetAttribute("FirstPerson") then
-			local camCF = self._fpAimCF
+			local camCF = CAMERA.CFrame
 
 			local shoulderOffset = CFrame.new()
 
@@ -985,10 +1026,8 @@ function BaseTool:_startAimTracking()
 			local relativeCF = r.CFrame:ToObjectSpace(CAMERA.CFrame)
 			local lookDir = relativeCF.LookVector
 
-			-- raw yaw
 			local rawYaw = math.atan2(-lookDir.X, -lookDir.Z)
 
-			-- FIX: unwrap discontinuity (prevents 180° flip)
 			local deltaYaw = rawYaw - self._lastYaw
 
 			if deltaYaw > math.pi then
@@ -1025,9 +1064,23 @@ function BaseTool:_startAimTracking()
 			)
 		end
 
-		-- final smoothing
-		ls.C0 = ls.C0:Lerp(leftArmCF, lerpAlpha)
-		rs.C0 = rs.C0:Lerp(rightArmCF, lerpAlpha)
+		if LOCAL_PLAYER:GetAttribute("FirstPerson") then
+			local targetLeftRot = leftArmCF - leftArmCF.Position
+			local targetRightRot = rightArmCF - rightArmCF.Position
+
+			self._fpLeftRot = self._fpLeftRot or (leftArmCF - leftArmCF.Position)
+			self._fpRightRot = self._fpRightRot or (rightArmCF - rightArmCF.Position)
+			
+			self._fpLeftRot = self._fpLeftRot:Lerp(targetLeftRot, 0.12)
+			self._fpRightRot = self._fpRightRot:Lerp(targetRightRot, 0.12)
+
+			
+			ls.C0 = CFrame.new(leftArmCF.Position) * self._fpLeftRot
+			rs.C0 = CFrame.new(rightArmCF.Position) * self._fpRightRot
+		else
+			ls.C0 = ls.C0:Lerp(leftArmCF, lerpAlpha)
+			rs.C0 = rs.C0:Lerp(rightArmCF, lerpAlpha)
+		end
 	end)
 end
 
@@ -1281,30 +1334,71 @@ end
 -- // Aiming UI
 
 function BaseTool:_enable_aiming_ui(max_aiming: number)
-	local aiming_gui = LOCAL_PLAYER.PlayerGui.Aiming
+	local aiming_gui = game.Players.LocalPlayer.PlayerGui.Aiming
 	aiming_gui.Regular_Crosshair.Visible = false
 	aiming_gui.Scoped_In.Visible = true
 
 	local scoped = aiming_gui.Scoped_In.main
 	local down, left, right, up = scoped.down, scoped.left, scoped.right, scoped.up
 
-	local character = LOCAL_PLAYER.Character or LOCAL_PLAYER.CharacterAdded:Wait()
+	local character = game.Players.LocalPlayer.Character or game.Players.LocalPlayer.CharacterAdded:Wait()
 	local root      = character:WaitForChild("HumanoidRootPart")
 	local humanoid  = character:WaitForChild("Humanoid")
 
-	if self.character_connection then self.character_connection:Disconnect() end
+	if self.character_connection then
+		self.character_connection:Disconnect()
+	end
 
 	local currentSpread = 0
+
 	self.character_connection = RunService.RenderStepped:Connect(function()
-		if not root or not humanoid then return end
-		local speed   = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z).Magnitude
-		local alpha   = (humanoid.WalkSpeed > 0) and math.clamp(speed / humanoid.WalkSpeed, 0, 1) or 0
-		currentSpread = currentSpread + (alpha * max_aiming - currentSpread) * 0.15
-		local offset  = 5 + currentSpread
+		if not root or not humanoid then
+			return
+		end
+
+		local holdingBreath = character:GetAttribute("HoldBreathe") == true
+		local targetSpread
+
+		if holdingBreath then
+			if not self._breathStartTime then
+				self._breathStartTime = tick()
+				self._spreadAtBreath = currentSpread
+			end
+
+			local breathHeldFor = tick() - self._breathStartTime
+			local windUp = math.clamp(breathHeldFor / 0.5, 0, 1)
+
+			local breathBonus = 5
+
+			targetSpread = (self._spreadAtBreath or currentSpread)
+				+ ((-breathBonus) - (self._spreadAtBreath or currentSpread)) * windUp
+		else
+			self._breathStartTime = nil
+			self._spreadAtBreath = nil
+
+			local speed = Vector3.new(
+				root.AssemblyLinearVelocity.X,
+				0,
+				root.AssemblyLinearVelocity.Z
+			).Magnitude
+
+			local alpha = (humanoid.WalkSpeed > 0)
+				and math.clamp(speed / humanoid.WalkSpeed, 0, 1)
+				or 0
+
+			targetSpread = alpha * max_aiming
+		end
+
+		currentSpread = currentSpread + (targetSpread - currentSpread) * 0.3
+
+		-- Normal resting offset is 5px.
+		-- Holding breath can now pull it below that.
+		local offset = math.max(1, 5 + currentSpread)
+
 		up.Position    = UDim2.new(0.5, 0, 0, -offset)
-		down.Position  = UDim2.new(0.5, 0, 1,  offset)
+		down.Position  = UDim2.new(0.5, 0, 1, offset)
 		left.Position  = UDim2.new(0, -offset, 0.5, 0)
-		right.Position = UDim2.new(1,  offset, 0.5, 0)
+		right.Position = UDim2.new(1, offset, 0.5, 0)
 	end)
 end
 
@@ -1467,6 +1561,8 @@ function BaseTool:emit_casing(casing: Part, origin: CFrame, direction: Vector3)
 	clone.AssemblyAngularVelocity = Vector3.new(math.random(-10, 10), math.random(-10, 10), math.random(-10, 10))
 
 	task.delay(0.1, function() bv:Destroy() end)
+	
+	task.delay(3, function() clone:Destroy() end)
 end
 
 -- // Stubs
