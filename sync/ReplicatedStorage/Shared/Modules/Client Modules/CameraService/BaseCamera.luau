@@ -33,7 +33,7 @@ local CameraOffsets = {
 local FOV_Config = {
 	BASE        = 90,
 	AIMING      = 80,
-	HOLD_BREATH = 40,
+	HOLD_BREATH = 60,
 	MENU        = 40,
 	SCOPE       = 40 / 3.5,
 }
@@ -60,12 +60,13 @@ local WALL_COLLISION_DISTANCE = 6.5
 local HOLD_BREATH_TIME       = 3.5
 local HOLD_BREATH_REGEN      = 1.0
 local HOLD_BREATH_ACCURACY   = 1.5
-local HOLD_BREATH_FADE_SPEED = 0.3
-local RECOIL_YANK_STRENGTH   = 8
+local HOLD_BREATH_FADE_SPEED = 0.5
+local HOLD_BREATHE_RELEASE_SPEED = 0.2
+local RECOIL_YANK_STRENGTH   = 16
 
 local RECOIL_SNAPPINESS     = 100
 local SHOULDER_SWITCH_SPEED = 6
-local TRANSITION_SPEED      = 0.3
+local TRANSITION_SPEED      = 0.5
 
 local hold_breath = LocalPlayer.PlayerGui:WaitForChild("Aiming"):WaitForChild("hold_breath")
 
@@ -121,7 +122,8 @@ function BaseCamera.new(cameraInfo)
 	self.CameraYaw   = 0
 	self.CameraPitch = 0
 	self.CameraKick = 0
-	self.MaxTurnRate = math.rad(270)
+	self.MaxTurnRate = math.rad(600)
+	self.MaxTurnRate_Transitioning = math.rad(800)
 
 	self.RecoilPitch       = 0
 	self.RecoilYaw         = 0
@@ -219,27 +221,23 @@ end
 
 function BaseCamera:_applyTransition(root: BasePart, targetCFrame: CFrame, dt: number)
 	if self.IsTransitioning then
-		self.TransitionElapsed += dt
+		
+		if not self.TransitionStartWorld then
+			self.TransitionStartWorld = Camera.CFrame
+		end
 
+		self.TransitionElapsed += dt
 		local alpha = math.clamp(self.TransitionElapsed / TRANSITION_SPEED, 0, 1)
 
-		local startLocal  = root.CFrame:ToObjectSpace(self.TransitionStartCFrame)
-		local targetLocal = root.CFrame:ToObjectSpace(targetCFrame)
+		local lerpedCFrame = self.TransitionStartWorld:Lerp(targetCFrame, TRANSITION_SPEED)
 
-		local startPos  = startLocal.Position
-		local targetPos = targetLocal.Position
-
-		local blendedPos  = startPos:Lerp(targetPos, alpha)
-		local startRot    = startLocal - startPos
-		local targetRot   = targetLocal - targetPos
-		local blendedRot  = startRot:Lerp(targetRot, alpha)
-		local blendedLocal = CFrame.new(blendedPos) * blendedRot
-
-		Camera.CFrame = root.CFrame * blendedLocal
+		self.TransitionStartWorld = lerpedCFrame
+		Camera.CFrame = lerpedCFrame
 
 		if alpha >= 1 then
-			self.IsTransitioning       = false
-			self.TransitionLocalOffset = nil
+			Camera.CFrame             = targetCFrame
+			self.IsTransitioning      = false
+			self.TransitionStartWorld = nil
 		end
 	else
 		Camera.CFrame = targetCFrame
@@ -269,7 +267,15 @@ function BaseCamera:_updateHoldBreath()
 		self.applied_holdbreath_recoil = true
 	else
 		if self.applied_holdbreath_recoil == true then
-			Util.applyRecoil(RECOIL_YANK_STRENGTH, 10, RECOIL_YANK_STRENGTH + math.random(-10, 10), true)
+			local yawDeg   = math.random(-30, 30) / 100
+			local yawDeg2  = math.random(-30, 30) / 100
+			local pitchRad = 0.006981317007977318
+			
+			self:ApplyRecoil(-pitchRad, -math.rad(yawDeg), 6)
+			task.delay(6 * 0.015, function()
+				self:ApplyRecoil(pitchRad, math.rad(yawDeg2), 6)
+			end)
+
 			self.applied_holdbreath_recoil = false
 		end
 	end
@@ -404,13 +410,54 @@ end
 
 function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 	local targetYaw = self.CameraYaw
+
 	local diff = math.atan2(
 		math.sin(targetYaw - self.CharacterYaw),
 		math.cos(targetYaw - self.CharacterYaw)
 	)
-	local desiredStep = diff * math.clamp(10 * dt, 0, 1)
-	local maxStep     = self.MaxTurnRate * dt
-	desiredStep = math.clamp(desiredStep, -maxStep, maxStep)
+
+	-- Match ingameScript state-based MaxAngularVelocity values
+	local character = LocalPlayer.Character
+	local maxRate
+
+	if self.IsTransitioning then
+		maxRate = self.MaxTurnRate_Transitioning -- math.rad(600), unrestricted snap
+	elseif character then
+		local isCharging   = character:GetAttribute("charging")   == true
+		local isSlowRotate = character:GetAttribute("slow_rotate") == true
+		local isFallIntr   = character:GetAttribute("fall_damage_interrupt") == true
+		local perk         = character:GetAttribute("perk")  or ""
+		local class        = character:GetAttribute("class") or ""
+		local hasLancer    = character:FindFirstChild("elitekit") and
+			character.elitekit.Value == "lancer"
+		local aiming 	   = character:GetAttribute("aiming") == true
+
+		if isCharging or isFallIntr then
+			if (perk == "butcher" or perk == "vet" or hasLancer) and class == "lancer" then
+				maxRate = math.rad(6)   -- matches MaxAngularVelocity = 6
+			else
+				maxRate = math.rad(2)   -- matches MaxAngularVelocity = 2
+			end
+		elseif isSlowRotate then
+			maxRate = math.rad(12)      -- matches MaxAngularVelocity = 12
+		elseif aiming then
+			maxRate = math.rad(700)
+		else
+			maxRate = math.rad(600)     -- matches MaxAngularVelocity = 100 (normal)
+		end
+	else
+		maxRate = math.rad(600)
+	end
+
+	-- Alpha scales with maxRate so responsiveness tracks the same way
+	local responsivenessAlpha = math.clamp((maxRate / math.rad(100)) * 10 * dt, 0, 1)
+
+	local desiredStep = math.clamp(
+		diff * responsivenessAlpha,
+		-maxRate * dt,
+		maxRate * dt
+	)
+
 	self.CharacterYaw += desiredStep
 	root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, self.CharacterYaw, 0)
 end
@@ -502,7 +549,7 @@ function BaseCamera:_onHoldBreathStateChanged()
 	local humanoid  = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 	local walkSpeed = humanoid and humanoid.WalkSpeed or 10
 	local alpha     = math.clamp((walkSpeed - 10) / (18 - 10), 0, 1)
-	local sprintFOV = 90 + (15 * alpha)
+	local sprintFOV = 90 + (10 * alpha)
 
 	if self.holding_breath then
 		self.TargetFOV = FOV_Config.HOLD_BREATH
@@ -512,17 +559,18 @@ function BaseCamera:_onHoldBreathStateChanged()
 		self.TargetFOV = sprintFOV
 	end
 
+	local fade_speed = self.holding_breath and HOLD_BREATH_FADE_SPEED or HOLD_BREATHE_RELEASE_SPEED
 	local targetTransparency = self.holding_breath and 0 or 1
 
 	if self.FOVTween  then self.FOVTween:Cancel()  end
 	if self.FOVTween2 then self.FOVTween2:Cancel() end
 
 	self.FOVTween = TweenService:Create(Camera,
-		TweenInfo.new(HOLD_BREATH_FADE_SPEED, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+		TweenInfo.new(fade_speed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
 		{ FieldOfView = self.TargetFOV }
 	)
 	self.FOVTween2 = TweenService:Create(hold_breath,
-		TweenInfo.new(HOLD_BREATH_FADE_SPEED, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+		TweenInfo.new(fade_speed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
 		{ ImageTransparency = targetTransparency }
 	)
 	self.FOVTween:Play()
@@ -608,11 +656,8 @@ end
 
 function BaseCamera:CustomCamera()
 	self:_unbind()
-	self.IsFirstPerson     = false
-	self.CurrentMode       = "CustomCamera"
-	self.IsTransitioning   = true
-	self.TransitionElapsed = 0
-	self.TransitionStartCFrame = Camera.CFrame
+	self.IsFirstPerson = false
+	self.CurrentMode   = "CustomCamera"
 
 	local character, root = self:_getCharacterParts()
 	if not root then return end
@@ -664,7 +709,6 @@ function BaseCamera:CustomCamera()
 		if rayResult then finalZoom = math.max(rayResult.Distance - COLLISION_MARGIN, MIN_ZOOM) end
 
 		local targetCFrame = CFrame.new(cameraFocus - (cameraDir * finalZoom)) * rotation
-		self.TransitionTargetCFrame = targetCFrame
 		self:_applyTransition(root, targetCFrame, dt)
 
 		if self.CurrentMode ~= "CustomCamera" then
@@ -678,11 +722,8 @@ end
 function BaseCamera:FirstPerson()
 	self:_unbind()
 
-	self.IsFirstPerson     = true
-	self.CurrentMode       = "FirstPerson"
-	self.IsTransitioning   = true
-	self.TransitionElapsed = 0
-	self.TransitionStartCFrame = Camera.CFrame
+	self.IsFirstPerson = true
+	self.CurrentMode   = "FirstPerson"
 
 	local character, root, head, torso, humanoid = self:_getCharacterParts()
 	if not root or not character then return end
@@ -728,9 +769,6 @@ function BaseCamera:FirstPerson()
 			PITCH_MAX
 		)
 
-		local finalYaw   = self.CameraYaw
-		local finalPitch = self.CameraPitch
-
 		if humanoid and humanoid.Health > 0 then
 			self.CharacterYaw = self.CameraYaw
 			root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, self.CharacterYaw, 0)
@@ -739,17 +777,15 @@ function BaseCamera:FirstPerson()
 		local cameraPosition = root.Position + Vector3.new(0, 1.5, 0)
 
 		local rotation =
-			CFrame.Angles(0, finalYaw, 0)
-			* CFrame.Angles(finalPitch, 0, 0)
+			CFrame.Angles(0, self.CameraYaw, 0)
+			* CFrame.Angles(self.CameraPitch, 0, 0)
 
-		local kickOffset =
-			-rotation.LookVector * self.CameraKick
+		local kickOffset = -rotation.LookVector * self.CameraKick
 
 		local targetCFrame =
 			CFrame.new(cameraPosition + kickOffset)
 			* rotation
 
-		self.TransitionTargetCFrame = targetCFrame
 		self:_applyTransition(root, targetCFrame, dt)
 
 		InputService.MouseBehavior = Enum.MouseBehavior.LockCenter
@@ -759,10 +795,7 @@ end
 function BaseCamera:OverTheShoulder()
 	self:_unbind()
 
-	self.IsFirstPerson     = false
-	self.IsTransitioning   = true
-	self.TransitionElapsed = 0
-	self.TransitionStartCFrame = Camera.CFrame
+	self.IsFirstPerson = false
 
 	self.RecoilPitch       = 0
 	self.RecoilYaw         = 0
@@ -781,9 +814,7 @@ function BaseCamera:OverTheShoulder()
 	end
 
 	local character, root, head, torso, humanoid = self:_getCharacterParts()
-	if not root then
-		return
-	end
+	if not root then return end
 
 	local zoomConn = InputService.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseWheel then
@@ -813,9 +844,7 @@ function BaseCamera:OverTheShoulder()
 		self:_decayCameraOffsetZ(dt)
 
 		local character, root, head, torso, humanoid = self:_getCharacterParts()
-		if not root or not character then
-			return
-		end
+		if not root or not character then return end
 
 		local delta = self:_consumeMouseDelta()
 
@@ -842,57 +871,34 @@ function BaseCamera:OverTheShoulder()
 			math.clamp(self.ZoomSpeed * dt, 0, 1)
 		)
 
-		local shoulderX =
-			CameraOffsets.Third_Person_Right.X * ((self.ShoulderAlpha * 2) - 1)
-
-		local verticalOffset =
-			self.is_crouching and 0.5 or 1.8
-
-		local focusPoint =
-			root.Position + Vector3.new(0, verticalOffset, 0)
+		local shoulderX = CameraOffsets.Third_Person_Right.X * ((self.ShoulderAlpha * 2) - 1)
+		local verticalOffset = self.is_crouching and 0.5 or 1.8
+		local focusPoint = root.Position + Vector3.new(0, verticalOffset, 0)
 
 		local cameraOffset =
 			(rotation.RightVector * shoulderX)
 			+ (rotation.UpVector * 0.5)
 		- (rotation.LookVector * self.ShoulderZoom)
 
-		local idealPosition =
-			focusPoint + cameraOffset
-
-		local rayDirection =
-			idealPosition - focusPoint
+		local idealPosition = focusPoint + cameraOffset
+		local rayDirection  = idealPosition - focusPoint
 
 		local rayParams = RaycastParams.new()
-		rayParams.FilterDescendantsInstances = {
-			character,
-			workspace.CurrentCamera,
-		}
+		rayParams.FilterDescendantsInstances = { character, workspace.CurrentCamera }
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
-		local collisionResult = Workspace:Spherecast(
-			focusPoint,
-			COLLISION_MARGIN,
-			rayDirection,
-			rayParams
-		)
+		local collisionResult = Workspace:Spherecast(focusPoint, COLLISION_MARGIN, rayDirection, rayParams)
 
 		local finalPos = idealPosition
-
 		if collisionResult then
-			finalPos =
-				focusPoint + (rayDirection.Unit * collisionResult.Distance)
+			finalPos = focusPoint + (rayDirection.Unit * collisionResult.Distance)
 		end
 
-		-- Camera recoil kickback
 		local kickOffset =
 			(-rotation.LookVector * self.CameraKick)
 			+ (rotation.UpVector * (self.CameraKick * 0.15))
 
-		local targetCFrame =
-			CFrame.new(finalPos + kickOffset)
-			* rotation
-
-		self.TransitionTargetCFrame = targetCFrame
+		local targetCFrame = CFrame.new(finalPos + kickOffset) * rotation
 
 		self:_applyTransition(root, targetCFrame, dt)
 		self:_updateCharacterRotation(root, dt)
@@ -904,7 +910,6 @@ function BaseCamera:OverTheShoulder()
 		end
 	end)
 end
-
 -- // CAMERA SWITCHING
 
 function BaseCamera:Switch_Camera(target: string)
@@ -912,12 +917,14 @@ function BaseCamera:Switch_Camera(target: string)
 
 	local look = Camera.CFrame.LookVector
 	self.CameraYaw   = math.atan2(-look.X, -look.Z)
-	self.CameraPitch = math.asin(look.Y)
+	self.CameraPitch = math.asin(math.clamp(look.Y, -1, 1))
 
-	self.TransitionStartCFrame = Camera.CFrame
-	self.IsTransitioning       = true
-	self.TransitionElapsed     = 0
-	self.CurrentMode           = target
+
+	-- Pure world-space snapshot, root orientation never touches this
+	self.TransitionStartWorld = Camera.CFrame
+	self.IsTransitioning      = true
+	self.TransitionElapsed    = 0
+	self.CurrentMode          = target
 
 	local preset = Presets[target]
 	Camera.CameraType             = preset.CameraType
@@ -933,7 +940,7 @@ function BaseCamera:Switch_Camera(target: string)
 	local humanoid  = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then task.defer(function() humanoid.AutoRotate = preset.AutoRotate or false end) end
 
-	cursor_ui.Visible = preset.Cursor_UI or false
+	cursor_ui.Visible = preset.Cursor_UI and not character:GetAttribute("Aiming") or false
 	LocalPlayer:SetAttribute("FreeLook", nil)
 	LocalPlayer:SetAttribute("FirstPerson", nil)
 
@@ -1086,12 +1093,17 @@ function BaseCamera:ApplyRecoil(vertical: number, horizontal: number, steps: num
 		local due = math.floor(elapsed / stepInterval)
 
 		for _ = 1, math.min(due - stepsApplied, totalSteps - stepsApplied) do
-			self.CameraPitch += vertical
-			self.CameraYaw += horizontal
-
-			-- physical camera pushback
-			self.CameraKick += 0.15
-
+			
+			if self.holding_breath then
+				self.CameraPitch += vertical * 0.5
+				self.CameraYaw += horizontal * 0.5
+				self.CameraKick += 0.15
+			else
+				self.CameraPitch += vertical
+				self.CameraYaw += horizontal
+				self.CameraKick += 0.15
+			end
+				
 			stepsApplied += 1
 		end
 	end)

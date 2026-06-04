@@ -38,13 +38,13 @@ local MaxSpeed           = 18
 local SprintRampTime     = 2
 
 -- // VAULT CONFIG
-local VAULT_RAYCAST_RANGE_1 = 2      -- Forward surface detection
-local VAULT_RAYCAST_RANGE_2 = 3.5    -- Top clearance
-local VAULT_RAYCAST_RANGE_3 = 3      -- Mid clearance
-local VAULT_RAYCAST_RANGE_4 = 3      -- Upper clearance
-local VAULT_TARGET_UP = 5             -- Distance to move player up
-local VAULT_TARGET_FORWARD = 5        -- Distance to move player forward
-local VAULT_DURATION = 0.4            -- How long vault physics applies
+local VAULT_RAYCAST_RANGE_1 = 2
+local VAULT_RAYCAST_RANGE_2 = 3.5
+local VAULT_RAYCAST_RANGE_3 = 3
+local VAULT_RAYCAST_RANGE_4 = 3
+local VAULT_TARGET_UP = 5
+local VAULT_TARGET_FORWARD = 5
+local VAULT_DURATION = 0.4
 local VAULT_BODY_POSITION_MAXFORCE = Vector3.new(200000, 200000, 200000)
 local VAULT_BODY_POSITION_P = 2000
 local VAULT_BODY_POSITION_D = 500
@@ -55,12 +55,24 @@ local Sprinting   = false
 local LoopRunning = false
 local Checked = false
 
-local SprintTicker = 0 
+local SprintTicker = 0
+
+local HoldBreathe_time = 5.5
+local HoldBreathe_regen = 2.5
+local HoldBreathe_maxaccuracy = 0.35
+
 local HoldingBreath = false
+local HoldBreathStart = 0
+local HoldBreathCooldownEnd = 0
+
 local IsJumping = false
+local IsClimbing = false   -- FIX: track climbing state
 local fall_time = tick()
 local fall_threshold = 0.35
 local fall_duration_threshold = 0.3
+
+local LastSprintCancelTime = 0
+local AimSprintCooldown = 0.35
 
 local W_Locked = true
 
@@ -81,7 +93,7 @@ local KeyStates = {
 	Right     = false,
 }
 
--- Forward declaration of loop trigger to allow cross-calling
+-- Forward declaration
 local tryStartSprint
 
 -- // Helpers
@@ -108,16 +120,75 @@ local function setSprintAttribute(state: boolean)
 end
 
 local function setHoldBreathe(holding: boolean)
-	if not Character then return end
-	if holding then
-		Character:SetAttribute("HoldBreathe", true)
-		HoldingBreath = true
-	else
-		Character:SetAttribute("HoldBreathe", nil)
-		HoldingBreath = false
+	if not Character then
+		return
 	end
 
-	print("Set HoldBreathe to:", holding)
+	if holding then
+		if HoldingBreath then
+			return
+		end
+
+		if tick() < HoldBreathCooldownEnd then
+			return
+		end
+
+		HoldingBreath = true
+		HoldBreathStart = tick()
+
+		Character:SetAttribute("HoldBreathe", true)
+
+		task.spawn(function()
+			while HoldingBreath do
+				if not Character:GetAttribute("Aiming") then
+					break
+				end
+
+				if Character.Humanoid.MoveDirection.Magnitude > 0 then
+					break
+				end
+
+				if not SprintKeyHeld then
+					break
+				end
+
+				if tick() - HoldBreathStart >= HoldBreathe_time then
+					break
+				end
+
+				if Character:GetAttribute("HoldBreathe") ~= true then
+					break
+				end
+
+				task.wait(0.05)
+			end
+
+			if HoldingBreath then
+				HoldingBreath = false
+				HoldBreathCooldownEnd = tick() + HoldBreathe_regen
+
+				if Character:GetAttribute("HoldBreathe") then
+					Character:SetAttribute("HoldBreathe", nil)
+				end
+
+				print("[HoldBreath] Ended. Cooldown until:", HoldBreathCooldownEnd)
+			end
+		end)
+
+	else
+		if not HoldingBreath then
+			return
+		end
+
+		HoldingBreath = false
+		HoldBreathCooldownEnd = tick() + HoldBreathe_regen
+
+		if Character:GetAttribute("HoldBreathe") then
+			Character:SetAttribute("HoldBreathe", nil)
+		end
+
+		print("[HoldBreath] Ended manually. Cooldown until:", HoldBreathCooldownEnd)
+	end
 end
 
 local function resetSpeed()
@@ -134,12 +205,13 @@ local function resetSpeed()
 	end
 end
 
---[[
-	Check if player can start sprinting based on W_Locked state.
-]]
 local function canStartSprint()
-	-- Don't start sprinting if aiming or crouching
 	if not Character or Character:GetAttribute("Aiming") or Character:GetAttribute("Crouching") then
+		return false
+	end
+
+	-- FIX: don't allow sprint to start while climbing
+	if IsClimbing then
 		return false
 	end
 
@@ -270,16 +342,20 @@ local function sprintLoop()
 	if LoopRunning then return end
 	LoopRunning = true
 
-	SprintTicker = tick() 
+	SprintTicker = tick()
 	print("[SprintLoop] Started - W_Locked:", W_Locked)
 
 	while Sprinting do
+		
 		if not Character or not Humanoid or not RootPart then break end
 
-		-- // if aiming and not moving
-		if Character:GetAttribute("Aiming") and Character.Humanoid.MoveDirection.Magnitude <= 0 then
+		if Character:GetAttribute("Aiming") then
 			print("[SprintLoop] Stopped: Aiming")
-			setHoldBreathe(true)
+			break
+		end
+		
+		if IsClimbing then
+			print("[SprintLoop] Stopped: Climbing")
 			break
 		end
 
@@ -304,6 +380,10 @@ local function sprintLoop()
 		local hasMovementInput = KeyStates.Forward or KeyStates.Backwards or KeyStates.Left or KeyStates.Right
 
 		if W_Locked and KeyStates.Forward or not W_Locked and hasMovementInput then
+			-- FIX: removed the GetAttributeChangedSignal connection from inside
+			-- the loop — it was creating a new leaked connection every 0.03s.
+			-- Aiming is handled by the dedicated attribute listener below.
+
 			local elapsed = tick() - SprintTicker
 			local t = math.clamp(elapsed / SprintRampTime, 0, 1)
 
@@ -325,9 +405,9 @@ local function sprintLoop()
 			end
 		end
 
-		-- Velocity checks (e.g. wall bumps)
+		-- Velocity checks
 		local forwardVel = getForwardVelocity()
-		if forwardVel > 2 then 
+		if forwardVel > 2 then
 			print("[SprintLoop] Stopped: Moving backwards too much")
 			break
 		end
@@ -338,21 +418,19 @@ local function sprintLoop()
 			break
 		end
 
-		task.wait(0.03) 
+		task.wait(0.03)
 	end
 
-	-- Clean up current sprint state safely
 	LoopRunning = false
 	resetSpeed()
-	
+
 	if SprintKeyHeld and not Checked then
 		task.defer(function()
 			print("[SprintLoop] Monitoring for Auto-Rebuild...")
 			while SprintKeyHeld and not Sprinting and not Checked do
-				if canStartSprint() then
+				if not Character:GetAttribute("Aiming") and canStartSprint() then
 					Checked = true
 					local smoothedVel = getSmoothedVelocity()
-					-- Give a tiny bit of leniency to start accelerating again away from the wall
 					if smoothedVel >= (BaseSpeed - 3) or (not W_Locked and smoothedVel > 2) then
 						print("[SprintLoop] Auto-Rebuild conditions met. Restarting!")
 						tryStartSprint()
@@ -365,12 +443,11 @@ local function sprintLoop()
 	end
 end
 
--- Dedicated initialization function to avoid double-loop fires
 function tryStartSprint()
 	if not Sprinting and canStartSprint() then
 		Sprinting = true
 		task.spawn(sprintLoop)
-		
+
 		task.delay(0.5, function()
 			Checked = false
 		end)
@@ -403,16 +480,6 @@ function module.start_module()
 	if Humanoid then
 		Humanoid.WalkSpeed = BaseSpeed
 	end
-	
-	Character:GetAttributeChangedSignal("Aiming"):Connect(function()
-		if Character:GetAttribute("Aiming") then
-			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
-			print("[Module] Jumping disabled for aiming")
-		else
-			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-			print("[Module] Jumping enabled for aiming")
-		end
-	end)
 
 	fall_time = tick()
 
@@ -421,10 +488,48 @@ function module.start_module()
 
 	Character:GetAttributeChangedSignal("Aiming"):Connect(function()
 		local aiming = Character:GetAttribute("Aiming")
-		if aiming and SprintKeyHeld and Character.Humanoid.MoveDirection.Magnitude <= 0 then
-			setHoldBreathe(true)
+
+		if aiming then
+			local cancelledSprint = false
+
+			if Sprinting or LoopRunning then
+				cancelledSprint = true
+
+				Sprinting = false
+				LoopRunning = false
+
+				LastSprintCancelTime = tick()
+
+				setSprintAttribute(false)
+
+				if Humanoid then
+					Humanoid.WalkSpeed = BaseSpeed
+				end
+
+				print("[Aiming] Sprint cancelled")
+			end
+
+			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+
+			if not cancelledSprint
+				and SprintKeyHeld
+				and Character.Humanoid.MoveDirection.Magnitude <= 0
+				and (tick() - LastSprintCancelTime) >= AimSprintCooldown then
+
+				setHoldBreathe(true)
+			else
+				setHoldBreathe(false)
+			end
+
 		else
+			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+
 			setHoldBreathe(false)
+
+			if SprintKeyHeld
+				and (tick() - LastSprintCancelTime) >= AimSprintCooldown then
+				tryStartSprint()
+			end
 		end
 	end)
 
@@ -487,15 +592,28 @@ function module.start_module()
 	end)
 
 	Humanoid.StateChanged:Connect(function(old, new)
-		if new == Enum.HumanoidStateType.Jumping then
-			if Character:GetAttribute("Crouching") then 
+		-- FIX: track climbing state and stop sprint when it begins
+		if new == Enum.HumanoidStateType.Climbing then
+			IsClimbing = true
+			IsJumping = false
+
+			if Sprinting then
+				print("[StateChanged] Climbing started — stopping sprint")
+				Sprinting = false
+				resetSpeed()
+			end
+
+		elseif new == Enum.HumanoidStateType.Jumping then
+			IsClimbing = false
+
+			if Character:GetAttribute("Crouching") then
 				Character:SetAttribute("Crouching", nil)
 			end
 
 			if Character:GetAttribute("Aiming") then
 				return
 			end
-			
+
 			LocalPlayer:SetAttribute("Jumping", true)
 			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
 			IsJumping = true
@@ -505,17 +623,28 @@ function module.start_module()
 			end)
 
 		elseif new == Enum.HumanoidStateType.Freefall then
+			-- FIX: leaving a ladder into freefall should also clear climbing
+			IsClimbing = false
 			IsJumping = true
 			fall_time = tick()
 
 		elseif new == Enum.HumanoidStateType.Landed then
+			IsClimbing = false
 			LocalPlayer:SetAttribute("Jumping", nil)
 			IsJumping = false
 			fall_time = tick()
 			print("[StateChanged] Landed - fall_time reset to:", fall_time)
 
-			-- Rebuild sprint upon landing if key is still pinned down
 			if SprintKeyHeld then tryStartSprint() end
+
+		elseif new == Enum.HumanoidStateType.Running
+			or new == Enum.HumanoidStateType.RunningNoPhysics then
+			-- FIX: leaving the ladder into a running state clears climbing
+			if IsClimbing then
+				IsClimbing = false
+				print("[StateChanged] Left climbing via Running state")
+				if SprintKeyHeld then tryStartSprint() end
+			end
 		end
 	end)
 
@@ -537,6 +666,63 @@ function module.start_module()
 		if SprintKeyHeld then tryStartSprint() end
 	end)
 
+	Character:GetAttributeChangedSignal("HoldBreathe"):Connect(function()
+		local attributeState = Character:GetAttribute("HoldBreathe")
+
+		if HoldingBreath and attributeState ~= true then
+			HoldingBreath = false
+			HoldBreathCooldownEnd = tick() + HoldBreathe_regen
+
+			print("[HoldBreath] Forcefully cancelled. Cooldown until:", HoldBreathCooldownEnd)
+		end
+	end)
+
+	Character:GetAttributeChangedSignal("Aiming"):Connect(function()
+		local aiming = Character:GetAttribute("Aiming")
+
+		if aiming then
+			local cancelledSprint = false
+
+			if Sprinting or LoopRunning then
+				cancelledSprint = true
+
+				Sprinting = false
+				LoopRunning = false
+
+				LastSprintCancelTime = tick()
+
+				setSprintAttribute(false)
+
+				if Humanoid then
+					Humanoid.WalkSpeed = BaseSpeed
+				end
+
+				print("[Aiming] Sprint cancelled")
+			end
+
+			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+
+			if not cancelledSprint
+				and SprintKeyHeld
+				and Character.Humanoid.MoveDirection.Magnitude <= 0
+				and (tick() - LastSprintCancelTime) >= AimSprintCooldown then
+
+				setHoldBreathe(true)
+			else
+				setHoldBreathe(false)
+			end
+
+		else
+			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+
+			setHoldBreathe(false)
+
+			if SprintKeyHeld
+				and (tick() - LastSprintCancelTime) >= AimSprintCooldown then
+				tryStartSprint()
+			end
+		end
+	end)
 end
 
 return module

@@ -937,18 +937,22 @@ function module.start_module()
 	local_player:GetAttributeChangedSignal("Concussion"):Connect(update_concussion_state)
 	
 	-- // TEMP REMIND ME TO DELETE ONCE I GET LOADINGMANAGER UP AND RUNNING -- PRAXITOS
+	local soundsToRestore = {}
 	for _, sound in pairs(game:GetDescendants()) do
 		if sound:IsA("Sound") then
-			local last_volume = sound.Volume
+			soundsToRestore[sound] = sound.Volume
 			sound.Volume = 0
 			sound:Play()
-			
-			-- // return to volume once sound is completed
-			sound.Ended:Connect(function()
-				sound.Volume = last_volume
-			end)
 		end
 	end
+
+	for sound, vol in pairs(soundsToRestore) do
+		if sound and sound.Parent then
+			sound.Volume = vol
+		end
+	end
+	
+	table.clear(soundsToRestore)
 end
 
 return module

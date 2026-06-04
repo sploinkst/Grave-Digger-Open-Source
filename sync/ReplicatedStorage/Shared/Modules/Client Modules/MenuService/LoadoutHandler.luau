@@ -99,7 +99,6 @@ local function setup_character()
 end
 
 function module.start_module()
-	setup_character()
 	
 	primary_button.Activated:Connect(function()
 		create_weapon_options()
@@ -125,6 +124,8 @@ function module.start_module()
 			end)
 		end
 	end)
+	
+	setup_character()
 	
 end
 

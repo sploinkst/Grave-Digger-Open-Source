@@ -1,6 +1,7 @@
 ----------------------
 -- @Praxitos
 -- Animation Handler
+-- FIXED: Climbing/sprint animation conflict
 ----------------------
 
 -- // Services
@@ -35,7 +36,7 @@ local animations_table = {
 	animations_folder.Jumping.Jump_Arms,
 	animations_folder.Jumping.Jump_Land,
 	animations_folder.Jumping.Jump_MidAir,
-	
+
 	animations_folder.Jumping.Climb,
 
 	animations_folder.Sprint.Sprint,
@@ -78,6 +79,14 @@ local right_hip_original_c1: CFrame?
 local climb_connection
 
 local ORIGINAL_HIP_HEIGHT = humanoid.HipHeight
+
+-- FIX: list of all sprint overlay names for reliable clearing
+local SPRINT_OVERLAY_NAMES = {
+	"Sprint_Lean",
+	"Sprint_Arms",
+	"PrinceRifle_Sprint",
+	"GraceRevolver_Sprint",
+}
 
 --------------------------------------------------
 -- Utils
@@ -237,7 +246,6 @@ local function play_base(name: string, fade: number?, reversed: boolean?, speed:
 
 	if speed then
 		track:AdjustSpeed(speed)
-		print("Speed set to:", speed)
 	else
 		track:AdjustSpeed(reversed and -1 or 1)
 	end
@@ -246,7 +254,7 @@ local function play_base(name: string, fade: number?, reversed: boolean?, speed:
 	current_base_name = name
 end
 
-local function play_overlay(name: string, fade: number?, speed: number?)
+local function play_overlay(name: string, fade: number?, speed: number?, weight: number?)
 	local track = loaded_animations[name]
 	if not track then return end
 
@@ -259,24 +267,42 @@ local function play_overlay(name: string, fade: number?, speed: number?)
 	if speed then
 		track:AdjustSpeed(speed)
 	end
+
+	if weight then
+		track:AdjustWeight(weight)
+	end
 end
 
 local function stop_overlay(name: string, fade: number?)
-	local track = active_overlays[name]
+	-- FIX: also stop the loaded animation directly in case it wasn't
+	-- registered in active_overlays (e.g. played before climbing started)
+	local track = active_overlays[name] or loaded_animations[name]
 	if not track then return end
 
-	track:Stop(fade or 0.12)
+	if track.IsPlaying then
+		track:Stop(fade or 0.12)
+	end
 	active_overlays[name] = nil
 end
 
 local function clear_overlays()
-	for _, track in pairs(active_overlays) do
+	for name, track in pairs(active_overlays) do
 		track:Stop(0.12)
 	end
 	active_overlays = {}
 end
 
-
+-- FIX: dedicated helper to stop all sprint overlays regardless of
+-- whether they were registered in active_overlays
+local function clear_sprint_overlays(fade: number?)
+	for _, name in ipairs(SPRINT_OVERLAY_NAMES) do
+		local track = active_overlays[name] or loaded_animations[name]
+		if track and track.IsPlaying then
+			track:Stop(fade or 0.12)
+		end
+		active_overlays[name] = nil
+	end
+end
 
 --------------------------------------------------
 -- MOVEMENT 
@@ -370,7 +396,7 @@ local function update_movement(speed: number)
 			play_base("Sprinting_Full", 0.15)
 
 			if not character:GetAttribute("No_Sprint_Animation") then
-				play_overlay(sprint_arms_overlay(), 0.15)
+				play_overlay(sprint_arms_overlay(), 0.2, nil, 1)
 			end
 
 			play_overlay("Sprint_Lean", 0.15)
@@ -417,10 +443,6 @@ character:GetAttributeChangedSignal("Crouching"):Connect(function()
 	end
 end)
 
-
---------------------------------------------------
--- VAULT
---------------------------------------------------
 character:GetAttributeChangedSignal("Vaulting"):Connect(function()
 	local vaulting = character:GetAttribute("Vaulting") == true
 	if vaulting then
@@ -432,18 +454,12 @@ end)
 
 
 
---------------------------------------------------
--- LOOP
---------------------------------------------------
 run_service.RenderStepped:Connect(function(dt)
 	local speed = humanoid.MoveDirection.Magnitude * humanoid.WalkSpeed
 	update_movement(speed)
 	update_hip_offset(dt)
 end)
 
---------------------------------------------------
--- HUMANOID STATES
---------------------------------------------------
 humanoid.StateChanged:Connect(function(_, new_state)
 
 	-- JUMP
@@ -502,9 +518,18 @@ humanoid.StateChanged:Connect(function(_, new_state)
 		end
 
 		is_climbing = true
-		is_airborne = false
+		is_airborne = false   -- FIX: always clear airborne when climbing begins
 
-		current_state = "CLIMB"
+		-- FIX: reset state so set_state() won't no-op when we leave climbing
+		current_state = nil
+
+		-- FIX: explicitly stop all sprint overlays by name, not just
+		-- whatever happens to be in active_overlays
+		clear_sprint_overlays(0.1)
+
+		-- Stop jump overlays too in case we went jump -> ladder
+		stop_overlay("Jump_MidAir", 0.1)
+		stop_overlay("Jump_Arms", 0.1)
 
 		clear_overlays()
 
@@ -517,7 +542,7 @@ humanoid.StateChanged:Connect(function(_, new_state)
 
 		play_base("Climb", 0.1, nil, 0.5)
 		play_overlay("Walk_Forward")
-		
+
 		climb_connection = run_service.RenderStepped:Connect(function()
 
 			if not active_base then
@@ -538,9 +563,17 @@ humanoid.StateChanged:Connect(function(_, new_state)
 		return
 	end
 
+	-- FIX: handle leaving the climbing state (any non-climbing state after
+	-- is_climbing was true) — was previously missing the climb_connection
+	-- disconnect when transitioning directly to states other than the ones
+	-- explicitly checked above (e.g. GettingUp, Running, etc.)
 	if is_climbing then
 		is_climbing = false
-		climb_connection:Disconnect()
+
+		if climb_connection then
+			climb_connection:Disconnect()
+			climb_connection = nil
+		end
 
 		if current_base_name == "Climb" and active_base then
 			active_base:Stop(0.1)
