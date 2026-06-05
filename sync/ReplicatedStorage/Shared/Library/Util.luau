@@ -352,12 +352,25 @@ function Util.quick_give_accessory(player, accessory:Model, create_object: boole
 
 		if accessory:GetAttribute("HideHair") then
 			for _, hair in character:GetChildren() do
-				if hair:IsA("Accessory") then
-					hair.Handle.Transparency = 1
+				if hair:IsA("Accessory") and hair ~= accessory then
+					local handle = hair:FindFirstChild("Handle")
+
+					if handle then
+						print("Hair accessory:", hair.Name)
+						print("Initial Transparency:", handle.Transparency)
+						print("Initial LTM:", handle.LocalTransparencyModifier)
+
+						handle.Transparency = 1
+						handle.LocalTransparencyModifier = 1
+
+						handle.Changed:Connect(function()
+							print("Transparency changed to:", handle.Transparency)
+							print("LTM changed to:", handle.LocalTransparencyModifier)
+						end)
+					end
 				end
 			end
 		end
-
 
 		Util.quick_weld(character_reference, primary_part_reference, character_reference, "AccessoryWeld")
 	end

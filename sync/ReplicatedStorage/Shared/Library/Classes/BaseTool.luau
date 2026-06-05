@@ -197,134 +197,174 @@ function BaseTool:GetBarrelWarningPart()
 	return clone
 end
 
+function BaseTool:clearMuzzleFX()
+	if self.warning_beam then
+		self.warning_beam.Enabled = false
+	end
+
+	if self.billboard_ui then
+		self.billboard_ui.Enabled = false
+	end
+
+	if self.barrelWarning.Parent then
+		self.barrelWarning.Parent = nil
+	end
+
+	self.muzzleAttach.Parent = nil
+end
+
 function BaseTool:init_short_mechanic()
-	if not self.RegisteredAnimations.Short then return end
+	if not self.RegisteredAnimations.Short then
+		return
+	end
 
-	local short_distance = self.Short_Distance or 2.3
-	local barrelWarning  = self:GetBarrelWarningPart()
-	if not barrelWarning then warn("[BASETOOL] barrelWarning missing") return end
+	local short_distance = self.Short_Distance or 4
 
-	local warning_beam = barrelWarning:FindFirstChild("warningbeam", true)
-	local billboard_ui = barrelWarning:FindFirstChild("x", true)
 
-	local muzzleAttach = Instance.new("Attachment")
-	muzzleAttach.Name = "MuzzleWarningAttach"
-
-	local hitAttach = barrelWarning:FindFirstChild("HitWarningAttach", true)
-	if not hitAttach then
-		hitAttach = Instance.new("Attachment")
-		hitAttach.Name = "HitWarningAttach"
-		hitAttach.Parent = barrelWarning
+	if not self.hitAttach then
+		self.hitAttach = Instance.new("Attachment")
+		self.hitAttach.Name = "HitWarningAttach"
+		self.hitAttach.Parent = self.barrelWarning
 	end
 
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 	rayParams.IgnoreWater = true
 
-	local overlapParams = OverlapParams.new()
-	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+	local mouse = LOCAL_PLAYER:GetMouse()
 
-	if self.short_connection then self.short_connection:Disconnect() end
-
-	local lastState = "default"
-
-	local function clearMuzzleFX()
-		if warning_beam then warning_beam.Enabled = false end
-		if billboard_ui  then billboard_ui.Enabled  = false end
-		if barrelWarning.Parent then barrelWarning.Parent = nil end
-		muzzleAttach.Parent = nil
-		hitAttach.Parent    = nil
+	if self.short_connection then
+		self.short_connection:Disconnect()
 	end
 
 	self.short_connection = RunService.RenderStepped:Connect(function()
-		if not self.Aiming then clearMuzzleFX() return end
-		local character = LOCAL_PLAYER.Character
-		if not character or not self.Equipped then clearMuzzleFX() return end
-
-		local head = character:FindFirstChild("Head")
-		if not head or not self.actual_model then return end
-
-		local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName)
-		if not muzzle then return end
-
-		rayParams.FilterDescendantsInstances     = { character, self.actual_model, barrelWarning }
-		overlapParams.FilterDescendantsInstances = { character, self.actual_model, barrelWarning }
-
-		local headDir    = head.CFrame.LookVector
-		local headResult = workspace:Raycast(head.Position, headDir * short_distance, rayParams)
-
-		local muzzleResult = nil
-
 		if not self.Aiming then
-			muzzleResult = workspace:Raycast(muzzle.Position, headDir * short_distance, rayParams)
-		elseif not headResult and lastState ~= "headBlock" then
-			local probe = Instance.new("Part")
-			probe.Anchored = true; probe.CanCollide = false; probe.CanQuery = false
-			probe.Transparency = 1; probe.Size = Vector3.new(0.15, 0.15, 0.15)
-			probe.CFrame = CFrame.new(muzzle.Position, muzzle.Position + headDir)
-			probe.Parent = workspace
+			self.IsShorted = false
+			self.ForceBlockFire = false
 
-			for _, p in ipairs(workspace:GetPartsInPart(probe, overlapParams)) do
-				if p.Transparency < 0.95 then
-					muzzleResult = { Position = muzzle.Position + headDir * 0.1, Distance = 0.1 }
-					break
+			if self._shortTrack and self._shortTrack.IsPlaying then
+				local w = self._shortTrack.WeightCurrent - 0.05
+
+				if w <= 0 then
+					self._shortTrack:Stop(0.1)
+					self._shortTrack = nil
+				else
+					self._shortTrack:AdjustWeight(w)
 				end
 			end
-			task.delay(0.05, function() probe:Destroy() end)
-		end
 
-		-- Head block
-		if headResult then
-			if lastState ~= "headBlock" then
-				lastState = "headBlock"
-				self.IsShorted     = true
-				self.ForceBlockFire = true
-				self:_stopAllExcept()
-				self._shortTrack = self:_playAnim("Short")
-				if self._shortTrack then self._shortTrack:AdjustSpeed(0.001) end
-			end
-			clearMuzzleFX()
+			self:clearMuzzleFX()
 			return
 		end
 
-		-- Muzzle warning
-		if muzzleResult and self.Aiming and lastState ~= "headBlock" then
-			if lastState ~= "muzzleWarning" then
-				lastState = "muzzleWarning"
-				self.IsShorted     = false
-				self.ForceBlockFire = true
-				self:_stopAllExcept()
-				self:_restoreBase("Short")
-			end
+		local character = LOCAL_PLAYER.Character
 
-			barrelWarning.CFrame = CFrame.new(muzzleResult.Position)
-			muzzleAttach.Parent  = muzzle
-			hitAttach.Parent     = barrelWarning
-
-			if warning_beam then
-				warning_beam.Attachment0 = muzzleAttach
-				warning_beam.Attachment1 = hitAttach
-				warning_beam.Enabled     = true
-			end
-			if billboard_ui then billboard_ui.Enabled = true end
-			if barrelWarning.Parent ~= workspace then barrelWarning.Parent = workspace end
+		if not character or not self.Equipped then
+			self:clearMuzzleFX()
 			return
 		end
 
-		-- Default
-		if lastState ~= "default" then
-			lastState = "default"
-			self.IsShorted     = false
-			self.ForceBlockFire = false
-			self:_stopAllExcept()
-			self:_restoreBase("Short")
-			if self._shortTrack then
-				self._shortTrack:Stop()
-				self._shortTrack = nil
+		local head = character:FindFirstChild("Head")
+
+		if not head or not self.actual_model then
+			self:clearMuzzleFX()
+			return
+		end
+
+		local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName)
+
+		if not muzzle then
+			self:clearMuzzleFX()
+			return
+		end
+
+		rayParams.FilterDescendantsInstances = {
+			character,
+			self.actual_model,
+			self.barrelWarning
+		}
+
+		local lookDir = head.CFrame.LookVector
+
+		local shortResult = workspace:Raycast(
+			head.Position,
+			lookDir * short_distance,
+			rayParams
+		)
+
+		local targetPosition = mouse.Hit.Position
+		local aimDirection = (targetPosition - muzzle.Position).Unit
+
+		local muzzleResult = workspace:Raycast(
+			muzzle.Position,
+			aimDirection * short_distance,
+			rayParams
+		)
+
+		local muzzleBlocked = muzzleResult ~= nil
+
+		if shortResult then
+			local alpha = math.clamp(
+				1 - (shortResult.Distance / short_distance) + 0.4,
+				0,
+				1
+			)
+
+			self.IsShorted = true
+
+			if not self._shortTrack then
+				self._shortTrack = self.RegisteredAnimations.Short
+
+				if not self._shortTrack.IsPlaying then
+					self._shortTrack:Play(0.1, alpha, 0.001)
+				end
+			end
+
+			self._shortTrack:AdjustWeight(alpha)
+			self._shortTrack:AdjustSpeed(0.001)
+		else
+			self.IsShorted = false
+
+			if self._shortTrack and self._shortTrack.IsPlaying then
+				local w = self._shortTrack.WeightCurrent - 0.05
+
+				if w <= 0 then
+					self._shortTrack:Stop(0.1)
+					self._shortTrack = nil
+					self:_restoreBase()
+				else
+					self._shortTrack:AdjustWeight(w)
+				end
 			end
 		end
 
-		clearMuzzleFX()
+		self.ForceBlockFire = self.IsShorted or muzzleBlocked
+
+		if self.muzzleAttach.Parent ~= muzzle then
+			self.muzzleAttach.Parent = muzzle
+		end
+
+	self.barrelWarning.CFrame = CFrame.new(
+	muzzleBlocked and muzzleResult.Position or (muzzle.Position + aimDirection * short_distance)
+	)
+
+		if muzzleBlocked then
+			if self.warning_beam then
+				self.warning_beam.Attachment0 = self.muzzleAttach
+				self.warning_beam.Attachment1 = self.hitAttach
+				self.warning_beam.Enabled = true
+			end
+
+			if self.billboard_ui then
+				self.billboard_ui.Enabled = true
+			end
+
+			if self.barrelWarning.Parent ~= workspace then
+				self.barrelWarning.Parent = workspace
+			end
+		else
+			self:clearMuzzleFX()
+		end
 	end)
 end
 
@@ -333,6 +373,24 @@ function BaseTool:clean_up_short()
 		self.short_connection:Disconnect()
 		self.short_connection = nil
 	end
+	
+	self:clearMuzzleFX()
+end
+
+function BaseTool:define_shorts()
+	self.barrelWarning = self:GetBarrelWarningPart()
+	if not self.barrelWarning then
+		warn("[BASETOOL] barrelWarning missing")
+		return
+	end
+
+	self.warning_beam = self.barrelWarning:FindFirstChild("warningbeam", true)
+	self.billboard_ui = self.barrelWarning:FindFirstChild("x", true)
+
+	self.muzzleAttach = Instance.new("Attachment")
+	self.muzzleAttach.Name = "MuzzleWarningAttach"
+
+	self.hitAttach = self.barrelWarning:FindFirstChild("HitWarningAttach", true)
 end
 
 -- // Equip / Unequip
@@ -352,7 +410,8 @@ function BaseTool:equip()
 	humanoid:EquipTool(self.tool)
 
 	if self._on_equip then self:_on_equip() end
-
+	
+	self:define_shorts()
 	if self.RegisteredAnimations then
 		local draw = self.RegisteredAnimations.Draw
 		local hold = self.RegisteredAnimations.Hold
@@ -672,6 +731,7 @@ function BaseTool:_restoreBase()
 		if kill and kill.IsPlaying then kill:Stop(CUT) end
 		if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT) end
 		if want and not want.IsPlaying then want:Play() end
+		self:init_short_mechanic()
 	else
 		self:_killAimTracks()
 		if anims.Hold and not anims.Hold.IsPlaying then
@@ -742,6 +802,9 @@ function BaseTool:aim()
 	if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
 	if self.Equipping or self.IsShorted then return end
 
+	self._smoothedYaw = nil
+	self._lastYaw = nil
+	
 	local function updateAimAnimation()
 		self:_killAimTracks()
 
@@ -1028,26 +1091,40 @@ function BaseTool:_startAimTracking()
 
 			local rawYaw = math.atan2(-lookDir.X, -lookDir.Z)
 
-			local deltaYaw = rawYaw - self._lastYaw
-
-			if deltaYaw > math.pi then
-				deltaYaw -= 2 * math.pi
-			elseif deltaYaw < -math.pi then
-				deltaYaw += 2 * math.pi
+			-- Initialize on first frame
+			if self._smoothedYaw == nil then
+				self._smoothedYaw = rawYaw
 			end
 
-			self._smoothedYaw += deltaYaw * 0.25
-			self._lastYaw = rawYaw
+			-- Shortest-path angle difference
+			local deltaYaw = rawYaw - self._smoothedYaw
+
+			if deltaYaw > math.pi then
+				deltaYaw -= (math.pi * 2)
+			elseif deltaYaw < -math.pi then
+				deltaYaw += (math.pi * 2)
+			end
+
+			-- Smooth toward target yaw instead of accumulating forever
+			self._smoothedYaw += deltaYaw * 0.2
 
 			local yaw = self._smoothedYaw
+
+			-- Prevent impossible shoulder rotations
+			yaw = math.clamp(yaw, math.rad(-85), math.rad(85))
 
 			if not LOCAL_PLAYER:GetAttribute("FreeLook") then
 				self._wasFreeLook = false
 				self._freeLookYaw = yaw
 			end
 
-			local rotationCF = CFrame.Angles(0, yaw, 0) * CFrame.Angles(cameraPitch, 0, 0)
-			local armRotation = rotationCF * CFrame.Angles(0, r.RootJoint.CurrentAngle, 0)
+			local rotationCF =
+				CFrame.Angles(0, yaw, 0)
+				* CFrame.Angles(cameraPitch, 0, 0)
+
+			local armRotation =
+				rotationCF
+				* CFrame.Angles(0, r.RootJoint.CurrentAngle, 0)
 
 			leftArmCF = t.CFrame:ToObjectSpace(
 				r.CFrame
@@ -1078,8 +1155,18 @@ function BaseTool:_startAimTracking()
 			ls.C0 = CFrame.new(leftArmCF.Position) * self._fpLeftRot
 			rs.C0 = CFrame.new(rightArmCF.Position) * self._fpRightRot
 		else
-			ls.C0 = ls.C0:Lerp(leftArmCF, lerpAlpha)
-			rs.C0 = rs.C0:Lerp(rightArmCF, lerpAlpha)
+			local targetLeftRot = leftArmCF - leftArmCF.Position
+			local targetRightRot = rightArmCF - rightArmCF.Position
+
+			self._fpLeftRot = self._fpLeftRot or (leftArmCF - leftArmCF.Position)
+			self._fpRightRot = self._fpRightRot or (rightArmCF - rightArmCF.Position)
+
+			self._fpLeftRot = self._fpLeftRot:Lerp(targetLeftRot, 0.12)
+			self._fpRightRot = self._fpRightRot:Lerp(targetRightRot, 0.12)
+
+
+			ls.C0 = CFrame.new(leftArmCF.Position) * self._fpLeftRot
+			rs.C0 = CFrame.new(rightArmCF.Position) * self._fpRightRot
 		end
 	end)
 end

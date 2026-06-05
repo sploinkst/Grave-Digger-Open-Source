@@ -176,6 +176,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Armor_Penetration_Level = 2
 	self.KnockBack_Force         = 8
 	self.Aiming_Number           = 80
+	self.Short_Distance          = 4
 	self.MuzzlePartName          = "GraceRevolver_Muzzle"
 	self.Can_Drop                = true
 	self.Accuracy = 8

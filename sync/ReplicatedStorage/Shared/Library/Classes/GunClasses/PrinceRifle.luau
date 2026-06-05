@@ -186,7 +186,7 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.MuzzlePartName          = "PrinceRifle_Muzzle"
 	self.Can_Drop                = true
 	self.SoundFolder             = SoundFolder
-	self.Short_Distance          = 2.3
+	self.Short_Distance          = 4
 	self.Accuracy = 6
 	self.Moving_Accuracy = 100
 
