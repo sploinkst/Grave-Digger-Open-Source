@@ -650,8 +650,10 @@ local function handle_object(part, isFirstPerson)
 
 	if isFirstPerson then
 		transparency_connections[part] = part:GetPropertyChangedSignal("Transparency"):Connect(function()
-			if part.Parent and math.abs(part.Transparency - 1) > 0.001 then
-				part.Transparency = 1
+			if part.Parent and part.Transparency ~= 1 then
+				if part.Transparency < 0.95 then
+					part.Transparency = 1
+				end
 			end
 		end)
 	end
@@ -670,12 +672,17 @@ local function first_person_transparency(character: Instance, isFirstPerson: boo
 		transparency_connections[part] = nil
 	end
 
+	-- Only modify transparency when entering first person.
+	-- When leaving first person, restore ONLY parts we personally hid,
+	-- then bail out without touching anything else or setting up watchers.
 	if not isFirstPerson then
 		for part, originalTransparency in pairs(original_transparencies) do
 			if part and part.Parent then
-				part.Transparency = originalTransparency
+				TweenService:Create(part, first_person_transparency_tween, { Transparency = originalTransparency }):Play()
 			end
 		end
+		original_transparencies = {}
+		return
 	end
 
 	for _, part in ipairs(character:GetDescendants()) do
