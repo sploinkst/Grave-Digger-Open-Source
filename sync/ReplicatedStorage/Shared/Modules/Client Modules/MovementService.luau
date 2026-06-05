@@ -346,7 +346,6 @@ local function sprintLoop()
 	print("[SprintLoop] Started - W_Locked:", W_Locked)
 
 	while Sprinting do
-		
 		if not Character or not Humanoid or not RootPart then break end
 
 		if Character:GetAttribute("Aiming") then
@@ -379,11 +378,7 @@ local function sprintLoop()
 
 		local hasMovementInput = KeyStates.Forward or KeyStates.Backwards or KeyStates.Left or KeyStates.Right
 
-		if W_Locked and KeyStates.Forward or not W_Locked and hasMovementInput then
-			-- FIX: removed the GetAttributeChangedSignal connection from inside
-			-- the loop — it was creating a new leaked connection every 0.03s.
-			-- Aiming is handled by the dedicated attribute listener below.
-
+		if not Character:GetAttribute("Aiming") and W_Locked and KeyStates.Forward or not W_Locked and hasMovementInput then
 			local elapsed = tick() - SprintTicker
 			local t = math.clamp(elapsed / SprintRampTime, 0, 1)
 
@@ -506,6 +501,7 @@ function module.start_module()
 					Humanoid.WalkSpeed = BaseSpeed
 				end
 
+				resetSpeed()
 				print("[Aiming] Sprint cancelled")
 			end
 
