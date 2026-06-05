@@ -156,13 +156,60 @@ end
 	@param pushMagnitude: number? -- Optional: The magnitude of the push if applyPushOnRagdoll is true. Defaults to 100.
 	@brief Toggles the ragdoll state of the given character, with an option to apply an extra push.
 ]]
-function RagdollModule.SetRagdoll(character: Model, value: boolean, applyPushOnRagdoll: boolean?, pushMagnitude: number?)
+function RagdollModule.SetRagdoll(character: Model, value: boolean, applyPushOnRagdoll: boolean?, pushMagnitude: number?, break_tool_welds:boolean?)
 	-- Validate inputs
 	if not character then
 		warn("RagdollModule.SetRagdoll: No character provided.")
 		return
 	end
 
+	if break_tool_welds then
+		print("Breaking tool welds")
+
+		for _, descendant in ipairs(character:GetDescendants()) do
+			-- Remove your custom attachment joints
+			if descendant:IsA("Motor6D") then
+				if descendant.Name == "ToolMotor" or descendant.Name == "Round_Motor6d" then
+					descendant:Destroy()
+				end
+			end
+		end
+
+		-- Drop weapon model into the world (THIS is what makes it feel like "dropping")
+		local equipment = character:FindFirstChild("CharacterData")
+			and character.CharacterData:FindFirstChild("Equipment")
+
+		if equipment then
+			for _, model in ipairs(equipment:GetChildren()) do
+				if model:IsA("Model") then
+					model.Parent = workspace
+
+					-- optional but important for realism
+					for _, part in ipairs(model:GetDescendants()) do
+						if part:IsA("BasePart") then
+							part.Anchored = false
+							part.CanCollide = true
+							part:SetNetworkOwner(nil)
+						end
+					end
+				end
+			end
+		end
+
+		-- Drop Round if it exists
+		local rightArm = character:FindFirstChild("Right Arm")
+		if rightArm then
+			for _, obj in ipairs(rightArm:GetChildren()) do
+				if obj:IsA("BasePart") and obj.Name == "Round" then
+					obj.Parent = workspace
+					obj.Anchored = false
+					obj.CanCollide = true
+					obj:SetNetworkOwner(nil)
+				end
+			end
+		end
+	end
+	
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
 		warn("RagdollModule.SetRagdoll: Character does not have a Humanoid.")
@@ -192,6 +239,7 @@ function RagdollModule.SetRagdoll(character: Model, value: boolean, applyPushOnR
 		if applyPushOnRagdoll then
 			applyPush(character, pushMagnitude)
 		end
+
 	else -- Unragdoll the character
 		resetJoints(character, humanoid)
 		

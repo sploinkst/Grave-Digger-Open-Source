@@ -37,7 +37,7 @@ end
 
 -- // to be used for like on death and stuff
 function RagdollStatus:_special_apply(character: Model)
-	Easy_Ragdoll_Module.SetRagdoll(character, true, true)
+	Easy_Ragdoll_Module.SetRagdoll(character, true, true, 0, true)
 end
 
 return RagdollStatus
