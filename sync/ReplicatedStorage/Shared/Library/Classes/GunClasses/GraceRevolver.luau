@@ -179,6 +179,8 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Short_Distance          = 4
 	self.MuzzlePartName          = "GraceRevolver_Muzzle"
 	self.Can_Drop                = true
+	self.Melee_Distance			 = 5
+	self.Melee_Damage			 = 80
 	self.Accuracy = 8
 	self.Moving_Accuracy = 50
 

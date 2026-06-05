@@ -19,6 +19,9 @@ local status_connection = replicant_folder.Parent.Status_Communication.Status_Co
 local gun_communication = replicant_folder.Parent.Gun_Communication
 local drop_connection = gun_communication.Drop_Connection
 
+local melee_events = replicant_folder.Parent.Melee_Communication
+local melee_connection = melee_events.Melee_Connection
+
 
 local status_service = require(script.Parent.StatusService)
 
@@ -366,6 +369,21 @@ function module.start_module()
 
 			game:GetService("Debris"):AddItem(velocity, 0.25)
 		end
+	end)
+	
+	melee_connection.OnServerEvent:Connect(function(player, targetCharacter, meleeRange, damage)
+		print("Received melee_connection from", player.Name, "target:", targetCharacter.Name, "range:", meleeRange, "damage:", damage)
+		
+		if player.Name == targetCharacter.Name then
+			return
+		end
+		
+		if (player.Character.HumanoidRootPart.Position - targetCharacter.HumanoidRootPart.Position).Magnitude > meleeRange * 1.5 then
+			return
+		end
+		
+		targetCharacter.Humanoid:TakeDamage(damage)
+		print("Applied damage to", targetCharacter.Name)
 	end)
 end
 

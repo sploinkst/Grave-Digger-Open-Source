@@ -34,6 +34,7 @@ local texture_event                 = events_replication_folder.Texture_Connecti
 
 local gun_communication = events_replication_folder.Parent.Gun_Communication
 local drop_connection   = gun_communication.Drop_Connection
+local melee_communication = events_replication_folder.Parent.Melee_Communication
 
 local general_sfx        = ReplicatedStorage.Shared.Assets.Guns.Sounds.Shared
 local bullet_warning_part = ReplicatedStorage.Shared.Assets.UI.Warning_Barrel
@@ -754,23 +755,115 @@ function BaseTool:_set_sprint_arms(enabled: boolean)
 end
 
 -- // Melee (shared)
-
 function BaseTool:melee()
 	if self.Meleeing then return end
 	if game.Players.LocalPlayer:GetAttribute("FreeLook") then return end
+
 	self.Meleeing = true
 
-	local anims = self.RegisteredAnimations
+	local Players = game:GetService("Players")
+	local player = Players.LocalPlayer
+	local character = player.Character
+	local camera = workspace.CurrentCamera
+
 	self:_stopAllExcept()
 
-	local anim = "Melee" .. math.random(1, 2)
-	self:_playAnim(anim).Stopped:Connect(function()
-		self.Meleeing = false
-	end)
-	
-	self:_restoreBase()
-end
+	local anim = self:_playAnim("Melee" .. math.random(1, 2))
 
+	task.delay(0.15, function()
+		if not character or not character.Parent then
+			return
+		end
+
+		local meleeRange = self.MeleeRange or 4
+
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = {character}
+
+		local origin = camera.CFrame.Position + camera.CFrame.LookVector
+		local lookVector = camera.CFrame.LookVector
+
+		local targetCharacter
+
+		-- Primary melee raycast
+		local result = workspace:Raycast(
+			origin,
+			lookVector * (meleeRange + 1),
+			params
+		)
+
+		if result and result.Instance then
+			local model = result.Instance:FindFirstAncestorOfClass("Model")
+
+			if model and model ~= character then
+				local humanoid = model:FindFirstChildOfClass("Humanoid")
+
+				if humanoid and humanoid.Health > 0 then
+					targetCharacter = model
+				end
+			end
+		end
+
+		if not targetCharacter then
+			local center = origin + lookVector * (meleeRange / 2)
+			local radius = meleeRange / 1.5
+
+			local candidates = {}
+
+			for _, plr in ipairs(Players:GetPlayers()) do
+				if plr ~= player then
+					local char = plr.Character
+
+					if char then
+						local humanoid = char:FindFirstChildOfClass("Humanoid")
+						local root = char:FindFirstChild("HumanoidRootPart")
+
+						if humanoid and humanoid.Health > 0 and root then
+							if (root.Position - center).Magnitude <= radius then
+								table.insert(candidates, char)
+							end
+						end
+					end
+				end
+			end
+
+			for _, candidate in ipairs(candidates) do
+				local root = candidate:FindFirstChild("HumanoidRootPart")
+
+				if root then
+					local los = workspace:Raycast(
+						origin,
+						root.Position - origin,
+						params
+					)
+
+					local visible = false
+
+					if los then
+						visible = los.Instance:IsDescendantOf(candidate)
+					else
+						visible = true
+					end
+
+					if visible then
+						targetCharacter = candidate
+						break
+					end
+				end
+			end
+		end
+
+		if targetCharacter then
+			melee_communication.Melee_Connection:FireServer(targetCharacter, meleeRange, self.Melee_Damage)
+		end
+	end)
+
+	anim.Stopped:Connect(function()
+		self.Meleeing = false
+		self:_restoreBase()
+	end)
+end
 -- // Shoulder tracking
 
 function BaseTool:_onShoulderChanged()

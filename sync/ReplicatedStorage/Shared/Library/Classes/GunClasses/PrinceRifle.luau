@@ -187,6 +187,8 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.Can_Drop                = true
 	self.SoundFolder             = SoundFolder
 	self.Short_Distance          = 4
+	self.Melee_Distance			 = 5
+	self.Melee_Damage			 = 80
 	self.Accuracy = 6
 	self.Moving_Accuracy = 100
 
