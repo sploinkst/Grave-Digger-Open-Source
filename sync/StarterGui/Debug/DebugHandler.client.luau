@@ -46,6 +46,8 @@ local Total_Instances_TextLabel = instances_frame:FindFirstChild("Instances")
 local Total_Meshes_Textlabel = instances_frame:FindFirstChild("Meshes")
 local On_Screen_TextLabel = instances_frame:FindFirstChild("On-Screen")
 
+local version_frame = holder_frame:WaitForChild("Version")
+
 local title_button = holder_frame.Title.Button
 local mouse_hover = debug_screenui.MouseHover
 
@@ -214,9 +216,6 @@ local instances_graph = Graph.new(instances_frame, instances_example, 60, Themes
 
 local total_processed_at_last_frame = 0
 
-----------------------------------------------------------------
--- MAIN LOOP
-----------------------------------------------------------------
 RunService.RenderStepped:Connect(function(dt)
 	if dt <= 0 then return end
 
@@ -352,6 +351,7 @@ title_button.Activated:Connect(function()
 	memory_frame.Visible = state 
 	replication_frame.Visible = state 
 	instances_frame.Visible = state
+	version_frame.Visible = state
 end)
 
 fps_button.Activated:Connect(function() fps_tablegraph.Visible = not fps_tablegraph.Visible end)
@@ -359,5 +359,16 @@ ping_button.Activated:Connect(function() ping_tablegraph.Visible = not ping_tabl
 memory_frame.Button.Activated:Connect(function() memory_tablegraph.Visible = not memory_tablegraph.Visible end)
 replication_button.Activated:Connect(function() replication_tablegraph.Visible = not replication_tablegraph.Visible end)
 instances_button.Activated:Connect(function() instances_tablegraph.Visible = not instances_tablegraph.Visible end)
+
+local version_folder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Configuration"):WaitForChild("Game_Variables"):WaitForChild("Version")
+for _, child:StringValue in version_folder:GetChildren() do
+	local ui_reference = version_frame:FindFirstChild(child.Name)
+	if ui_reference then ui_reference.Text = child.Name .. ": " .. child.Value end
+
+	child:GetPropertyChangedSignal("Value"):Connect(function()
+		if ui_reference then ui_reference.Text = child.Name .. ": " .. child.Value end
+	end)
+	
+end
 
 debug_screenui.Enabled = true
