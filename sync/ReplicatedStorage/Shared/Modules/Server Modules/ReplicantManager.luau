@@ -241,6 +241,8 @@ function module.start_module()
 
 		local model = getModelFromInstance(instance)
 		local humanoid = getHumanoid(model)
+		
+		
 
 		if not humanoid or humanoid.Health <= 0 then
 			return
@@ -249,6 +251,10 @@ function module.start_module()
 		local hitCharacter = model
 		local hitPlayer = game.Players:GetPlayerFromCharacter(hitCharacter)
 
+		if player.Name == hitPlayer.Name then
+			return
+		end
+		
 		-- // Knockback
 		local forceDirection = (direction.Unit + Vector3.new(0, 0.1, 0)).Unit
 
@@ -279,7 +285,6 @@ function module.start_module()
 				
 				return
 			else
-				-- No helmet = instant kill
 				humanoid.Health = 0
 				return
 			end

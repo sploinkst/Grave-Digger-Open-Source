@@ -122,8 +122,8 @@ function BaseCamera.new(cameraInfo)
 	self.CameraYaw   = 0
 	self.CameraPitch = 0
 	self.CameraKick = 0
-	self.MaxTurnRate = math.rad(600)
-	self.MaxTurnRate_Transitioning = math.rad(800)
+	self.MaxTurnRate = math.rad(700)
+	self.MaxTurnRate_Transitioning = math.rad(1000)
 
 	self.RecoilPitch       = 0
 	self.RecoilYaw         = 0
@@ -441,12 +441,12 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 		elseif isSlowRotate then
 			maxRate = math.rad(12)      -- matches MaxAngularVelocity = 12
 		elseif aiming then
-			maxRate = math.rad(700)
+			maxRate = math.rad(850)
 		else
-			maxRate = math.rad(600)     -- matches MaxAngularVelocity = 100 (normal)
+			maxRate = math.rad(800)     -- matches MaxAngularVelocity = 100 (normal)
 		end
 	else
-		maxRate = math.rad(600)
+		maxRate = math.rad(800)
 	end
 
 	-- Alpha scales with maxRate so responsiveness tracks the same way
@@ -566,35 +566,160 @@ function BaseCamera:_onHoldBreathStateChanged()
 	if self.FOVTween2 then self.FOVTween2:Cancel() end
 
 	self.FOVTween = TweenService:Create(Camera,
-		TweenInfo.new(fade_speed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+		TweenInfo.new(fade_speed, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut),
 		{ FieldOfView = self.TargetFOV }
 	)
 	self.FOVTween2 = TweenService:Create(hold_breath,
-		TweenInfo.new(fade_speed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+		TweenInfo.new(fade_speed, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut),
 		{ ImageTransparency = targetTransparency }
 	)
 	self.FOVTween:Play()
 	self.FOVTween2:Play()
 end
 
-local transparency_table = { Head = true, Torso = true }
+local transparency_table = {
+	Head = true,
+	Torso = true,
+}
 
-local function handle_object(part, isFirstPerson)
-	if not (part:IsA("BasePart") or part:IsA("MeshPart")) then return end
-	if part:GetAttribute("Transparency_Skip") then return end
-	local shouldHide = transparency_table[part.Name] == true or part.Name == "Handle"
-	if shouldHide then
-		TweenService:Create(part, first_person_transparency_tween,
-			{ Transparency = isFirstPerson and 1 or 0 }):Play()
+local transparency_connections = {}
+local original_transparencies = {}
+
+local function should_hide(part)
+	if transparency_table[part.Name] or part.Name == "Handle" then
+		return true
 	end
+
+	local parent = part.Parent
+	local grandparent = parent and parent.Parent
+
+	if parent and transparency_table[parent.Name] then
+		return true
+	end
+
+	if grandparent and transparency_table[grandparent.Name] then
+		return true
+	end
+
+	-- Hide everything under helmet models inside Equipment
+	local current = part
+
+	while current do
+		if string.find(current.Name, "Helmet", 1, true) then
+			local p = current.Parent
+			local gp = p and p.Parent
+
+			if (p and p.Name == "Equipment")
+				or (gp and gp.Name == "Equipment")
+			then
+				return true
+			end
+		end
+
+		current = current.Parent
+	end
+
+	return false
 end
 
+local function handle_object(part, isFirstPerson)
+	if not part:IsA("BasePart") then
+		return
+	end
+
+	if part:GetAttribute("Transparency_Skip") then
+		return
+	end
+
+	local hide = should_hide(part)
+
+	local parent = part.Parent
+	local grandparent = parent and parent.Parent
+
+	-- Rendered holsters
+	if grandparent and grandparent.Name == "Rendered_Holsters" then
+		hide = true
+
+		for part_name in pairs(transparency_table) do
+			if string.find(part.Name, part_name, 1, true) then
+				hide = false
+				break
+			end
+		end
+	end
+
+	if not hide then
+		return
+	end
+
+	if original_transparencies[part] == nil then
+		original_transparencies[part] = part.Transparency
+	end
+
+	local targetTransparency = isFirstPerson
+		and 1
+		or original_transparencies[part]
+
+	TweenService:Create(
+		part,
+		first_person_transparency_tween,
+		{
+			Transparency = targetTransparency
+		}
+	):Play()
+
+	if transparency_connections[part] then
+		transparency_connections[part]:Disconnect()
+		transparency_connections[part] = nil
+	end
+
+	-- Only enforce transparency while in first person.
+	if isFirstPerson then
+		transparency_connections[part] =
+			part:GetPropertyChangedSignal("Transparency"):Connect(function()
+				if part.Parent and math.abs(part.Transparency - 1) > 0.001 then
+					part.Transparency = 1
+				end
+			end)
+	end
+end
+local transparency_descendant_connection
+
 local function first_person_transparency(character: Instance, isFirstPerson: boolean)
+	if transparency_descendant_connection then
+		transparency_descendant_connection:Disconnect()
+		transparency_descendant_connection = nil
+	end
+
+	for part, connection in pairs(transparency_connections) do
+		connection:Disconnect()
+		transparency_connections[part] = nil
+	end
+
+	if not isFirstPerson then
+		for part, originalTransparency in pairs(original_transparencies) do
+			if part and part.Parent then
+				part.Transparency = originalTransparency
+			end
+		end
+	end
+
 	for _, part in ipairs(character:GetDescendants()) do
 		handle_object(part, isFirstPerson)
 	end
-	character.DescendantAdded:Connect(function(descendant)
-		handle_object(descendant, isFirstPerson)
+
+	transparency_descendant_connection = character.DescendantAdded:Connect(function(descendant)
+		task.defer(function()
+			if not descendant.Parent then
+				return
+			end
+
+			handle_object(descendant, isFirstPerson)
+
+			for _, obj in ipairs(descendant:GetDescendants()) do
+				handle_object(obj, isFirstPerson)
+			end
+		end)
 	end)
 end
 
@@ -943,7 +1068,12 @@ function BaseCamera:Switch_Camera(target: string)
 	cursor_ui.Visible = preset.Cursor_UI and not character:GetAttribute("Aiming") or false
 	LocalPlayer:SetAttribute("FreeLook", nil)
 	LocalPlayer:SetAttribute("FirstPerson", nil)
-
+	
+	for part, connection in pairs(transparency_connections) do
+		connection:Disconnect()
+		transparency_connections[part] = nil
+	end
+	
 	self:_unbind()
 	self[target](self)
 end
@@ -1035,6 +1165,11 @@ function BaseCamera:End()
 	if self.KeybindConnections then
 		for _, c in ipairs(self.KeybindConnections) do c:Disconnect() end
 		self.KeybindConnections = {}
+	end
+
+	for part, connection in pairs(transparency_connections) do
+		connection:Disconnect()
+		transparency_connections[part] = nil
 	end
 end
 
