@@ -22,6 +22,8 @@ local Tool_Folder    = Assets.Guns.ToolModels
 local Anim_Folder    = Assets.Animations.Tools.Guns.GraceRevolver
 local FxFolder       = Assets.Guns.Effects.Shooting
 
+local SoundFolder   = Assets.Guns:WaitForChild("Sounds"):WaitForChild("GraceRevolver")
+local fire_sound = SoundFolder.fire
 -- // Tuning
 
 local FIRE_RATE    = 0.25
@@ -184,6 +186,8 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Accuracy = 8
 	self.Moving_Accuracy = 50
 
+	self.SoundFolder             = SoundFolder
+
 	self.unequip_wait     = false
 	self.Aiming           = false
 	self.Firing           = false
@@ -292,7 +296,8 @@ function GraceRevolver:fire()
 
 	local fireAnim = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 	local fireTrack = self:_playAnim(fireAnim)
-
+	
+	self:_play_sfx(fire_sound, muzzle, nil, self.Alt_Mode and 0.5 or nil)
 	self:_bounce_scoped_ui()
 	self:_fireMuzzleFlash()
 

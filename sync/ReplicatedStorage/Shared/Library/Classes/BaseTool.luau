@@ -519,6 +519,7 @@ function BaseTool:equip()
 				local sound = self.SoundFolder:FindFirstChild(keyframe:sub(5))
 				if sound then
 					self:_play_sfx(sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
+					print("Playing sound: " .. keyframe:sub(5))
 				else
 					warn("Sound not found for keyframe: " .. keyframe)
 				end
@@ -533,6 +534,7 @@ function BaseTool:equip()
 				end
 				if #matches > 0 then
 					self:_play_sfx(matches[math.random(1, #matches)], self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
+					print("Playing GSFX: " .. matches[math.random(1, #matches)].Name)
 				else
 					warn("No GSFX matches for: " .. baseName)
 				end
