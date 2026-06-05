@@ -6,27 +6,24 @@ local module = {}
 -- Primary Camera Service Handler
 -------------------
 
--- // References 
-
--- Services
+-- // Services
 local replicatedstorage_service = game:GetService("ReplicatedStorage")
 local player_service            = game:GetService("Players")
 local workspace_service         = game:GetService("Workspace")
 
--- Constants
+-- // Constants
 local library_folder     = replicatedstorage_service.Shared.Library
 local externals_folder   = library_folder.Externals
 local typechecker_module = require(externals_folder.TypeChecker)
 local camera_class       = require(library_folder.Classes.Miscellanous.CameraClass)
 
--- Stack (LIFO)
+-- // Stack (LIFO)
 local Cameras_Stack = {}
 
 -- // Internal Helpers
 
 local function get_top_camera()
-	local top = Cameras_Stack[#Cameras_Stack]
-	return top
+	return Cameras_Stack[#Cameras_Stack]
 end
 
 local function push_camera(camera_instance)
@@ -34,8 +31,7 @@ local function push_camera(camera_instance)
 end
 
 local function pop_camera()
-	local cam = table.remove(Cameras_Stack)
-	return cam
+	return table.remove(Cameras_Stack)
 end
 
 local function find_camera_index(name: string)
@@ -49,15 +45,11 @@ end
 
 local function remove_camera_by_name(name: string)
 	local index = find_camera_index(name)
-	if not index then
-		return nil, nil
-	end
-
+	if not index then return nil, nil end
 	local cam = table.remove(Cameras_Stack, index)
 	return cam, index
 end
 
--- starter check
 local function check_cameras()
 	for childname, child in pairs(script:GetChildren()) do
 		if not typechecker_module.new(camera_class.Camera_Type)(child) then
@@ -66,16 +58,23 @@ local function check_cameras()
 	end
 end
 
+local function resume_camera(camera)
+	workspace_service.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+	if camera.Resume then
+		camera:Resume()
+	else
+		camera:Start()
+	end
+end
+
 -- // Core
 
 function module.start_module()
 	check_cameras()
 	workspace_service.CurrentCamera.CameraType = Enum.CameraType.Scriptable
-
 	module.switch_camera("BaseCamera")
 end
 
--- push new camera
 function module.switch_camera(target_camera_name: string, abrupt_change: boolean)
 	local target_camera_module = script:FindFirstChild(target_camera_name)
 
@@ -85,21 +84,18 @@ function module.switch_camera(target_camera_name: string, abrupt_change: boolean
 	end
 
 	local target_camera_class = require(target_camera_module)
-	local current_camera = get_top_camera()
+	local current_camera      = get_top_camera()
 
-	-- prevent duplicate stacking
 	if current_camera and current_camera.name == target_camera_name then
 		warn("[CAMERASERVICE::] Already using camera: ", target_camera_name)
 		return
 	end
 
-	-- priority check
 	if current_camera and target_camera_class.priority < current_camera.priority then
 		warn("[CAMERASERVICE::] Target Camera Module:", target_camera_name, "has lower priority than current: ", current_camera.name)
 		return
 	end
 
-	-- transition current camera out (but DO NOT remove it)
 	if current_camera then
 		if abrupt_change then
 			current_camera:Cut()
@@ -108,18 +104,17 @@ function module.switch_camera(target_camera_name: string, abrupt_change: boolean
 		end
 	end
 
-	-- instantiate new camera
 	local new_camera = target_camera_class.new({
-		name = target_camera_name,
-		priority = target_camera_class.priority or 0
+		name     = target_camera_name,
+		priority = target_camera_class.priority or 0,
 	})
 
 	push_camera(new_camera)
 
+	workspace_service.CurrentCamera.CameraType = Enum.CameraType.Scriptable
 	new_camera:Start()
 end
 
--- pop top camera
 function module.end_current_camera(abrupt: boolean)
 	local current_camera = pop_camera()
 	if not current_camera then return end
@@ -133,22 +128,20 @@ function module.end_current_camera(abrupt: boolean)
 	local previous_camera = get_top_camera()
 
 	if previous_camera then
-		previous_camera:Start()
+		resume_camera(previous_camera)
 	else
 		workspace_service.CurrentCamera.CameraType = Enum.CameraType.Custom
 	end
 end
 
--- remove ANY camera (top or middle)
 function module.end_camera_by_name(camera_name: string, abrupt: boolean)
 	local index = find_camera_index(camera_name)
 	if not index then return end
 
-	local is_top = (index == #Cameras_Stack)
+	local is_top         = (index == #Cameras_Stack)
 	local removed_camera = table.remove(Cameras_Stack, index)
 
 	if is_top then
-		-- behaves like normal pop
 		if abrupt then
 			removed_camera:Cut()
 		else
@@ -158,17 +151,15 @@ function module.end_camera_by_name(camera_name: string, abrupt: boolean)
 		local previous_camera = get_top_camera()
 
 		if previous_camera then
-			previous_camera:Start()
+			resume_camera(previous_camera)
 		else
 			workspace_service.CurrentCamera.CameraType = Enum.CameraType.Custom
 		end
 	else
-		-- background camera → silent cleanup
 		removed_camera:End()
 	end
 end
 
--- recoil passthrough
 function module.apply_recoil(vertical, horizontal)
 	local current_camera = get_top_camera()
 	if current_camera then

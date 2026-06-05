@@ -1,6 +1,5 @@
 -- @Praxitos
 
-
 -- // Services
 local InputService      = game:GetService("UserInputService")
 local RunService        = game:GetService("RunService")
@@ -57,12 +56,12 @@ local MIN_ZOOM                = 1.8
 local MAX_ZOOM                = 3
 local WALL_COLLISION_DISTANCE = 6.5
 
-local HOLD_BREATH_TIME       = 3.5
-local HOLD_BREATH_REGEN      = 1.0
-local HOLD_BREATH_ACCURACY   = 1.5
-local HOLD_BREATH_FADE_SPEED = 0.5
+local HOLD_BREATH_TIME           = 3.5
+local HOLD_BREATH_REGEN          = 1.0
+local HOLD_BREATH_ACCURACY       = 1.5
+local HOLD_BREATH_FADE_SPEED     = 0.5
 local HOLD_BREATHE_RELEASE_SPEED = 0.2
-local RECOIL_YANK_STRENGTH   = 16
+local RECOIL_YANK_STRENGTH       = 16
 
 local RECOIL_SNAPPINESS     = 100
 local SHOULDER_SWITCH_SPEED = 6
@@ -121,7 +120,7 @@ function BaseCamera.new(cameraInfo)
 
 	self.CameraYaw   = 0
 	self.CameraPitch = 0
-	self.CameraKick = 0
+	self.CameraKick  = 0
 	self.MaxTurnRate = math.rad(700)
 	self.MaxTurnRate_Transitioning = math.rad(1000)
 
@@ -137,10 +136,9 @@ function BaseCamera.new(cameraInfo)
 
 	self.IsFirstPerson = false
 
-	self.IsTransitioning       = false
-	self.TransitionStartCFrame  = nil
-	self.TransitionTargetCFrame = nil
-	self.TransitionElapsed      = 0
+	self.IsTransitioning      = false
+	self.TransitionStartWorld = nil
+	self.TransitionElapsed    = 0
 
 	self.ShoulderZoom       = CameraOffsets.Third_Person_Right.Z
 	self.TargetShoulderZoom = CameraOffsets.Third_Person_Right.Z
@@ -178,6 +176,7 @@ function BaseCamera.new(cameraInfo)
 	self._inputConn               = nil
 	self.aim_check                = nil
 	self.HoldBreathConnection     = nil
+	self.sprint_check             = nil
 
 	self._align           = nil
 	self._alignAttachment = nil
@@ -211,7 +210,6 @@ function BaseCamera:_updateCameraKick(dt)
 	self.CameraKick += (0 - self.CameraKick) * math.clamp(12 * dt, 0, 1)
 end
 
--- Decay CameraOffset Z back to 0 every frame — matches original v_u_100 lerp
 function BaseCamera:_decayCameraOffsetZ(dt: number)
 	local humanoid = self:_getHumanoid()
 	if not humanoid then return end
@@ -221,7 +219,6 @@ end
 
 function BaseCamera:_applyTransition(root: BasePart, targetCFrame: CFrame, dt: number)
 	if self.IsTransitioning then
-		
 		if not self.TransitionStartWorld then
 			self.TransitionStartWorld = Camera.CFrame
 		end
@@ -229,8 +226,7 @@ function BaseCamera:_applyTransition(root: BasePart, targetCFrame: CFrame, dt: n
 		self.TransitionElapsed += dt
 		local alpha = math.clamp(self.TransitionElapsed / TRANSITION_SPEED, 0, 1)
 
-		local lerpedCFrame = self.TransitionStartWorld:Lerp(targetCFrame, TRANSITION_SPEED)
-
+		local lerpedCFrame = self.TransitionStartWorld:Lerp(targetCFrame, alpha)
 		self.TransitionStartWorld = lerpedCFrame
 		Camera.CFrame = lerpedCFrame
 
@@ -270,7 +266,7 @@ function BaseCamera:_updateHoldBreath()
 			local yawDeg   = math.random(-30, 30) / 100
 			local yawDeg2  = math.random(-30, 30) / 100
 			local pitchRad = 0.006981317007977318
-			
+
 			self:ApplyRecoil(-pitchRad, -math.rad(yawDeg), 6)
 			task.delay(6 * 0.015, function()
 				self:ApplyRecoil(pitchRad, math.rad(yawDeg2), 6)
@@ -416,12 +412,11 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 		math.cos(targetYaw - self.CharacterYaw)
 	)
 
-	-- Match ingameScript state-based MaxAngularVelocity values
 	local character = LocalPlayer.Character
 	local maxRate
 
 	if self.IsTransitioning then
-		maxRate = self.MaxTurnRate_Transitioning -- math.rad(600), unrestricted snap
+		maxRate = self.MaxTurnRate_Transitioning
 	elseif character then
 		local isCharging   = character:GetAttribute("charging")   == true
 		local isSlowRotate = character:GetAttribute("slow_rotate") == true
@@ -430,26 +425,25 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 		local class        = character:GetAttribute("class") or ""
 		local hasLancer    = character:FindFirstChild("elitekit") and
 			character.elitekit.Value == "lancer"
-		local aiming 	   = character:GetAttribute("aiming") == true
+		local aiming       = character:GetAttribute("aiming") == true
 
 		if isCharging or isFallIntr then
 			if (perk == "butcher" or perk == "vet" or hasLancer) and class == "lancer" then
-				maxRate = math.rad(6)   -- matches MaxAngularVelocity = 6
+				maxRate = math.rad(6)
 			else
-				maxRate = math.rad(2)   -- matches MaxAngularVelocity = 2
+				maxRate = math.rad(2)
 			end
 		elseif isSlowRotate then
-			maxRate = math.rad(12)      -- matches MaxAngularVelocity = 12
+			maxRate = math.rad(12)
 		elseif aiming then
 			maxRate = math.rad(850)
 		else
-			maxRate = math.rad(800)     -- matches MaxAngularVelocity = 100 (normal)
+			maxRate = math.rad(800)
 		end
 	else
 		maxRate = math.rad(800)
 	end
 
-	-- Alpha scales with maxRate so responsiveness tracks the same way
 	local responsivenessAlpha = math.clamp((maxRate / math.rad(100)) * 10 * dt, 0, 1)
 
 	local desiredStep = math.clamp(
@@ -500,7 +494,12 @@ function BaseCamera:_onAimingStateChanged()
 end
 
 function BaseCamera:_setupSprintCheck()
-	local humanoid = LocalPlayer.Character:WaitForChild("Humanoid")
+	if self.sprint_check then
+		self.sprint_check:Disconnect()
+		self.sprint_check = nil
+	end
+	local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
 	self.sprint_check = humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
 		self:_onSprintStateChanged(humanoid.WalkSpeed)
 	end)
@@ -559,7 +558,7 @@ function BaseCamera:_onHoldBreathStateChanged()
 		self.TargetFOV = sprintFOV
 	end
 
-	local fade_speed = self.holding_breath and HOLD_BREATH_FADE_SPEED or HOLD_BREATHE_RELEASE_SPEED
+	local fade_speed         = self.holding_breath and HOLD_BREATH_FADE_SPEED or HOLD_BREATHE_RELEASE_SPEED
 	local targetTransparency = self.holding_breath and 0 or 1
 
 	if self.FOVTween  then self.FOVTween:Cancel()  end
@@ -578,19 +577,19 @@ function BaseCamera:_onHoldBreathStateChanged()
 end
 
 local transparency_table = {
-	Head = true,
+	Head  = true,
 	Torso = true,
 }
 
-local transparency_connections = {}
-local original_transparencies = {}
+local transparency_connections  = {}
+local original_transparencies   = {}
 
 local function should_hide(part)
 	if transparency_table[part.Name] or part.Name == "Handle" then
 		return true
 	end
 
-	local parent = part.Parent
+	local parent      = part.Parent
 	local grandparent = parent and parent.Parent
 
 	if parent and transparency_table[parent.Name] then
@@ -601,21 +600,15 @@ local function should_hide(part)
 		return true
 	end
 
-	-- Hide everything under helmet models inside Equipment
 	local current = part
-
 	while current do
 		if string.find(current.Name, "Helmet", 1, true) then
-			local p = current.Parent
+			local p  = current.Parent
 			local gp = p and p.Parent
-
-			if (p and p.Name == "Equipment")
-				or (gp and gp.Name == "Equipment")
-			then
+			if (p and p.Name == "Equipment") or (gp and gp.Name == "Equipment") then
 				return true
 			end
 		end
-
 		current = current.Parent
 	end
 
@@ -623,23 +616,15 @@ local function should_hide(part)
 end
 
 local function handle_object(part, isFirstPerson)
-	if not part:IsA("BasePart") then
-		return
-	end
+	if not part:IsA("BasePart") then return end
+	if part:GetAttribute("Transparency_Skip") then return end
 
-	if part:GetAttribute("Transparency_Skip") then
-		return
-	end
-
-	local hide = should_hide(part)
-
-	local parent = part.Parent
+	local hide        = should_hide(part)
+	local parent      = part.Parent
 	local grandparent = parent and parent.Parent
 
-	-- Rendered holsters
 	if grandparent and grandparent.Name == "Rendered_Holsters" then
 		hide = true
-
 		for part_name in pairs(transparency_table) do
 			if string.find(part.Name, part_name, 1, true) then
 				hide = false
@@ -648,41 +633,30 @@ local function handle_object(part, isFirstPerson)
 		end
 	end
 
-	if not hide then
-		return
-	end
+	if not hide then return end
 
 	if original_transparencies[part] == nil then
 		original_transparencies[part] = part.Transparency
 	end
 
-	local targetTransparency = isFirstPerson
-		and 1
-		or original_transparencies[part]
+	local targetTransparency = isFirstPerson and 1 or original_transparencies[part]
 
-	TweenService:Create(
-		part,
-		first_person_transparency_tween,
-		{
-			Transparency = targetTransparency
-		}
-	):Play()
+	TweenService:Create(part, first_person_transparency_tween, { Transparency = targetTransparency }):Play()
 
 	if transparency_connections[part] then
 		transparency_connections[part]:Disconnect()
 		transparency_connections[part] = nil
 	end
 
-	-- Only enforce transparency while in first person.
 	if isFirstPerson then
-		transparency_connections[part] =
-			part:GetPropertyChangedSignal("Transparency"):Connect(function()
-				if part.Parent and math.abs(part.Transparency - 1) > 0.001 then
-					part.Transparency = 1
-				end
-			end)
+		transparency_connections[part] = part:GetPropertyChangedSignal("Transparency"):Connect(function()
+			if part.Parent and math.abs(part.Transparency - 1) > 0.001 then
+				part.Transparency = 1
+			end
+		end)
 	end
 end
+
 local transparency_descendant_connection
 
 local function first_person_transparency(character: Instance, isFirstPerson: boolean)
@@ -710,18 +684,16 @@ local function first_person_transparency(character: Instance, isFirstPerson: boo
 
 	transparency_descendant_connection = character.DescendantAdded:Connect(function(descendant)
 		task.defer(function()
-			if not descendant.Parent then
-				return
-			end
-
+			if not descendant.Parent then return end
 			handle_object(descendant, isFirstPerson)
-
 			for _, obj in ipairs(descendant:GetDescendants()) do
 				handle_object(obj, isFirstPerson)
 			end
 		end)
 	end)
 end
+
+-- // Head Follow
 
 function BaseCamera:HeadFollowCamera_Setup()
 	local character, root = self:_getCharacterParts()
@@ -996,9 +968,9 @@ function BaseCamera:OverTheShoulder()
 			math.clamp(self.ZoomSpeed * dt, 0, 1)
 		)
 
-		local shoulderX = CameraOffsets.Third_Person_Right.X * ((self.ShoulderAlpha * 2) - 1)
+		local shoulderX      = CameraOffsets.Third_Person_Right.X * ((self.ShoulderAlpha * 2) - 1)
 		local verticalOffset = self.is_crouching and 0.5 or 1.8
-		local focusPoint = root.Position + Vector3.new(0, verticalOffset, 0)
+		local focusPoint     = root.Position + Vector3.new(0, verticalOffset, 0)
 
 		local cameraOffset =
 			(rotation.RightVector * shoulderX)
@@ -1009,7 +981,7 @@ function BaseCamera:OverTheShoulder()
 		local rayDirection  = idealPosition - focusPoint
 
 		local rayParams = RaycastParams.new()
-		rayParams.FilterDescendantsInstances = { character, workspace.CurrentCamera }
+		rayParams.FilterDescendantsInstances = { character, Workspace.CurrentCamera }
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 		local collisionResult = Workspace:Spherecast(focusPoint, COLLISION_MARGIN, rayDirection, rayParams)
@@ -1035,6 +1007,7 @@ function BaseCamera:OverTheShoulder()
 		end
 	end)
 end
+
 -- // CAMERA SWITCHING
 
 function BaseCamera:Switch_Camera(target: string)
@@ -1044,8 +1017,6 @@ function BaseCamera:Switch_Camera(target: string)
 	self.CameraYaw   = math.atan2(-look.X, -look.Z)
 	self.CameraPitch = math.asin(math.clamp(look.Y, -1, 1))
 
-
-	-- Pure world-space snapshot, root orientation never touches this
 	self.TransitionStartWorld = Camera.CFrame
 	self.IsTransitioning      = true
 	self.TransitionElapsed    = 0
@@ -1068,12 +1039,12 @@ function BaseCamera:Switch_Camera(target: string)
 	cursor_ui.Visible = preset.Cursor_UI and not character:GetAttribute("Aiming") or false
 	LocalPlayer:SetAttribute("FreeLook", nil)
 	LocalPlayer:SetAttribute("FirstPerson", nil)
-	
+
 	for part, connection in pairs(transparency_connections) do
 		connection:Disconnect()
 		transparency_connections[part] = nil
 	end
-	
+
 	self:_unbind()
 	self[target](self)
 end
@@ -1092,10 +1063,28 @@ function BaseCamera:_setupCharacterDeathListener(humanoid)
 	end)
 end
 
-function BaseCamera:Start()
-	local function onCharacterAdded(character)
-		self:End()
+function BaseCamera:_snapCameraToCharacter()
+	local character = LocalPlayer.Character
+	local root      = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
 
+	local snapCFrame =
+		CFrame.new(root.Position + Vector3.new(0, 1.8, 0))
+		* CFrame.Angles(0, self.CameraYaw, 0)
+		* CFrame.Angles(self.CameraPitch, 0, 0)
+
+	Camera.CFrame             = snapCFrame
+	self.TransitionStartWorld = snapCFrame
+end
+
+function BaseCamera:Start()
+	print("CameraService: BaseCamera started")
+
+	self.IsTransitioning      = false
+	self.TransitionStartWorld = nil
+	self.TransitionElapsed    = 0
+
+	local function onCharacterAdded(character)
 		self:_refreshKeybinds()
 		self:_setupInput()
 		self:_setupMouseInput()
@@ -1120,12 +1109,10 @@ function BaseCamera:Start()
 		humanoid.CameraOffset = Vector3.new(0, 0, 0)
 
 		self:_setupCharacterDeathListener(humanoid)
-
-		task.defer(function()
-			self:Switch_Camera("OverTheShoulder")
-			self:_switch_shoulder("Right")
-			self:_resetAllTransparency()
-		end)
+		self:_snapCameraToCharacter()
+		self:Switch_Camera("OverTheShoulder")
+		self:_switch_shoulder("Right")
+		self:_resetAllTransparency()
 	end
 
 	if LocalPlayer.Character then onCharacterAdded(LocalPlayer.Character) end
@@ -1146,21 +1133,76 @@ function BaseCamera:Start()
 	self:_setupInput()
 end
 
+function BaseCamera:Resume()
+	print("CameraService: BaseCamera resumed")
+
+	-- reset any leftover transition state from when we were paused
+	self.IsTransitioning      = false
+	self.TransitionStartWorld = nil
+	self.TransitionElapsed    = 0
+
+	-- read current yaw from root so we face the right direction immediately
+	local character = LocalPlayer.Character
+	local root      = character and character:FindFirstChild("HumanoidRootPart")
+	if root then
+		self.CameraYaw    = yawFromLook(root.CFrame.LookVector)
+		self.CharacterYaw = self.CameraYaw
+		self.CameraPitch  = 0
+	end
+
+	-- snap camera to character so there is zero void time
+	self:_snapCameraToCharacter()
+
+	-- restore FOV in case MenuCamera changed it
+	Camera.FieldOfView = self.TargetFOV or FOV_Config.BASE
+
+	-- re-wire connections that End() tore down
+	self:_refreshKeybinds()
+	self:_setupInput()
+	self:_setupMouseInput()
+
+	local humanoid = self:_getHumanoid()
+	if humanoid then
+		self:_setupCharacterDeathListener(humanoid)
+		humanoid.AutoRotate   = false
+		humanoid.CameraOffset = Vector3.new(0, 0, 0)
+	end
+
+	-- jump straight into the last mode (or default to OTS)
+	local resumeMode = self.CurrentMode or "OverTheShoulder"
+	self:Switch_Camera(resumeMode)
+	self:_switch_shoulder(LocalPlayer:GetAttribute("Current_Shoulder") or "Right")
+	self:_resetAllTransparency()
+end
+
 function BaseCamera:End()
+	print("CameraService: BaseCamera ended")
 	self:_unbind()
 
-	if self.FOVTween then self.FOVTween:Cancel(); self.FOVTween = nil end
+	Camera.CameraType             = Enum.CameraType.Custom
+	Camera.FieldOfView            = FOV_Config.BASE
+	InputService.MouseIconEnabled = true
+	InputService.MouseBehavior    = Enum.MouseBehavior.Default
+
+	cursor_ui.Visible = false
+	LocalPlayer:SetAttribute("FreeLook", nil)
+	LocalPlayer:SetAttribute("FirstPerson", nil)
+
+	if self.FOVTween  then self.FOVTween:Cancel();  self.FOVTween  = nil end
+	if self.FOVTween2 then self.FOVTween2:Cancel(); self.FOVTween2 = nil end
+
 	if self.CharacterDeathConnection then self.CharacterDeathConnection:Disconnect(); self.CharacterDeathConnection = nil end
 
 	self:HeadFollowCamera_Reject()
 
 	if self.aim_check            then self.aim_check:Disconnect();            self.aim_check            = nil end
 	if self.HoldBreathConnection then self.HoldBreathConnection:Disconnect(); self.HoldBreathConnection = nil end
+	if self.sprint_check         then self.sprint_check:Disconnect();         self.sprint_check         = nil end
 	if self.transparency_connection then self.transparency_connection:Disconnect(); self.transparency_connection = nil end
-	if self._align            then self._align:Destroy();            self._align            = nil end
-	if self._alignAttachment  then self._alignAttachment:Destroy();  self._alignAttachment  = nil end
+	if self._align           then self._align:Destroy();           self._align           = nil end
+	if self._alignAttachment then self._alignAttachment:Destroy(); self._alignAttachment = nil end
 	if self.InputBeganConnection then self.InputBeganConnection:Disconnect(); self.InputBeganConnection = nil end
-	if self._inputConn        then self._inputConn:Disconnect();        self._inputConn        = nil end
+	if self._inputConn       then self._inputConn:Disconnect();       self._inputConn       = nil end
 
 	if self.KeybindConnections then
 		for _, c in ipairs(self.KeybindConnections) do c:Disconnect() end
@@ -1177,39 +1219,22 @@ function BaseCamera:Cut()
 	self:End()
 end
 
---[[
-	ApplyRecoil — called by CameraService.apply_recoil every shot.
-
-	Applies:
-	  1. Stepped pitch/yaw kick (frame-accurate, matches original recoil_kick loop)
-	  2. CameraOffset Z pushback of 0.5 studs on every shot, decaying back to 0
-	     via _decayCameraOffsetZ() in the render loop (matches original v_u_100 system)
-	  3. Optional Z roll (4 steps of 2 degrees) when doRoll = true
-	     (matches original p_u_135 branch)
-]]
 function BaseCamera:ApplyRecoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?)
 	steps = steps or 6
 
 	local totalSteps   = steps + 1
 	local stepInterval = 0.015
-
 	local elapsed      = 0
 	local stepsApplied = 0
 
 	if doRoll then
 		local rollSteps   = 0
 		local rollElapsed = 0
-
 		local rollConn
 		rollConn = RunService.RenderStepped:Connect(function(dt)
-			if rollSteps >= 4 then
-				rollConn:Disconnect()
-				return
-			end
-
+			if rollSteps >= 4 then rollConn:Disconnect(); return end
 			rollElapsed += dt
 			local due = math.floor(rollElapsed / stepInterval)
-
 			for _ = 1, math.min(due - rollSteps, 4 - rollSteps) do
 				Camera.CFrame *= CFrame.Angles(0, 0, math.rad(2))
 				rollSteps += 1
@@ -1219,30 +1244,26 @@ function BaseCamera:ApplyRecoil(vertical: number, horizontal: number, steps: num
 
 	local conn
 	conn = RunService.RenderStepped:Connect(function(dt)
-		if stepsApplied >= totalSteps then
-			conn:Disconnect()
-			return
-		end
+		if stepsApplied >= totalSteps then conn:Disconnect(); return end
 
 		elapsed += dt
 		local due = math.floor(elapsed / stepInterval)
 
 		for _ = 1, math.min(due - stepsApplied, totalSteps - stepsApplied) do
-			
 			if self.holding_breath then
-				self.CameraPitch += vertical * 0.5
-				self.CameraYaw += horizontal * 0.5
-				self.CameraKick += 0.15
+				self.CameraPitch += vertical   * 0.5
+				self.CameraYaw   += horizontal * 0.5
+				self.CameraKick  += 0.15
 			else
 				self.CameraPitch += vertical
-				self.CameraYaw += horizontal
-				self.CameraKick += 0.15
+				self.CameraYaw   += horizontal
+				self.CameraKick  += 0.15
 			end
-				
 			stepsApplied += 1
 		end
 	end)
 end
+
 local myCamera = BaseCamera.new({
 	name     = "BaseCamera",
 	priority = 1,
