@@ -13,6 +13,5 @@ return {
 	[3800497291] = true, -- // BruhBot8707,
 	[98677788] = true, -- // EndetX3,
 	[5648718529] = true, -- // Kat_TunnelDog
-
+	[8248014626] = true, -- // Rajin
 }
--- nova the comma has to be after the true, not at the end

@@ -39,10 +39,24 @@ function Compass.new(info: { name: string }): Compass
 end
 
 function Compass:show_ui()
-	for _, child in pairs(game_points:GetChildren()) do
-		if child:FindFirstChild("Points_Billboard") then
-			child.Points_Billboard.Enabled = true
+	local gamemode_config =
+		game:GetService("ReplicatedStorage")
+		.Shared
+		.Library
+		.Configuration
+		.Scoring_Variables
+		.Gamemode
+
+	local designationIndex = 0
+
+	for _, point in ipairs(game_points:GetChildren()) do
+		local billboard = point:FindFirstChild("Points_Billboard")
+
+		if not billboard then
+			continue
 		end
+
+		billboard.Enabled = true
 	end
 end
 

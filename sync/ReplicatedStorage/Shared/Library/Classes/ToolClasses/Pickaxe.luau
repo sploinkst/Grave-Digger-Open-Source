@@ -75,7 +75,8 @@ function Pickaxe.new(PickaxeCreateInfo: Types.BaseToolCreateInfo): Pickaxe
 		Unequip = Animations_Folder.Tools.Pickaxes.Regular.Pickaxe_Unequip
 	}
 
-	self.mining_power = 10
+	self.mining_power = 12
+	self.Mining = false
 	self._activationConnection = nil
 
 	return self
@@ -155,6 +156,7 @@ function Pickaxe:unequip()
 end
 
 function Pickaxe:activate()
+	if self.Mining then return end
 	local character = LOCAL_PLAYER.Character
 	if not character then return end
 
@@ -176,7 +178,11 @@ function Pickaxe:activate()
 		local index = math.random(1, 2)
 		local anim = self.RegisteredAnimations["Melee" .. index]
 		if anim then
+			self.Mining = true
 			anim:Play()
+			task.delay(0.5, function()
+				self.Mining = false
+			end)
 		end
 	end
 

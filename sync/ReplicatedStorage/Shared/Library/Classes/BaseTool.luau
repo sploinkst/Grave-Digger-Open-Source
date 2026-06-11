@@ -31,9 +31,12 @@ local hit_connection                = events_replication_folder.Hit_Connection
 local vfx_cast_event                = events_replication_folder.VFX_Connection
 local sfx_cast_event                = events_replication_folder.SFX_Connection
 local texture_event                 = events_replication_folder.Texture_Connection
+local casing_event                  = events_replication_folder.Casing_Connection
+
 
 local gun_communication = events_replication_folder.Parent.Gun_Communication
 local drop_connection   = gun_communication.Drop_Connection
+local ammo_communication = gun_communication.Ammo_Connection
 local melee_communication = events_replication_folder.Parent.Melee_Communication
 
 local general_sfx        = ReplicatedStorage.Shared.Assets.Guns.Sounds.Shared
@@ -164,14 +167,6 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 		end
 	end
 
-	if holster then
-		self.actual_holster = holster
-	elseif self.holster_reference then
-		self.actual_holster = utilities_module.reverse_search_holster(LOCAL_PLAYER, self.holster_reference.Name)
-	else
-		warn("[" .. self.className .. "] Missing holster_reference")
-	end
-
 	if self._activationConnection then
 		self._activationConnection:Disconnect()
 	end
@@ -196,6 +191,35 @@ function BaseTool:GetBarrelWarningPart()
 	clone:SetAttribute("HitAttachName", hitAttach.Name)
 
 	return clone
+end
+
+local function raycastIgnoringCharactersAndInvisible(origin, direction, params)
+	local ignoreList = table.clone(params.FilterDescendantsInstances or {})
+
+	while true do
+		params.FilterDescendantsInstances = ignoreList
+
+		local result = workspace:Raycast(origin, direction, params)
+
+		if not result then
+			return nil
+		end
+
+		local hit = result.Instance
+
+		local model = hit:FindFirstAncestorOfClass("Model")
+		if model and Players:GetPlayerFromCharacter(model) then
+			table.insert(ignoreList, model)
+			continue
+		end
+
+		if hit.Transparency >= 1 and not hit:GetAttribute("Unpiercable") then
+			table.insert(ignoreList, hit)
+			continue
+		end
+
+		return result
+	end
 end
 
 function BaseTool:clearMuzzleFX()
@@ -287,7 +311,7 @@ function BaseTool:init_short_mechanic()
 
 		local lookDir = head.CFrame.LookVector
 
-		local shortResult = workspace:Raycast(
+		local shortResult = raycastIgnoringCharactersAndInvisible(
 			head.Position,
 			lookDir * short_distance,
 			rayParams
@@ -296,7 +320,7 @@ function BaseTool:init_short_mechanic()
 		local targetPosition = mouse.Hit.Position
 		local aimDirection = (targetPosition - muzzle.Position).Unit
 
-		local muzzleResult = workspace:Raycast(
+		local muzzleResult = raycastIgnoringCharactersAndInvisible(
 			muzzle.Position,
 			aimDirection * short_distance,
 			rayParams
@@ -305,6 +329,7 @@ function BaseTool:init_short_mechanic()
 		local muzzleBlocked = muzzleResult ~= nil
 
 		if shortResult then
+			
 			local alpha = math.clamp(
 				1 - (shortResult.Distance / short_distance) + 0.4,
 				0,
@@ -339,7 +364,7 @@ function BaseTool:init_short_mechanic()
 			end
 		end
 
-		self.ForceBlockFire = self.IsShorted or muzzleBlocked
+		self.ForceBlockFire = self.IsShorted
 
 		if self.muzzleAttach.Parent ~= muzzle then
 			self.muzzleAttach.Parent = muzzle
@@ -350,6 +375,7 @@ function BaseTool:init_short_mechanic()
 	)
 
 		if muzzleBlocked then
+			
 			if self.warning_beam then
 				self.warning_beam.Attachment0 = self.muzzleAttach
 				self.warning_beam.Attachment1 = self.hitAttach
@@ -398,6 +424,7 @@ end
 
 function BaseTool:equip()
 	if not self.tool then return end
+	
 	self.Equipped  = true
 	self.Equipping = true
 
@@ -406,7 +433,11 @@ function BaseTool:equip()
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
-
+	
+	if not self.actual_holster and self.holster_reference then
+		self.actual_holster = utilities_module.reverse_search_holster(LOCAL_PLAYER, self.holster_reference.Name)
+	end
+	
 	character:SetAttribute("Sprint_Animation", self.className)
 	humanoid:EquipTool(self.tool)
 
@@ -463,6 +494,7 @@ function BaseTool:equip()
 		if not track:IsA("AnimationTrack") then continue end
 
 		table.insert(self.keyframe_connections, track.KeyframeReached:Connect(function(keyframe)
+			
 			local rightArm = LOCAL_PLAYER.Character:FindFirstChild("Right Arm")
 			if not rightArm then return end
 			local round = rightArm:FindFirstChild(self.Round.Name)
@@ -473,11 +505,11 @@ function BaseTool:equip()
 
 			elseif keyframe == "vfx_hand_shell_invisible" then
 				round.Transparency = 1
-
 			elseif keyframe == "vfx_eject_casing" then
 				local casing = self.actual_model:FindFirstChild(self.className .. "_Ejection")
 				if not casing then warn("[BASETOOL] vfx_eject_casing: no casing for " .. self.className) return end
 				BaseTool:emit_casing(casing, casing.CFrame)
+				print("Ejecting casing")
 
 			elseif keyframe == "vfx_cylinder_rotate_other" then
 				local cylinder_motor: Motor6D =
@@ -516,6 +548,7 @@ function BaseTool:equip()
 				self.cylinder_rotation = 1
 
 			elseif keyframe:sub(1, 4) == "sfx_" then
+				if not self.SFXFolder then return end
 				local sound = self.SoundFolder:FindFirstChild(keyframe:sub(5))
 				if sound then
 					self:_play_sfx(sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
@@ -549,6 +582,8 @@ end
 
 function BaseTool:unequip()
 	if not self.tool then return end
+	if self.Reloading and not self.Emergency_Drop then return end
+
 	self.Equipped = false
 
 	local character = LOCAL_PLAYER.Character
@@ -557,27 +592,29 @@ function BaseTool:unequip()
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
 
+	LOCAL_PLAYER:SetAttribute("CantUnequip", false)
 	character:SetAttribute("Sprint_Animation", nil)
 	if self._on_unequip then self:_on_unequip() end
 
 	if self.RegisteredAnimations then
 		for _, anim in pairs(self.RegisteredAnimations) do
-			anim:Stop()
+			anim:Stop(0)
 		end
 	end
 
 	self:_disable_aiming_ui()
 	humanoid:UnequipTools()
 
-	self.sprint_connection:Disconnect()
-	if self.RegisteredAnimations and self.RegisteredAnimations.Unequip then
-		if self.Emergency_Drop == true then
+	if self.sprint_connection then self.sprint_connection:Disconnect() end
+
+	if self.RegisteredAnimations then
+		if self.Emergency_Drop then
 			self:_playAnim("Drop", true)
-		else
+		elseif self.RegisteredAnimations.Unequip then
 			self:_playAnim("Unequip", true)
-		end
-		if self.unequip_wait then
-			self.RegisteredAnimations.Unequip.Stopped:Wait()
+			if self.unequip_wait then
+				self.RegisteredAnimations.Unequip.Stopped:Wait()
+			end
 		end
 	end
 
@@ -592,7 +629,7 @@ function BaseTool:unequip()
 		for _, conn in pairs(self.keyframe_connections) do conn:Disconnect() end
 		self.keyframe_connections = {}
 	end
-	
+
 	self.Moving_Connection = nil
 end
 
@@ -728,12 +765,17 @@ function BaseTool:_restoreBase()
 		end
 	end
 
-	if self.Aiming then
-		local want = self:_aimTrack()
-		local kill = (want == anims.Aim) and anims.Aim_Left or anims.Aim
-		if kill and kill.IsPlaying then kill:Stop(CUT) end
-		if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT) end
-		if want and not want.IsPlaying then want:Play() end
+	if self.Aiming or self.holding_aim_button == true then
+		if self.Aiming then
+			local want = self:_aimTrack()
+			local kill = (want == anims.Aim) and anims.Aim_Left or anims.Aim
+			if kill and kill.IsPlaying then kill:Stop(CUT) end
+			if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT) end
+			if want and not want.IsPlaying then want:Play() end
+		else
+			self:aim()
+		end
+		
 		self:init_short_mechanic()
 	else
 		self:_killAimTracks()
@@ -1039,6 +1081,7 @@ function BaseTool:_connectInput()
 
 			if matched then
 				if action == "Aim" then
+					self.holding_aim_button = true
 					self:aim()
 				elseif action == "Reload" then
 					self:reload()
@@ -1061,7 +1104,7 @@ function BaseTool:_connectInput()
 		local matched = aimBind
 			and ((typeof(aimBind) == "EnumItem" and aimBind.EnumType == Enum.UserInputType and input.UserInputType == aimBind)
 				or (typeof(aimBind) == "EnumItem" and aimBind.EnumType == Enum.KeyCode and input.KeyCode == aimBind))
-		if matched then self:endAiming() end
+		if matched then self:endAiming() self.holding_aim_button = false end
 	end)
 end
 
@@ -1105,46 +1148,32 @@ function BaseTool:_startAimTracking()
 	local rightShoulder = torso:FindFirstChild("Right Shoulder")
 	if not (leftShoulder and rightShoulder) then return end
 
-	self._restLeftC0 = self._restLeftC0 or leftShoulder.C0
+	self._restLeftC0  = self._restLeftC0  or leftShoulder.C0
 	self._restRightC0 = self._restRightC0 or rightShoulder.C0
 
-	self._wasFreeLook = self._wasFreeLook or false
-	self._freeLookYaw = self._freeLookYaw or 0
+	self._wasFreeLook  = self._wasFreeLook  or false
+	self._freeLookYaw  = self._freeLookYaw  or 0
+	self._smoothedYaw  = self._smoothedYaw  or 0
+	self._lastYaw      = self._lastYaw      or 0
 
-	self._smoothedYaw = self._smoothedYaw or 0
-	self._lastYaw = self._lastYaw or 0
-
-
-	
 	local lerpAlpha = 0.15
 
 	self._aimConnection = RunService.RenderStepped:Connect(function()
-		if not self.Equipped then
-			return
-		end
+		if not self.Equipped then return end
+		if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
 
 		local char = LOCAL_PLAYER.Character
 		local r = char and char:FindFirstChild("HumanoidRootPart")
 		local t = char and char:FindFirstChild("Torso")
-		if not (char and r and t) then
-			return
-		end
+		if not (char and r and t) then return end
 
 		local ls = t:FindFirstChild("Left Shoulder")
 		local rs = t:FindFirstChild("Right Shoulder")
-		if not (ls and rs) then
-			return
-		end
+		if not (ls and rs) then return end
 
 		if not self.Aiming then
-			if self._restLeftC0 then
-				ls.C0 = ls.C0:Lerp(self._restLeftC0, lerpAlpha)
-			end
-
-			if self._restRightC0 then
-				rs.C0 = rs.C0:Lerp(self._restRightC0, lerpAlpha)
-			end
-
+			if self._restLeftC0  then ls.C0 = ls.C0:Lerp(self._restLeftC0,  lerpAlpha) end
+			if self._restRightC0 then rs.C0 = rs.C0:Lerp(self._restRightC0, lerpAlpha) end
 			return
 		end
 
@@ -1155,7 +1184,6 @@ function BaseTool:_startAimTracking()
 			local camCF = CAMERA.CFrame
 
 			local shoulderOffset = CFrame.new()
-
 			if self.current_shoulder == "Left" then
 				shoulderOffset = CFrame.new(-0.4, -1.75, 0)
 			elseif self.current_shoulder == "Right" then
@@ -1179,10 +1207,10 @@ function BaseTool:_startAimTracking()
 			)
 		else
 			local currentLookDir = CAMERA.CFrame.LookVector
-			local cameraPitch = math.asin(math.clamp(currentLookDir.Y, -1, 1))
+			local cameraPitch    = math.asin(math.clamp(currentLookDir.Y, -1, 1))
 
 			local relativeCF = r.CFrame:ToObjectSpace(CAMERA.CFrame)
-			local lookDir = relativeCF.LookVector
+			local lookDir    = relativeCF.LookVector
 
 			local rawYaw = math.atan2(-lookDir.X, -lookDir.Z)
 
@@ -1191,22 +1219,19 @@ function BaseTool:_startAimTracking()
 				self._smoothedYaw = rawYaw
 			end
 
-			-- Shortest-path angle difference
+			-- Normalize _smoothedYaw into [-π, π] to prevent unbounded drift
+			while self._smoothedYaw >  math.pi do self._smoothedYaw -= math.pi * 2 end
+			while self._smoothedYaw < -math.pi do self._smoothedYaw += math.pi * 2 end
+
+			-- Compute shortest-path delta and wrap fully into [-π, π]
 			local deltaYaw = rawYaw - self._smoothedYaw
+			while deltaYaw >  math.pi do deltaYaw -= math.pi * 2 end
+			while deltaYaw < -math.pi do deltaYaw += math.pi * 2 end
 
-			if deltaYaw > math.pi then
-				deltaYaw -= (math.pi * 2)
-			elseif deltaYaw < -math.pi then
-				deltaYaw += (math.pi * 2)
-			end
-
-			-- Smooth toward target yaw instead of accumulating forever
-			self._smoothedYaw += deltaYaw * 0.2
+			self._smoothedYaw = self._smoothedYaw + deltaYaw * 0.2
+			self._smoothedYaw = math.clamp(self._smoothedYaw, math.rad(-85), math.rad(85))
 
 			local yaw = self._smoothedYaw
-
-			-- Prevent impossible shoulder rotations
-			yaw = math.clamp(yaw, math.rad(-85), math.rad(85))
 
 			if not LOCAL_PLAYER:GetAttribute("FreeLook") then
 				self._wasFreeLook = false
@@ -1236,33 +1261,18 @@ function BaseTool:_startAimTracking()
 			)
 		end
 
-		if LOCAL_PLAYER:GetAttribute("FirstPerson") then
-			local targetLeftRot = leftArmCF - leftArmCF.Position
-			local targetRightRot = rightArmCF - rightArmCF.Position
+		-- Use .Rotation instead of CF - CF.Position for reliable rotation extraction
+		local leftRot  = leftArmCF.Rotation
+		local rightRot = rightArmCF.Rotation
 
-			self._fpLeftRot = self._fpLeftRot or (leftArmCF - leftArmCF.Position)
-			self._fpRightRot = self._fpRightRot or (rightArmCF - rightArmCF.Position)
-			
-			self._fpLeftRot = self._fpLeftRot:Lerp(targetLeftRot, 0.12)
-			self._fpRightRot = self._fpRightRot:Lerp(targetRightRot, 0.12)
+		self._fpLeftRot  = self._fpLeftRot  or leftRot
+		self._fpRightRot = self._fpRightRot or rightRot
 
-			
-			ls.C0 = CFrame.new(leftArmCF.Position) * self._fpLeftRot
-			rs.C0 = CFrame.new(rightArmCF.Position) * self._fpRightRot
-		else
-			local targetLeftRot = leftArmCF - leftArmCF.Position
-			local targetRightRot = rightArmCF - rightArmCF.Position
+		self._fpLeftRot  = self._fpLeftRot:Lerp(leftRot,  0.12)
+		self._fpRightRot = self._fpRightRot:Lerp(rightRot, 0.12)
 
-			self._fpLeftRot = self._fpLeftRot or (leftArmCF - leftArmCF.Position)
-			self._fpRightRot = self._fpRightRot or (rightArmCF - rightArmCF.Position)
-
-			self._fpLeftRot = self._fpLeftRot:Lerp(targetLeftRot, 0.12)
-			self._fpRightRot = self._fpRightRot:Lerp(targetRightRot, 0.12)
-
-
-			ls.C0 = CFrame.new(leftArmCF.Position) * self._fpLeftRot
-			rs.C0 = CFrame.new(rightArmCF.Position) * self._fpRightRot
-		end
+		ls.C0 = CFrame.new(leftArmCF.Position)  * self._fpLeftRot
+		rs.C0 = CFrame.new(rightArmCF.Position) * self._fpRightRot
 	end)
 end
 
@@ -1513,6 +1523,11 @@ function BaseTool:_play_sfx(...)
 	replicant_service.connect_sfx(LOCAL_PLAYER, ...)
 end
 
+function BaseTool:_fire_ammo(count)
+	ammo_communication:FireServer(self.tool, count or 1)
+	print("Firing ammo:", count)
+end
+
 -- // Aiming UI
 
 function BaseTool:_enable_aiming_ui(max_aiming: number)
@@ -1628,7 +1643,8 @@ end
 function BaseTool:ammo_check()
 	if not self.RegisteredAnimations or not self.RegisteredAnimations.Check then return end
 	if self:_isBusy() or self.Checking or self.Check_Delayed then return end
-
+	if self.Equipping then return end
+	
 	self:_set_sprint_arms(true)
 	self.Checking     = true
 	self.Check_Delayed = true
@@ -1678,9 +1694,19 @@ function BaseTool:ammo_check()
 end
 
 function BaseTool:drop()
+	self._reloadCancelled = true
+	self.Emergency_Drop = true
+
+	if self.RegisteredAnimations then
+		for _, anim in pairs(self.RegisteredAnimations) do
+			if anim:IsA("AnimationTrack") and anim.IsPlaying then
+				anim:Stop(0)
+			end
+		end
+	end
+
 	drop_connection:FireServer(self.className, self.model_reference, true)
 	self:destroy()
-	self.Emergency_Drop = true
 end
 
 -- // VFX
@@ -1729,22 +1755,9 @@ function BaseTool:bullet_hole(position: Vector3, normal: Vector3)
 end
 
 function BaseTool:emit_casing(casing: Part, origin: CFrame, direction: Vector3)
-	local clone = casing:Clone()
-	clone.Parent = workspace
-	clone.CFrame = origin
-	clone.Anchored = false; clone.CanCollide = true; clone.Transparency = 0
-
-	local vel = direction or origin.LookVector * math.random(10, 15) + Vector3.new(0, math.random(10, 15), 0)
-
-	local bv = Instance.new("BodyVelocity")
-	bv.Velocity = vel
-	bv.Parent   = clone
-
-	clone.AssemblyAngularVelocity = Vector3.new(math.random(-10, 10), math.random(-10, 10), math.random(-10, 10))
-
-	task.delay(0.1, function() bv:Destroy() end)
-	
-	task.delay(3, function() clone:Destroy() end)
+	print("Fired casing event with:", casing.Name, origin, direction)
+	replicant_service.handle_casing_replication(LOCAL_PLAYER, casing, origin, direction)
+	casing_event:FireServer(casing, origin, direction)
 end
 
 -- // Stubs

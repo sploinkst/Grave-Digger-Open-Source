@@ -21,6 +21,8 @@ local concussion_connection: RBXScriptConnection? = nil
 local heartbeat_sound: Sound? = nil
 local lastHeartbeatTime = 0
 
+local Name_Billboard = ReplicatedStorage:WaitForChild('Shared'):WaitForChild("Assets"):WaitForChild('UI'):WaitForChild("Name_Billboard")
+
 -- Replication tracking
 local MAX_REPLICATION_EVENTS = 300
 module.ReplicationBuffer = {}
@@ -66,6 +68,7 @@ local nation_wave_timer = nation_config.Nation_Rein_Wave_Timer
 local visualize_casts_boolean = config.Parent.Ranged_Variables.Visualizations.Visualize_Casts
 local fastcast_module = require(shared.Library.Externals.FastCast)
 
+
 -- Constants
 local MAX_REIN = 500
 local LOW_HEALTH_THRESHOLD = 100
@@ -79,12 +82,15 @@ local ICONS = {
 local FLASH_TWEEN_INFO = TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 local FLASH_COLOR      = Color3.fromRGB(220, 50, 50)
 
+local flinch_cooldown = 0.35
+local last_flinched = 0
 -- Replicants
 local replicant_folder = game:GetService("ReplicatedStorage").Shared.Library.Events.Replicant_Communication
 local fastcast_replicant = replicant_folder.FastCast_Connection
 local vfx_replicant = replicant_folder.VFX_Connection
 local sfx_replicant = replicant_folder.SFX_Connection
 local texture_replicant = replicant_folder.Texture_Connection
+local casing_replicant = replicant_folder.Casing_Connection
 
 -- UI references (reassigned on respawn)
 local scoring_gui:        ScreenGui
@@ -125,6 +131,24 @@ local flash_connections: { [Frame]: RBXScriptConnection } = {}
 -- Preserved during decay so the bar keeps the correct color as it falls back.
 local point_cap_team: { [string]: string } = {}
 
+
+local function resolve_cap_team(empire_count: IntValue, nation_count: IntValue, point_name: string)
+	local empire_n = empire_count.Value
+	local nation_n = nation_count.Value
+
+	local cap_team = nil
+
+	if empire_n > nation_n then
+		cap_team = "Golden Empire"
+	elseif nation_n > empire_n then
+		cap_team = "Royal Nation"
+	end
+
+	-- cache for decay logic consistency (optional but now safe)
+	point_cap_team[point_name] = cap_team
+
+	return cap_team
+end
 
 local function setup_light(parent: BasePart, player: Player)
 	local light      = Instance.new("PointLight")
@@ -197,6 +221,14 @@ end
 
 
 
+local function get_billboard_ui(point_name: string)
+	local point_folder = workspace.Game_Details.Main_Game.Points:FindFirstChild(point_name)
+	if not point_folder then
+		return nil
+	end
+
+	return point_folder:FindFirstChild("Points_Billboard")
+end
 
 local function start_flash(frame: Frame)
 	if active_flash_tweens[frame] then return end
@@ -222,13 +254,23 @@ local function start_flash(frame: Frame)
 	end)
 end
 
-local function stop_flash(frame: Frame)
+local function stop_flash(frame: Frame, is_overhead: boolean?)
 	local tween = active_flash_tweens[frame]
 	if tween then
 		tween:Cancel()
 		active_flash_tweens[frame] = nil
 	end
 
+	if frame then
+		frame.BackgroundTransparency = 1
+		frame.Visible = false
+	end
+
+	if is_overhead then
+		overhead_enemyin.BackgroundTransparency = 1
+		overhead_enemyin.Visible = false
+	end
+	
 	if flash_connections[frame] then
 		flash_connections[frame]:Disconnect()
 		flash_connections[frame] = nil
@@ -244,29 +286,48 @@ local function update_enemy_flash(
 	empire_count: IntValue,
 	nation_count: IntValue,
 	owner: StringValue,
-	scoreboard_enemyin: Frame
+	scoreboard_enemyin: Frame,
+	point_name: string?
 )
 	local team = local_player.Team
 	if not team then
-		stop_flash(scoreboard_enemyin)
+		stop_flash(scoreboard_enemyin, true)
 		return
 	end
 
+	local billboard_enemyin
+
+	if point_name then
+		local billboard = get_billboard_ui(point_name)
+
+		if billboard then
+			billboard_enemyin = billboard:FindFirstChild("enemyin")
+		end
+	end
+
 	local enemy_present = false
-	local enemy_owns    = false
+	local enemy_owns = false
 
 	if team.Name == "Golden Empire" then
 		enemy_present = nation_count.Value > 0
-		enemy_owns    = owner.Value == "Royal Nation"
+		enemy_owns = owner.Value == "Royal Nation"
 	else
 		enemy_present = empire_count.Value > 0
-		enemy_owns    = owner.Value == "Golden Empire"
+		enemy_owns = owner.Value == "Golden Empire"
 	end
 
 	if enemy_present and not enemy_owns then
 		start_flash(scoreboard_enemyin)
+
+		if billboard_enemyin then
+			start_flash(billboard_enemyin)
+		end
 	else
 		stop_flash(scoreboard_enemyin)
+
+		if billboard_enemyin then
+			stop_flash(billboard_enemyin, false)
+		end
 	end
 end
 
@@ -319,25 +380,125 @@ local function remove_holster(player: Player, child: Instance)
 	if existing then existing:Destroy() end
 end
 
-local function on_character_added(char: Model, player)
-	local torso = char:FindFirstChild("Torso") or char:WaitForChild("Torso")
-	setup_light(torso, player)
+local function handle_accessory(player, child)
+	if child:IsA("Model") then
+		print("[REPLICANTSERVICE] Accessory is a model:", child.Name)
+		return
+	end
+	if child:GetAttribute("Given") then 
+		print("[REPLICANTSERVICE] Accessory is already given:", child.Name)
+		return
+	end
+
+	local accessory = utilities.fetch_accessory(child.Name) 
+	if not accessory then 
+		print("[REPLICANTSERVICE] No accessory found for:", child.Name)
+		return
+	end
+
+	local clone = utilities.quick_give_accessory(player, accessory, true, false, false)
+	print("Gave accessory:", child.Name)
+	child:SetAttribute("Given", true)
+
+
+	-- // special child handling
+	if child.Name == "LightEffect" then
+		local spotlight_1:PointLight = clone.Torso.a0:FindFirstChildWhichIsA("SpotLight")
+		local spotlight_2:PointLight = clone.Torso.a1:FindFirstChildWhichIsA("SpotLight")
+
+		
+		if player.Team.Name == "Golden Empire" then
+			spotlight_1.Color = Color3.fromRGB(255, 210, 119)
+			spotlight_2.Color = Color3.fromRGB(255, 210, 119)
+		else
+			spotlight_1.Color = Color3.fromRGB(196, 202, 255)
+			spotlight_2.Color = Color3.fromRGB(196, 202, 255)
+		end
+	elseif child.Name == "Empire_Dogtag" or child.Name == "Nation_Dogtag" then
+		local name_label = clone.chain_tag.tag.Surface.Username
+		
+		name_label.Text = player.Name
+		print("Set dogtag name to:", player.Name)
+	end
+end
+local function on_character_added(char: Model, player: Player)
+	local hrp = char:WaitForChild("HumanoidRootPart")
+
+	-- Remove any existing billboard (handles respawns cleanly)
+	local existing = hrp:FindFirstChild("Name_Billboard")
+	if existing then existing:Destroy() end
+
+	-- Handle accessories for the respawned player
+	for _, child in pairs(player.GameData.Accessorys:GetChildren()) do
+		if child:GetAttribute("ServerHandled") then
+			print("[REPLICANTSERVICE] Skipping", child.Name, "handled by the server")
+			continue
+		end
+		child:SetAttribute("Given", nil)
+		handle_accessory(player, child)
+	end
+
+	-- Don't add a billboard for the local player themselves
+	if player == local_player then return end
+
+	-- Only add billboard if this player is a teammate
+	if player.Team == local_player.Team then
+		local clone = Name_Billboard:Clone()
+		clone.Parent = hrp
+		clone.playername.Text = "ARM " .. player.Name
+	end
+end
+
+local function refresh_all_billboards()
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p == local_player then continue end
+		local char = p.Character
+		if not char then continue end
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if not hrp then continue end
+
+		local existing = hrp:FindFirstChild("Name_Billboard")
+		if existing then existing:Destroy() end
+
+		if p.Team == local_player.Team then
+			local clone = Name_Billboard:Clone()
+			clone.Parent = hrp
+			clone.playername.Text = "ARM " .. p.Name
+		end
+	end
 end
 
 local function setup_player(player: Player)
 	local char = player.Character or player.CharacterAdded:Wait()
 	on_character_added(char, player)
+
 	player.CharacterAdded:Connect(function(character)
-		on_character_added(character, player)	
+		on_character_added(character, player)
 	end)
+
+	-- Refresh all billboards whenever any player switches teams
+	player:GetPropertyChangedSignal("Team"):Connect(refresh_all_billboards)
 
 	local game_data   = player:WaitForChild("GameData")
 	local accessories = game_data:WaitForChild("Accessorys")
 	local holsters    = accessories:WaitForChild("Holsters")
 
+	for _, child in ipairs(holsters:GetChildren()) do
+		task.spawn(setup_holster, player, child)
+	end
+
 	holsters.ChildAdded:Connect(function(child) setup_holster(player, child) end)
 	holsters.ChildRemoved:Connect(function(child) remove_holster(player, child) end)
+
+	for _, child in ipairs(accessories:GetChildren()) do
+		task.spawn(handle_accessory, player, child)
+	end
+
+	accessories.ChildAdded:Connect(function(child)
+		handle_accessory(player, child)
+	end)
 end
+
 
 
 
@@ -374,62 +535,132 @@ local function apply_progress(
 	local empire_n = empire_count.Value
 	local nation_n = nation_count.Value
 
+	-- deterministically resolve team
+	local cap_team = nil
 	if empire_n > nation_n then
-		point_cap_team[point_name] = "Golden Empire"
+		cap_team = "Golden Empire"
 	elseif nation_n > empire_n then
-		point_cap_team[point_name] = "Royal Nation"
-	end
-	-- Nobody pushing (decay) → point_cap_team[point_name] unchanged
-
-	-- Forget the team once the bar fully resets
-	if progress_value == 0 then
-		point_cap_team[point_name] = nil
+		cap_team = "Royal Nation"
 	end
 
-	local color = get_cap_color(point_cap_team[point_name])
+	point_cap_team[point_name] = cap_team
+
+	local color = get_cap_color(cap_team)
 	local size  = UDim2.fromScale(1, progress_value / 20)
 
+	-- scoreboard UI
 	bar.BackgroundColor3 = color
-	bar.Size             = size
+	bar.Size = size
 
+	-- billboard UI
+	local billboard = get_billboard_ui(point_name)
+	if billboard then
+		local billboard_bar = billboard:FindFirstChild("bar")
+		if billboard_bar and billboard_bar:IsA("Frame") then
+			billboard_bar.BackgroundColor3 = color
+			billboard_bar.Size = size
+		end
+	end
+
+	-- overhead popup
 	if sync_overhead then
 		overhead_bar.BackgroundColor3 = color
-		overhead_bar.Size             = size
+		overhead_bar.Size = size
 	end
 end
 
 local function apply_owner(
 	owner_value: string,
-	bar: Frame, bg_icon: ImageLabel, point_label: TextLabel,
-	sync_overhead: boolean
+	bar: Frame,
+	bg_icon: ImageLabel,
+	point_label: TextLabel,
+	sync_overhead: boolean,
+	point_name: string
 )
+	local billboard = get_billboard_ui(point_name)
+
+	local billboard_bgicon
+	local billboard_label
+	local billboard_bar
+
+	if billboard then
+		billboard_bgicon = billboard:FindFirstChild("bgicon")
+		billboard_label  = billboard:FindFirstChild("label")
+		billboard_bar    = billboard:FindFirstChild("bar")
+	end
+
 	if owner_value == "Golden Empire" then
 		local color = Color3.fromRGB(255, 255, 0)
-		bg_icon.Image          = ICONS.Golden_Empire_Background
-		bg_icon.Visible        = true
-		bg_icon.ImageColor3    = color
+
+		bg_icon.Image = ICONS.Golden_Empire_Background
+		bg_icon.Visible = true
+		bg_icon.ImageColor3 = color
 		point_label.TextColor3 = color
-		if sync_overhead then
-			overhead_bgicon.Image       = ICONS.Golden_Empire_Background
-			overhead_bgicon.Visible     = true
-			overhead_bgicon.ImageColor3 = color
-			overhead_label.TextColor3   = color
+
+		if billboard_bgicon then
+			billboard_bgicon.Image = ICONS.Golden_Empire_Background
+			billboard_bgicon.Visible = true
+			billboard_bgicon.ImageColor3 = color
 		end
+
+		if billboard_label then
+			billboard_label.TextColor3 = color
+		end
+
+		if billboard_bar then
+			billboard_bar.BackgroundColor3 = color
+		end
+
+		if sync_overhead then
+			overhead_bgicon.Image = ICONS.Golden_Empire_Background
+			overhead_bgicon.Visible = true
+			overhead_bgicon.ImageColor3 = color
+			overhead_label.TextColor3 = color
+		end
+
 	elseif owner_value == "Royal Nation" then
 		local color = Color3.fromRGB(146, 25, 167)
-		bg_icon.Image          = ICONS.Royal_Nation_Background
-		bg_icon.Visible        = true
-		bg_icon.ImageColor3    = color
+
+		bg_icon.Image = ICONS.Royal_Nation_Background
+		bg_icon.Visible = true
+		bg_icon.ImageColor3 = color
 		point_label.TextColor3 = color
-		if sync_overhead then
-			overhead_bgicon.Image       = ICONS.Royal_Nation_Background
-			overhead_bgicon.Visible     = true
-			overhead_bgicon.ImageColor3 = color
-			overhead_label.TextColor3   = color
+
+		if billboard_bgicon then
+			billboard_bgicon.Image = ICONS.Royal_Nation_Background
+			billboard_bgicon.Visible = true
+			billboard_bgicon.ImageColor3 = color
 		end
+
+		if billboard_label then
+			billboard_label.TextColor3 = color
+		end
+
+		if billboard_bar then
+			billboard_bar.BackgroundColor3 = color
+		end
+
+		if sync_overhead then
+			overhead_bgicon.Image = ICONS.Royal_Nation_Background
+			overhead_bgicon.Visible = true
+			overhead_bgicon.ImageColor3 = color
+			overhead_label.TextColor3 = color
+		end
+
 	else
 		bg_icon.Visible = false
-		if sync_overhead then overhead_bgicon.Visible = false end
+
+		if billboard_bgicon then
+			billboard_bgicon.Visible = false
+		end
+
+		if billboard_bar then
+			billboard_bar.BackgroundColor3 = Color3.fromRGB(167, 83, 170)
+		end
+
+		if sync_overhead then
+			overhead_bgicon.Visible = false
+		end
 	end
 end
 
@@ -447,6 +678,10 @@ local function sync_overhead_to_point(point_name: string)
 	local progress     = folder:FindFirstChild(point_name .. "_Progress")
 	local owner        = folder:FindFirstChild(point_name .. "_Owner")
 
+	if not (empire_count and nation_count and progress and owner) then
+		return
+	end
+
 	local control_ui         = objective_uis.control:FindFirstChild("objective" .. point_name)
 	local bar                = control_ui and control_ui:FindFirstChild("bar")     :: Frame
 	local bg_icon            = control_ui and control_ui:FindFirstChild("bgicon")  :: ImageLabel
@@ -454,22 +689,82 @@ local function sync_overhead_to_point(point_name: string)
 	local scoreboard_enemyin = control_ui and control_ui:FindFirstChild("enemyin") :: Frame
 
 	overhead_label.Text = point_name
-	apply_owner(owner.Value, bar, bg_icon, point_label, true)
-	apply_progress(point_name, progress.Value, empire_count, nation_count, bar, true)
-	update_enemy_flash(empire_count, nation_count, owner, scoreboard_enemyin)
+
+	-- Initial sync immediately
+	apply_owner(
+		owner.Value,
+		bar,
+		bg_icon,
+		point_label,
+		true,
+		point_name
+	)
+
+	apply_progress(
+		point_name,
+		progress.Value,
+		empire_count,
+		nation_count,
+		bar,
+		true
+	)
+
+	update_enemy_flash(
+		empire_count,
+		nation_count,
+		owner,
+		scoreboard_enemyin,
+		point_name
+	)
 
 	table.insert(overhead_connections, progress.Changed:Connect(function()
-		apply_progress(point_name, progress.Value, empire_count, nation_count, bar, true)
+		apply_progress(
+			point_name,
+			progress.Value,
+			empire_count,
+			nation_count,
+			bar,
+			true
+		)
 	end))
+
 	table.insert(overhead_connections, owner.Changed:Connect(function()
-		apply_owner(owner.Value, bar, bg_icon, point_label, true)
-		update_enemy_flash(empire_count, nation_count, owner, scoreboard_enemyin)
+		apply_owner(
+			owner.Value,
+			bar,
+			bg_icon,
+			point_label,
+			true,
+			point_name
+		)
+
+		update_enemy_flash(
+			empire_count,
+			nation_count,
+			owner,
+			scoreboard_enemyin,
+			point_name
+		)
 	end))
+
 	table.insert(overhead_connections, empire_count.Changed:Connect(function()
-		update_enemy_flash(empire_count, nation_count, owner, scoreboard_enemyin)
+		update_enemy_flash(
+			empire_count,
+			nation_count,
+			owner,
+			scoreboard_enemyin,
+			point_name
+		)
 	end))
+
 	table.insert(overhead_connections, nation_count.Changed:Connect(function()
-		update_enemy_flash(empire_count, nation_count, owner, scoreboard_enemyin)
+		update_enemy_flash(
+			empire_count,
+			nation_count,
+			owner,
+			scoreboard_enemyin,
+			point_name
+		)
 	end))
 end
 
@@ -486,25 +781,91 @@ local function bind_point_ui(point_name: string, control_ui: Frame)
 	local owner              = folder:FindFirstChild(point_name .. "_Owner")
 	local scoreboard_enemyin = control_ui:FindFirstChild("enemyin") :: Frame
 
+	if not (empire_count and nation_count and progress and owner) then
+		warn("[ScoringClient] Missing point values for:", point_name)
+		return
+	end
+
 	local bar: Frame             = control_ui:FindFirstChild("bar")
 	local bg_icon: ImageLabel    = control_ui:FindFirstChild("bgicon")
 	local point_label: TextLabel = control_ui:FindFirstChild("label")
 
+	-- Initial sync immediately
+	apply_owner(
+	owner.Value,
+	bar,
+	bg_icon,
+	point_label,
+	false,
+	point_name
+)
+
+	apply_progress(
+		point_name,
+		progress.Value,
+		empire_count,
+		nation_count,
+		bar,
+		false
+	)
+
+	update_enemy_flash(
+		empire_count,
+		nation_count,
+		owner,
+		scoreboard_enemyin,
+		point_name
+	)
+
+	-- Future updates
 	progress.Changed:Connect(function()
-		apply_progress(point_name, progress.Value, empire_count, nation_count, bar, false)
-	end)
-	owner.Changed:Connect(function()
-		apply_owner(owner.Value, bar, bg_icon, point_label, false)
-		update_enemy_flash(empire_count, nation_count, owner, scoreboard_enemyin)
+		apply_progress(
+			point_name,
+			progress.Value,
+			empire_count,
+			nation_count,
+			bar,
+			false
+		)
 	end)
 
-	update_enemy_flash(empire_count, nation_count, owner, scoreboard_enemyin)
+	owner.Changed:Connect(function()
+		apply_owner(
+			owner.Value,
+			bar,
+			bg_icon,
+			point_label,
+			false,
+			point_name
+		)
+
+		update_enemy_flash(
+			empire_count,
+			nation_count,
+			owner,
+			scoreboard_enemyin,
+			point_name
+		)
+	end)
 
 	empire_count.Changed:Connect(function()
-		update_enemy_flash(empire_count, nation_count, owner, scoreboard_enemyin)
+		update_enemy_flash(
+			empire_count,
+			nation_count,
+			owner,
+			scoreboard_enemyin,
+			point_name
+		)
 	end)
+
 	nation_count.Changed:Connect(function()
-		update_enemy_flash(empire_count, nation_count, owner, scoreboard_enemyin)
+		update_enemy_flash(
+			empire_count,
+			nation_count,
+			owner,
+			scoreboard_enemyin,
+			point_name
+		)
 	end)
 end
 
@@ -536,6 +897,15 @@ local function handle_point_child(point_child: Instance)
 	end
 
 	control.Visible = true
+	local billboard = get_billboard_ui(point_child.Name)
+
+	if billboard then
+		local label = billboard:FindFirstChild("label")
+
+		if label and label:IsA("TextLabel") then
+			label.Text = point_child.Name
+		end
+	end
 	bind_point_ui(point_child.Name, control)
 
 	local model = point_child:FindFirstChildWhichIsA("Model")
@@ -568,7 +938,7 @@ local function stop_concussion_effect()
 	local FADE_OUT_DURATION = 0.5
 
 	-- keep existing connection running, but switch it into "fade-out mode"
-	if concussion_connection then
+	if concussion_connection and concussion_connection:IsA("RBXScriptConnection") then
 		concussion_connection:Disconnect()
 	end
 
@@ -701,6 +1071,23 @@ end
 
 
 
+module.flinch_local_player = function(direction)
+	if local_player:GetAttribute("CantFlinch") then return end
+	if tick() - last_flinched < flinch_cooldown then return end
+	
+	last_flinched = tick()
+	local flinching_image_label_clone = local_player.PlayerGui.Flinching.flinch:Clone()
+	flinching_image_label_clone.Visible = true
+	flinching_image_label_clone.Parent = local_player.PlayerGui.Flinching
+	
+	local tween1 = TweenService:Create(flinching_image_label_clone, TweenInfo.new(0.6), {ImageTransparency = 1})
+	tween1:Play()
+	game.Debris:AddItem(flinching_image_label_clone, 1.6)
+	
+	local_player:SetAttribute("Flinch", direction)
+	print("[ReplicantService] Local player is Flinching!", direction)
+end
+
 
 local function handle_fastcast_replication(...)
 	local args = {...}
@@ -723,6 +1110,14 @@ local function handle_fastcast_replication(...)
 
 	local caster, caster_data = utilities.setupFastCast(cast_data)
 	caster:Fire(origin, direction, speed, caster_data)
+	
+	caster.LengthChanged:Connect(function(cast, position, segmentVelocity, segmentTravelDistance, segmentIndex)
+		local bullet_pos = position + segmentVelocity.Unit * segmentTravelDistance
+
+		if (bullet_pos - local_player.Character.HumanoidRootPart.Position).Magnitude < 18 then
+			module.flinch_local_player(direction)
+		end
+	end)
 end
 
 local function handle_vfx_replication(...)
@@ -828,11 +1223,14 @@ function module.handle_sfx_replication(...)
 	local args = {...}
 	local player = args[1]
 	local sound_instance = args[2]
+	
+	if not player or not sound_instance then return end
+	
 	local parent = args[3]
 	local playback_speed = args[4] or sound_instance.PlaybackSpeed
 	local volume = args[5] or sound_instance.Volume
 	local pitch_shift = args[6] or 0
-	local pitch_variation = args[7] or 0  -- NEW: pitch variation parameter
+	local pitch_variation = args[7] or 0 --  pitch variation parameter
 
 	local sound_clone = sound_instance:Clone()
 	sound_clone.Parent = parent
@@ -862,6 +1260,34 @@ function module.handle_sfx_replication(...)
 	end)
 end
 
+function module.handle_casing_replication(...)
+	local args = {...}
+	print("Casing replication received with:", args)
+	
+	local player = args[1]
+	local casing = args[2]
+	local origin = args[3]
+	local direction = args[4]
+	
+	local clone = casing:Clone()
+	clone.Parent = workspace
+	clone.CFrame = origin
+	clone.Anchored = false; clone.CanCollide = true; clone.Transparency = 0
+
+	local vel = direction or origin.LookVector * math.random(10, 15) + Vector3.new(0, math.random(10, 15), 0)
+
+	local bv = Instance.new("BodyVelocity")
+	bv.Velocity = vel
+	bv.Parent   = clone
+
+	clone.AssemblyAngularVelocity = Vector3.new(math.random(-10, 10), math.random(-10, 10), math.random(-10, 10))
+
+	task.delay(0.1, function() bv:Destroy() end)
+
+	task.delay(3, function() clone:Destroy() end)
+	
+	print("Casing replicated for player:", player.Name)
+end
 function module.connect_sfx(...)
 	local args = {...}
 	module.handle_sfx_replication(...)
@@ -932,27 +1358,31 @@ function module.start_module()
 		
 		module.handle_sfx_replication(...)
 	end)
+	
+	casing_replicant.OnClientEvent:Connect(function(...)
+		local args = {...}
+		local player = args[1]
+		print("Casing replicated for player:", player.Name, "with:", args)
+		
+		if player == local_player then
+			return
+		end
+		
+		module.handle_casing_replication(...)
+	end)
 
 	-- Listen for changes
 	local_player:GetAttributeChangedSignal("Concussion"):Connect(update_concussion_state)
 	
-	-- // TEMP REMIND ME TO DELETE ONCE I GET LOADINGMANAGER UP AND RUNNING -- PRAXITOS
-	local soundsToRestore = {}
-	for _, sound in pairs(game:GetDescendants()) do
-		if sound:IsA("Sound") then
-			soundsToRestore[sound] = sound.Volume
-			sound.Volume = 0
-			sound:Play()
-		end
-	end
-
-	for sound, vol in pairs(soundsToRestore) do
-		if sound and sound.Parent then
-			sound.Volume = vol
-		end
-	end
-	
-	table.clear(soundsToRestore)
+	local_player:GetAttributeChangedSignal("Force_Flinch"):Connect(function()
+		print("FLINCHING")
+		if not local_player:GetAttribute("Force_Flinch") then
+		print("FLINCHING CUT")	
+		return end
+		local_player:SetAttribute("Force_Flinch", nil)
+		module.flinch_local_player(3)
+		print("FLINCHING DONE")
+	end)
 end
 
 return module

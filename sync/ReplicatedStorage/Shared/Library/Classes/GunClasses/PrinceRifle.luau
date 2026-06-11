@@ -173,8 +173,8 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	}
 
 	self.damage                  = 105
-	self.Max_Capacity            = 10
-	self.Capacity                = 10
+	self.Max_Capacity            = 7
+	self.Capacity                = 7
 	self.Ammo_Type               = "8mm Smokeless"
 	self.recoil                  = 10
 	self.recoil_count            = 6
@@ -189,7 +189,7 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.Short_Distance          = 4
 	self.Melee_Distance			 = 5
 	self.Melee_Damage			 = 80
-	self.Accuracy = 6
+	self.Accuracy = 8
 	self.Moving_Accuracy = 100
 
 	self.unequip_wait     = false
@@ -252,12 +252,14 @@ function PrinceRifle:cycle()
 
 	self:_stopAllExcept()
 	self:_playAnim("Cycle")
-	self.tool:FindFirstChild("Reserve_Ammo").Value -= 1
+	--self:_fire_ammo(1)
 
 	task.delay(CYCLE_REST_TIME, function()
 		self.Cycled  = true
 		self.Cycling = false
 		self:_restoreBase()
+		
+		
 	end)
 end
 
@@ -342,7 +344,7 @@ function PrinceRifle:_autoCycle()
 	self:_playAnim("Reload_Alt").Stopped:Wait()
 
 	if self.tool:FindFirstChild("Reserve_Ammo").Value > 0 then
-		self.tool:FindFirstChild("Reserve_Ammo").Value -= 1
+		self:_fire_ammo(1)
 		self.Capacity += 1
 	end
 
@@ -377,11 +379,12 @@ function PrinceRifle:reload()
 			self:_playAnim("Reload_Start").Stopped:Wait()
 		end
 
+		game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
 		while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
 			self:_playAnim("Reload_Loop").Stopped:Wait()
 			if self._reloadCancelled then break end
 			self.Capacity += 1
-			self.tool:FindFirstChild("Reserve_Ammo").Value -= 1
+			self:_fire_ammo(1)
 		end
 
 		if not self._reloadCancelled then
@@ -396,6 +399,7 @@ function PrinceRifle:reload()
 		self.Reloading        = false
 		self._reloadCancelled = false
 		self:_restoreBase()
+		game.Players.LocalPlayer:SetAttribute("CantUnequip", false)
 	else
 		self:_autoCycle()
 	end

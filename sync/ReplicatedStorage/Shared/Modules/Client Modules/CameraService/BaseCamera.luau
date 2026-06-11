@@ -405,6 +405,7 @@ function BaseCamera:_setupAlignOrientation(root: BasePart)
 end
 
 function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
+	if LocalPlayer.Character:GetAttribute("DontRotate") then return end
 	local targetYaw = self.CameraYaw
 
 	local diff = math.atan2(
@@ -757,6 +758,29 @@ function BaseCamera:_updateCollisionAvoidance(focusPoint: Vector3, rotation: CFr
 end
 
 -- // CAMERA MODES
+local function CameraRaycast(origin, direction, character)
+	local ignore = {character}
+
+	while true do
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = ignore
+
+		local result = workspace:Raycast(origin, direction, params)
+
+		if not result then
+			return nil
+		end
+
+		local part = result.Instance
+
+		if part.Transparency >= 1 and not part.CanCollide then
+			table.insert(ignore, part)
+		else
+			return result
+		end
+	end
+end
 
 function BaseCamera:CustomCamera()
 	self:_unbind()
@@ -787,7 +811,8 @@ function BaseCamera:CustomCamera()
 
 	self:_bind(function(dt)
 		local character, root = self:_getCharacterParts()
-		if not root then return end
+		if not root then return
+		end
 
 		local delta = self:_consumeMouseDelta()
 
@@ -808,9 +833,19 @@ function BaseCamera:CustomCamera()
 		rayParams.FilterDescendantsInstances = { character }
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
-		local rayResult = Workspace:Raycast(cameraFocus, -cameraDir * currentZoom, rayParams)
+		local rayResult = Workspace:Raycast(
+			cameraFocus,
+			-cameraDir * currentZoom,
+			rayParams
+		)
 		local finalZoom = currentZoom
-		if rayResult then finalZoom = math.max(rayResult.Distance - COLLISION_MARGIN, MIN_ZOOM) end
+		if rayResult then
+			-- // if it hits an invisible part skip
+			if rayResult.Instance.Transparency == 1 then
+				finalZoom = currentZoom + 0.1
+			else
+				finalZoom = math.max(rayResult.Distance - COLLISION_MARGIN, MIN_ZOOM) end
+			end
 
 		local targetCFrame = CFrame.new(cameraFocus - (cameraDir * finalZoom)) * rotation
 		self:_applyTransition(root, targetCFrame, dt)
@@ -920,12 +955,12 @@ function BaseCamera:OverTheShoulder()
 	local character, root, head, torso, humanoid = self:_getCharacterParts()
 	if not root then return end
 
-	local zoomConn = InputService.InputChanged:Connect(function(input)
+	if self._zoomConn then self._zoomConn:Disconnect() end
+	self._zoomConn = InputService.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseWheel then
 			self.TargetShoulderZoom = math.clamp(
 				self.TargetShoulderZoom - (input.Position.Z * 1.5),
-				MIN_ZOOM,
-				MAX_ZOOM
+				MIN_ZOOM, MAX_ZOOM
 			)
 		end
 	end)
@@ -988,10 +1023,17 @@ function BaseCamera:OverTheShoulder()
 		local rayDirection  = idealPosition - focusPoint
 
 		local rayParams = RaycastParams.new()
-		rayParams.FilterDescendantsInstances = { character, Workspace.CurrentCamera }
+		rayParams.FilterDescendantsInstances = { character }
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 		local collisionResult = Workspace:Spherecast(focusPoint, COLLISION_MARGIN, rayDirection, rayParams)
+
+		if collisionResult then
+			local hit = collisionResult.Instance
+			if hit.Transparency >= 1 or not hit.CanCollide then
+				collisionResult = nil
+			end
+		end
 
 		local finalPos = idealPosition
 		if collisionResult then
@@ -1008,10 +1050,6 @@ function BaseCamera:OverTheShoulder()
 		self:_updateCharacterRotation(root, dt)
 
 		InputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-
-		if self.CurrentMode ~= "OverTheShoulder" then
-			zoomConn:Disconnect()
-		end
 	end)
 end
 

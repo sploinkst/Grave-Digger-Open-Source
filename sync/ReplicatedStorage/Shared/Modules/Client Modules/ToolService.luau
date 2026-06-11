@@ -12,45 +12,119 @@ local Util_Module = require(script.Parent.Parent.Parent.Library.Util)
 module.RegisteredTools = {}
 
 local function connect_backpack(backpack)
+	print("[ToolService] connect_backpack called on:", backpack:GetFullName())
+
 	backpack.ChildAdded:Connect(function(child)
-		if not child:IsA("Tool") then return end
-		if module.RegisteredTools[child.Name] then return end
+		print("[ToolService] ChildAdded fired:", child.Name, "| IsA Tool:", child:IsA("Tool"))
+
+		if not child:IsA("Tool") then
+			print("[ToolService] Skipping non-tool:", child.Name)
+			return
+		end
+
+		-- Yield one frame so the tool's properties finish replicating
+		task.wait()
+
+		if not child.Parent then
+			print("[ToolService] Tool removed before registration could complete:", child.Name)
+			return
+		end
+
+		if module.RegisteredTools[child.Name] then
+			print("[ToolService] Tool already registered, skipping:", child.Name)
+			return
+		end
+
+		print("[ToolService] Looking up class for:", child.Name)
 		local moduleScript =
 			GunClasses:FindFirstChild(child.Name, true)
 			or ToolClasses:FindFirstChild(child.Name, true)
+
 		if not moduleScript then
-			warn("ToolService: No class found for item", child.Name)
+			warn("[ToolService] No class found for item:", child.Name)
 			return
 		end
-		local class = require(moduleScript)
+
+		print("[ToolService] Found class module:", moduleScript:GetFullName())
+
+		local class    = require(moduleScript)
 		local instance = class.new({ name = child.Name })
 		instance:on_give(child)
 		module.RegisteredTools[child.Name] = instance
-		inventory_service.assign_tool(module.RegisteredTools[child.Name])
-		print("Finished registration for tool...", child.Name)
+		inventory_service.assign_tool(instance)
+		print("[ToolService] Successfully registered tool:", child.Name)
 	end)
 
 	backpack.ChildRemoved:Connect(function(child)
 		if not child:IsA("Tool") then return end
+		print("[ToolService] ChildRemoved fired:", child.Name)
+
 		local instance = module.RegisteredTools[child.Name]
-		if not instance then return end
-		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild(child.Name) then
+		if not instance then
+			print("[ToolService] No registered instance found for removed tool:", child.Name)
 			return
 		end
-		inventory_service.remove_tool(module.RegisteredTools[child.Name])
+
+		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild(child.Name) then
+			print("[ToolService] Tool moved to character, not removing from registry:", child.Name)
+			return
+		end
+
+		inventory_service.remove_tool(instance)
 		module.RegisteredTools[child.Name] = nil
+		print("[ToolService] Removed tool from registry:", child.Name)
 	end)
+
+	-- Scan anything already in the backpack at connect time
+	local existing = backpack:GetChildren()
+	print("[ToolService] Scanning existing backpack children, count:", #existing)
+
+	for _, child in ipairs(existing) do
+		if not child:IsA("Tool") then continue end
+		if module.RegisteredTools[child.Name] then
+			print("[ToolService] Already registered (scan):", child.Name)
+			continue
+		end
+
+		print("[ToolService] Registering existing tool (scan):", child.Name)
+
+		local moduleScript =
+			GunClasses:FindFirstChild(child.Name, true)
+			or ToolClasses:FindFirstChild(child.Name, true)
+
+		if not moduleScript then
+			warn("[ToolService] No class found for item (scan):", child.Name)
+			continue
+		end
+
+		local class    = require(moduleScript)
+		local instance = class.new({ name = child.Name })
+		instance:on_give(child)
+		module.RegisteredTools[child.Name] = instance
+		inventory_service.assign_tool(instance)
+		print("[ToolService] Registered existing tool (scan):", child.Name)
+	end
+
+	print("[ToolService] connect_backpack finished for:", backpack:GetFullName())
 end
 
 function module.start_module()
-	-- connect to the current backpack
+	print("[ToolService] start_module called")
+
 	connect_backpack(LocalPlayer:WaitForChild("Backpack"))
 
-	LocalPlayer.CharacterAdded:Connect(function()
+	LocalPlayer.CharacterAdded:Connect(function(character)
+		print("[ToolService] CharacterAdded fired, resetting registered tools")
 		module.RegisteredTools = {}
-		-- re-grab the fresh backpack and reconnect
-		connect_backpack(LocalPlayer:WaitForChild("Backpack"))
+
+		-- Backpack is reused across respawns, not recreated.
+		-- Just reconnect directly to it.
+		local backpack = LocalPlayer:WaitForChild("Backpack")
+		print("[ToolService] Connecting to backpack:", backpack:GetFullName())
+		connect_backpack(backpack)
 	end)
+
+	print("[ToolService] start_module finished, waiting for tools...")
 end
 
 return module

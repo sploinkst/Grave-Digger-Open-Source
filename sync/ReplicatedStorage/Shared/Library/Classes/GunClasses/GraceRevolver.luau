@@ -159,11 +159,13 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.animation_speeds = {
 		Melee1            = 0.7,
 		Melee2            = 0.7,
+		Fire             = 0.75,
+		Fire_Left       = 0.75,
 		Draw              = 0.2,
 		Aim               = 0.125,
 		Aim_Left          = 0.125,
-		Reload_start      = 1.1,
-		Reload_Loop       = 0.4,
+		Reload_start      = 0.7,
+		Reload_Loop       = 0.2,
 		Reload_Loop_After = 0.1,
 		Reload_End        = 0.65,
 	}
@@ -183,7 +185,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Can_Drop                = true
 	self.Melee_Distance			 = 5
 	self.Melee_Damage			 = 80
-	self.Accuracy = 8
+	self.Accuracy = 6
 	self.Moving_Accuracy = 50
 
 	self.SoundFolder             = SoundFolder
@@ -289,7 +291,14 @@ function GraceRevolver:fire()
 	activeCast.UserData.Direction  = shootDir
 	activeCast.UserData.Penetrated = false
 
-	self:_connect_FastCast(muzzle.Position, shootDir, BULLET_SPEED)
+	self:_connect_FastCast(muzzle.Position, shootDir, BULLET_SPEED, {
+		bulletTemplate   = FxFolder.Bullet,
+		bulletContainer  = workspace.Game_Details.Effects.Bullets,
+		isPenetration    = false,
+		penetrationLevel = self.Penetration_Level,
+		damage           = self.damage,
+		knockbackForce   = self.KnockBack_Force,
+	})
 
 	self.Capacity -= 1
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false)
@@ -323,7 +332,8 @@ function GraceRevolver:reload()
 
 	self.Reloading        = true
 	self._reloadCancelled = false
-
+	
+	game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
 	self:_playAnim("Reload_Start").Stopped:Wait()
 	self.Capacity = 0
 
@@ -331,6 +341,7 @@ function GraceRevolver:reload()
 		self:_playAnim("Reload_Loop").Stopped:Wait()
 		if self._reloadCancelled then break end
 		self.Capacity += 1
+		self:_fire_ammo(1)
 		self:_playAnim("Reload_Loop_After").Stopped:Wait()
 	end
 
@@ -355,6 +366,7 @@ function GraceRevolver:reload()
 	self._reloadCancelled = false
 	self:_restoreBaseDeferred()
 	self:_set_sprint_arms(false)
+	game.Players.LocalPlayer:SetAttribute("CantUnequip", false)
 end
 
 function GraceRevolver:activate()

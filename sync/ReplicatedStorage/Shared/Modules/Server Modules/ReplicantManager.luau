@@ -17,10 +17,12 @@ local healnotify_connection = replicant_folder.HealNotify_Connection
 local status_connection = replicant_folder.Parent.Status_Communication.Status_Connection
 
 local gun_communication = replicant_folder.Parent.Gun_Communication
+local ammo_connection = gun_communication.Ammo_Connection
 local drop_connection = gun_communication.Drop_Connection
 
 local melee_events = replicant_folder.Parent.Melee_Communication
 local melee_connection = melee_events.Melee_Connection
+local casing_connection = replicant_folder.Casing_Connection
 
 
 local status_service = require(script.Parent.StatusService)
@@ -76,37 +78,51 @@ local function getDistanceScaledForce(baseForce: number, distance: number)
 end
 
 function module.check_for_helmet(character)
-	local character_head = character.Head
-	
-	print("Checking for helmet for:", character.Name)
-	for _, weld:Instance in character_head:GetChildren() do
-		if not weld:IsA("Weld") and not weld:IsA("Motor6D") then print(weld.Name, "Not a weld or motor6d") continue end
-		
-		if weld.Name == "AccessoryWeld" then
-			print("Accessory found")
-			
-			local part_1 = weld.Part1
-			
-			if part_1.Parent:FindFirstChild("Helmet") then
-				print("Helmet found")
-				-- // check to see if its welded, if it isnt welded assume it was knocked off
-				if part_1.Parent:FindFirstChild("Head") then
-					if part_1.Parent.Head:FindFirstChild("Helmet") then
-						return part_1.Parent, true
-					else
-						return part_1.Parent, false
-					end
-				end
-				
-				return part_1.Parent
-				
-				
-			else
-				print("Helmet not found")
-				return false
-			end
+	local character_head = character:FindFirstChild("Head")
+	if not character_head then return nil, false end
+
+	-- Search head children for AccessoryWeld
+	for _, weld in character_head:GetChildren() do
+		if (not weld:IsA("Weld") and not weld:IsA("Motor6D")) then continue end
+		if weld.Name ~= "AccessoryWeld" then continue end
+
+		local part1 = weld.Part1
+		if not part1 then continue end
+
+		local accessoryModel = part1.Parent
+		if not accessoryModel then continue end
+
+		if accessoryModel:FindFirstChild("Helmet") then
+			local unknockable = accessoryModel:GetAttribute("Unknockable")
+			return accessoryModel, not unknockable
 		end
 	end
+
+	-- Also search via character accessories in case weld is parented differently
+	for _, child in character:GetChildren() do
+		if not child:IsA("Accessory") and not child:IsA("Model") then continue end
+		if not child:FindFirstChild("Helmet") then continue end
+
+		-- Verify it's on the head via attachment or weld
+		local handle = child:FindFirstChildWhichIsA("BasePart")
+		if not handle then continue end
+
+		local hasHeadConnection = false
+		for _, weld in handle:GetChildren() do
+			if (weld:IsA("Weld") or weld:IsA("Motor6D")) and
+				(weld.Part0 == character_head or weld.Part1 == character_head) then
+				hasHeadConnection = true
+				break
+			end
+		end
+
+		if hasHeadConnection then
+			local unknockable = child:GetAttribute("Unknockable")
+			return child, not unknockable
+		end
+	end
+
+	return nil, false
 end
 
 function module.stumble_player(character)
@@ -121,9 +137,10 @@ function module.stumble_player(character)
 end
 
 function module.pop_helmet(character, helmet_model, knockable: boolean)
-	local Debris = game:GetService("Debris")
+	print("[POP_HELMET] Attempting to pop helmet for character:", character.Name, helmet_model.Name, knockable)
 
 	if knockable then
+		print("[POP_HELMET] Helmet is knockable.")
 		local head_part = helmet_model:FindFirstChild("Head")
 		if not head_part then
 			warn("Helmet head part missing")
@@ -180,7 +197,10 @@ function module.pop_helmet(character, helmet_model, knockable: boolean)
 			-- Remove velocity object shortly after
 			Debris:AddItem(velocity, 0.15)
 		end
+		
+		helmet_model:SetAttribute("Knocked", true)
 	else
+		print("[POP_HELMET] Helmet is unknockable.")
 		-- // force stumble character
 		module.stumble_player(character)
 	end
@@ -210,60 +230,48 @@ function module.start_module()
 
 		sfx_replicant:FireAllClients(table.unpack(rawArgs))
 	end)
+	
+	casing_connection.OnServerEvent:Connect(function(...)
+		casing_connection:FireAllClients(...)
+		print("Casing server-replicated.")
+	end)
 
 	texture_replicant.OnServerEvent:Connect(function(...)
 		texture_replicant:FireAllClients(...)
 	end)
 
 	hit_connection.OnServerEvent:Connect(function(player, hitData, damage: number, knockback_force: number)
-		if not hitData then
-			return
-		end
+		if not hitData then return end
 
 		local instance: BasePart = hitData.Instance
-		local position: Vector3 = hitData.Position
+		local position: Vector3  = hitData.Position
 		local direction: Vector3 = hitData.Direction
 
-		if not instance or not instance:IsDescendantOf(workspace) then
-			return
-		end
-
-		if not direction then
-			return
-		end
+		if not instance or not instance:IsDescendantOf(workspace) then return end
+		if not direction then return end
 
 		local character = player.Character
-		if not character then
-			return
-		end
+		if not character then return end
 
 		local hrp = character:FindFirstChild("HumanoidRootPart")
-		if not hrp then
-			return
-		end
+		if not hrp then return end
 
-		local model = getModelFromInstance(instance)
+		local model    = getModelFromInstance(instance)
 		local humanoid = getHumanoid(model)
-		
-		
 
-		if not humanoid or humanoid.Health <= 0 then
-			return
-		end
+		if not humanoid or humanoid.Health <= 0 then return end
 
 		local hitCharacter = model
-		local hitPlayer = game.Players:GetPlayerFromCharacter(hitCharacter)
+		local hitPlayer    = game.Players:GetPlayerFromCharacter(hitCharacter)
 
-		if player.Name == hitPlayer.Name then
-			return
-		end
-		
-		-- // Knockback
+		-- Prevent self-damage
+		if hitPlayer and hitPlayer == player then return end
+
+		-- Knockback
 		local forceDirection = (direction.Unit + Vector3.new(0, 0.1, 0)).Unit
-
-		local baseForce = knockback_force or 5
-		local distance = (hrp.Position - position).Magnitude
-		local finalForce = getDistanceScaledForce(baseForce, distance)
+		local baseForce      = knockback_force or 5
+		local distance       = (hrp.Position - position).Magnitude
+		local finalForce     = getDistanceScaledForce(baseForce, distance)
 
 		local knockbackTarget = if instance:IsA("BasePart")
 			then instance
@@ -273,30 +281,40 @@ function module.start_module()
 			applyKnockback(knockbackTarget, forceDirection, finalForce)
 		end
 
-		-- // Headshot / helmet logic
-		if hitPlayer and instance.Name == "Head" then
+		-- Headshot / helmet logic
+		local isHeadshot = (instance.Name == "Head") or
+			(instance.Parent and instance.Parent.Name == "Hitboxes" and instance.Name == "Head")
+
+		if isHeadshot then
 			local helmet, knockable = module.check_for_helmet(hitCharacter)
 
 			if helmet then
-				module.pop_helmet(hitCharacter, helmet, knockable)
+				-- Only pop if not already knocked
+				if not helmet:GetAttribute("Knocked") then
+					module.pop_helmet(hitCharacter, helmet, knockable)
+				end
 
-				status_service.give_status(hitPlayer, "ConcussionStatus")
-
-				task.delay(3, function()
-					status_service.remove_status(hitPlayer, "ConcussionStatus")
-				end)
-				
+				if hitPlayer then
+					status_service.give_status(hitPlayer, "ConcussionStatus")
+					task.delay(3, function()
+						if hitPlayer.Character and
+							hitPlayer.Character:FindFirstChildOfClass("Humanoid") and
+							hitPlayer.Character.Humanoid.Health >= 100 then
+							status_service.remove_status(hitPlayer, "ConcussionStatus")
+						end
+					end)
+				end
 				return
 			else
+				-- No helmet, headshot kills
 				humanoid.Health = 0
 				return
 			end
 		end
 
-		-- // Damage
+		-- Normal damage
 		humanoid:TakeDamage(damage or 0)
 
-		-- // Injury states
 		if humanoid.Health < 100 and hitPlayer then
 			status_service.give_status(hitPlayer, "WoundStatus", nil, instance.Name)
 			status_service.give_status(hitPlayer, "ConcussionStatus")
@@ -384,6 +402,12 @@ function module.start_module()
 		
 		targetCharacter.Humanoid:TakeDamage(damage)
 		print("Applied damage to", targetCharacter.Name)
+	end)
+	
+	ammo_connection.OnServerEvent:Connect(function(player, tool, count)
+		print("Received ammo_connection from", tool.Name, "count:", count)
+		
+		tool.Reserve_Ammo.Value -= count
 	end)
 end
 

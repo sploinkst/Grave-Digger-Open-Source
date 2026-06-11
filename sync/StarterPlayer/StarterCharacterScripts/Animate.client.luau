@@ -10,6 +10,8 @@ local replicatedstorage_service = game:GetService("ReplicatedStorage")
 local run_service               = game:GetService("RunService")
 local player_service            = game:GetService("Players")
 
+local sound_module = require(script.Sound)
+
 -- // Variables
 local local_player = player_service.LocalPlayer
 local character    = script.Parent
@@ -50,7 +52,18 @@ local animations_table = {
 	animations_folder.Walking.Crouch.CrouchWalk_Left,
 	animations_folder.Walking.Crouch.CrouchWalk_Right,
 	animations_folder.Idles.Crouch_Idle,
-	animations_folder.Walking.Crouch.Crouch_Arms
+	animations_folder.Walking.Crouch.Crouch_Arms,
+	
+	animations_folder.Flinches.Flinch1,
+	animations_folder.Flinches.Flinch2,
+	animations_folder.Flinches.Flinch3,
+	animations_folder.Flinches.Flinch4,
+	animations_folder.Flinches.Flinch5,
+	
+	animations_folder.Flinches.Miss_Flinch1,
+	animations_folder.Flinches.Miss_Flinch2,
+	animations_folder.Flinches.Miss_Flinch3,
+	animations_folder.Flinches.Miss_Flinch4,
 }
 
 local loaded_animations: {[string]: AnimationTrack} = {}
@@ -108,6 +121,8 @@ local function load_animations()
 
 			track.Priority = Enum.AnimationPriority.Action
 
+		elseif string.find(animation.Name, "Flinch") then
+			track.Priority = Enum.AnimationPriority.Action4
 		else
 			track.Priority = Enum.AnimationPriority.Movement
 		end
@@ -120,6 +135,11 @@ local function load_animations()
 		end
 
 		loaded_animations[animation.Name] = track
+		
+		loaded_animations[animation.Name]:GetMarkerReachedSignal("Footstep"):Connect(function()
+			sound_module.Play_WalkSFX()
+			print("Footstep")
+		end)
 	end
 end
 
@@ -427,9 +447,6 @@ input_service.InputEnded:Connect(function(io, gp)
 	if io.KeyCode == Enum.KeyCode.D then directional_table.Right = false end
 end)
 
---------------------------------------------------
--- CROUCH
---------------------------------------------------
 character:GetAttributeChangedSignal("Crouching"):Connect(function()
 	crouching = character:GetAttribute("Crouching") == true
 
@@ -450,6 +467,17 @@ character:GetAttributeChangedSignal("Vaulting"):Connect(function()
 		stop_overlay("Jump_MidAir")
 		stop_overlay("Jump_Arms")
 	end
+end)
+
+local_player:GetAttributeChangedSignal("Flinch"):Connect(function()
+	print("FLINCHING")
+	if local_player:GetAttribute("Flinch") then
+		local_player:SetAttribute("Flinch", nil)
+		print("FLINCHING")
+		
+		play_overlay("Miss_Flinch" .. math.random(1, 4), 0, 2, 0.05)
+		print("FLINCHING")
+	end	
 end)
 
 

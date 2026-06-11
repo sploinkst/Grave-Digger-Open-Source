@@ -588,11 +588,11 @@ function module.start_module()
 	end)
 
 	Humanoid.StateChanged:Connect(function(old, new)
-		-- FIX: track climbing state and stop sprint when it begins
 		if new == Enum.HumanoidStateType.Climbing then
 			IsClimbing = true
 			IsJumping = false
 
+			LocalPlayer:SetAttribute("Climbing", true)
 			if Sprinting then
 				print("[StateChanged] Climbing started — stopping sprint")
 				Sprinting = false
@@ -601,6 +601,7 @@ function module.start_module()
 
 		elseif new == Enum.HumanoidStateType.Jumping then
 			IsClimbing = false
+			LocalPlayer:SetAttribute("Climbing", nil)
 
 			if Character:GetAttribute("Crouching") then
 				Character:SetAttribute("Crouching", nil)
@@ -619,13 +620,14 @@ function module.start_module()
 			end)
 
 		elseif new == Enum.HumanoidStateType.Freefall then
-			-- FIX: leaving a ladder into freefall should also clear climbing
 			IsClimbing = false
+			LocalPlayer:SetAttribute("Climbing", false)
 			IsJumping = true
 			fall_time = tick()
 
 		elseif new == Enum.HumanoidStateType.Landed then
 			IsClimbing = false
+			LocalPlayer:SetAttribute("Climbing", false)
 			LocalPlayer:SetAttribute("Jumping", nil)
 			IsJumping = false
 			fall_time = tick()
@@ -635,9 +637,9 @@ function module.start_module()
 
 		elseif new == Enum.HumanoidStateType.Running
 			or new == Enum.HumanoidStateType.RunningNoPhysics then
-			-- FIX: leaving the ladder into a running state clears climbing
 			if IsClimbing then
 				IsClimbing = false
+				LocalPlayer:SetAttribute("Climbing", false)
 				print("[StateChanged] Left climbing via Running state")
 				if SprintKeyHeld then tryStartSprint() end
 			end

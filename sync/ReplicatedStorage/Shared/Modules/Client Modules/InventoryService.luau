@@ -6,12 +6,6 @@ local player = game.Players.LocalPlayer
 local UIS           = game:GetService("UserInputService")
 local tween_service = game:GetService("TweenService")
 
-local player_gui   = player.PlayerGui
-
-local inventory_ui  = player_gui:WaitForChild("Inventory")
-local main_frame    = inventory_ui:WaitForChild("Main")
-local example_frame = main_frame.Example
-
 local empty_icon = "rbxassetid://112388032303745"
 
 local TWEEN_INFO  = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
@@ -21,8 +15,8 @@ local InventorySlots = {
 	["1"] = {Keybind = Enum.KeyCode.One,   Tool = nil, UI = nil, Designation = "Primary",       PermanentUISpot = true},
 	["2"] = {Keybind = Enum.KeyCode.Two,   Tool = nil, UI = nil, Designation = "Secondary",     PermanentUISpot = true},
 	["3"] = {Keybind = Enum.KeyCode.Three, Tool = nil, UI = nil, Designation = "Melee",         PermanentUISpot = true},
-	["4"] = {Keybind = Enum.KeyCode.Four,  Tool = nil, UI = nil, Designation = "Medkit",        PermanentUISpot = true},
-	["5"] = {Keybind = Enum.KeyCode.Five,  Tool = nil, UI = nil, Designation = "Mining", 		PermanentUISpot = true},
+	["4"] = {Keybind = Enum.KeyCode.Four,  Tool = nil, UI = nil, Designation = "Mining",        PermanentUISpot = true},
+	["5"] = {Keybind = Enum.KeyCode.Five,  Tool = nil, UI = nil, Designation = "Medkit", 		PermanentUISpot = true},
 	["6"] = {Keybind = Enum.KeyCode.Six,   Tool = nil, UI = nil, Designation = "Miscellaneous", PermanentUISpot = false},
 	["7"] = {Keybind = Enum.KeyCode.Seven, Tool = nil, UI = nil, Designation = "Miscellaneous", PermanentUISpot = false},
 	["8"] = {Keybind = Enum.KeyCode.Eight, Tool = nil, UI = nil, Designation = "Miscellaneous", PermanentUISpot = false},
@@ -70,9 +64,9 @@ local function tween_slot(ui, props)
 end
 
 local function create_slot_ui(slotNumber, slot)
-	local ui = example_frame:Clone()
+	local ui = player.PlayerGui:WaitForChild("Inventory"):WaitForChild("Main").Example:Clone()
 	ui.Name = "Slot_" .. slotNumber
-	ui.Parent = main_frame
+	ui.Parent =  player.PlayerGui.Inventory:WaitForChild("Main")
 	ui.Visible = true
 
 	ui.Hotkey.Text = slotNumber
@@ -93,9 +87,7 @@ local function update_slot_ui(slot)
 	slot.UI.ImageLabel.Image = img
 end
 
------------------------------------------------------------------------
--- Color
------------------------------------------------------------------------
+-- // Slot Colors
 
 local function set_slot_white(key)
 	local ui = InventorySlots[key].UI
@@ -117,9 +109,7 @@ local function set_slot_black(key)
 	})
 end
 
------------------------------------------------------------------------
--- Visibility
------------------------------------------------------------------------
+-- // Slot Visibilities
 
 local function reveal_slots()
 	slots_visible = true
@@ -149,9 +139,7 @@ local function fade_slots()
 	end
 end
 
------------------------------------------------------------------------
--- Input
------------------------------------------------------------------------
+-- // Inputs
 
 local function update_highlight(new_key)
 	for _, key in ipairs(SLOT_ORDER) do
@@ -182,9 +170,7 @@ local function on_inventory_key(pressedKey)
 	end)
 end
 
------------------------------------------------------------------------
--- Tool Management
------------------------------------------------------------------------
+-- // Tool Management
 
 local function find_existing_tool(toolObject)
 	for _, key in ipairs(SLOT_ORDER) do
@@ -289,9 +275,7 @@ local function remove_tool(toolObject)
 	end
 end
 
------------------------------------------------------------------------
--- Respawn Reset
------------------------------------------------------------------------
+-- // Respawn Reset
 
 local function on_character_added(character)
 	current_equipped = nil
@@ -309,11 +293,6 @@ local function on_character_added(character)
 	end
 
 	task.wait()
-
-	inventory_ui  = player_gui:WaitForChild("Inventory")
-	main_frame    = inventory_ui:WaitForChild("Main")
-	example_frame = main_frame.Example
-
 	for _, key in ipairs(SLOT_ORDER) do
 		local slot = InventorySlots[key]
 		if slot.PermanentUISpot then
@@ -322,9 +301,7 @@ local function on_character_added(character)
 	end
 end
 
------------------------------------------------------------------------
--- Main
------------------------------------------------------------------------
+-- // Init
 
 function module.start_module()
 
@@ -338,26 +315,50 @@ function module.start_module()
 	player.CharacterAdded:Connect(on_character_added)
 
 	UIS.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then return end
-
+		if gameProcessed then
+			return
+		end
+		
+		if player:GetAttribute("CantUnequip") then return end
+		
 		for _, key in ipairs(SLOT_ORDER) do
 			local slot = InventorySlots[key]
 
 			if input.KeyCode == slot.Keybind then
+				local tool = slot.Tool
+
 				on_inventory_key(key)
+				if not tool then
+					if current_equipped then
+						current_equipped:unequip()
+						current_equipped = nil
+					end
 
-				if not slot.Tool then return end
+					selected_key = nil
+					update_highlight(key)
+					break
+				end
 
-				if current_equipped == slot.Tool then
-					slot.Tool:unequip()
+				-- Same tool pressed again
+				if current_equipped == tool then
+					tool:unequip()
 					current_equipped = nil
+
 					selected_key = nil
 					update_highlight(nil)
 				else
-					equip_tool(slot.Tool)
+					if current_equipped then
+						current_equipped:unequip()
+					end
+
+					tool:equip()
+					current_equipped = tool
+
 					selected_key = key
 					update_highlight(key)
 				end
+
+				break
 			end
 		end
 	end)

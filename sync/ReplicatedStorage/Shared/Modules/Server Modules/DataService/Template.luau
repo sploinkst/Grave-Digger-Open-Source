@@ -25,5 +25,11 @@ return {
 			["PrinceRifle"] = true,
 			["GraceRevolver"] = true,
 		},
+		
+		["Equipment"] = {
+			["Primary"] = "PrinceRifle",
+			["Secondary"] = "GraceRevolver",
+			["Perks"] = {},
+		}
 	},
 }

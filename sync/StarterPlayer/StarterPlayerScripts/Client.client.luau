@@ -8,14 +8,31 @@ local started = false
 
 local function start_modules()
 	print("Starting client modules")
+
 	for _, child in ipairs(modules_folder:GetChildren()) do
 		if child:IsA("ModuleScript") then
-			local ok, mod = pcall(require, child)
-			if ok and mod.start_module then
-				mod:start_module()
-			else
-				warn("Failed to load module", child.Name)
-			end
+			task.spawn(function()
+				local ok, mod = pcall(require, child)
+
+				if not ok then
+					warn(string.format("Failed to require module %s: %s", child.Name, tostring(mod)))
+					return
+				end
+
+				if type(mod) ~= "table" then
+					return
+				end
+
+				if type(mod.start_module) == "function" then
+					local success, err = pcall(function()
+						mod:start_module()
+					end)
+
+					if not success then
+						warn(string.format("Failed to start module %s: %s", child.Name, tostring(err)))
+					end
+				end
+			end)
 		end
 	end
 end

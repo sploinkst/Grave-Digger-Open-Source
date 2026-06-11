@@ -1,7 +1,10 @@
 --!strict
 
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Accessories_Folder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Accessories")
 local Util = {}
 
 -- Deep copy table
@@ -231,7 +234,26 @@ function Util.setupFastCast(config: {
 
 	behavior.HighFidelityBehavior = FastCast.HighFidelityBehavior.Always
 	behavior.HighFidelitySegmentSize = 0.1 -- smaller segments for fast bullets
+	
+	behavior.CanPierceFunction = function(cast, result, segmentVelocity)
+		local hit = result.Instance
 
+		if not hit then
+			return false
+		end
+
+		-- Invisible parts are ignored unless explicitly marked as unpierceable
+		if hit.Transparency >= 1 then
+			if hit:GetAttribute("Unpiercable") then
+				return false
+			end
+
+			return true
+		end
+
+		return false
+	end
+	
 	local fadeTime = config.trailFadeTime or 0.15
 	local trailColor = config.trailColor or BrickColor.new("White")
 	local trailThickness = config.trailThickness or 0.07
@@ -325,60 +347,84 @@ function Util.applyRecoil(recoil: number, recoilCount: number, spread: number, d
 	end
 end
 
-function Util.quick_give_accessory(player, accessory:Model, create_object: boolean)
-	local character = player.Character
-	local accessory_folder = character.CharacterData.Equipment
+function Util.fetch_accessory(accessory_name)
+		local Accessory = Accessories_Folder:FindFirstChild(accessory_name, true)
+
+		if not Accessory then
+			warn("Accessory not found:", accessory_name)
+			return false
+		end
+
+		return Accessory
+	end
 
 
+function Util.quick_give_accessory(player, accessory: Model, create_object: boolean, server_handled: boolean, create_string: boolean)
+	if not accessory then
+		warn("quick_give_accessory received nil accessory")
+		return
+	end
+
+	local player_accessory_folder = player.GameData.Accessorys
+
+	if create_string then
+		local string_value = Instance.new("StringValue")
+		string_value.Name = accessory.Name
+		string_value.Parent = player_accessory_folder
+
+		if server_handled then
+			string_value:SetAttribute("ServerHandled", true)
+		end
+	end
 
 	if create_object then
-		local primary_part_reference = accessory.PrimaryPart
-		local character_reference = character:FindFirstChild(primary_part_reference.Name)
-
-		if not primary_part_reference then
-			warn("Accessory has no PrimaryPart:", accessory.Name)
+		local character = player.Character
+		if not character then
 			return
 		end
 
+		local accessory_folder = character:WaitForChild("CharacterData"):WaitForChild("Equipment")
+
+		local clone = accessory:Clone()
+		clone.Parent = accessory_folder
+
+		local clone_primary = clone.PrimaryPart
+		if not clone_primary then
+			warn("Accessory has no PrimaryPart:", clone.Name)
+			clone:Destroy()
+			return
+		end
+
+		local character_reference = character:FindFirstChild(clone_primary.Name)
 
 		if not character_reference then
-			warn("Accessory's PrimaryPart not found in character:", primary_part_reference)
+			warn("Accessory's PrimaryPart not found in character:", clone_primary.Name)
+			clone:Destroy()
 			return
 		end
 
-
-
-		accessory.Parent = accessory_folder
-
-		if accessory:GetAttribute("HideHair") then
+		if clone:GetAttribute("HideHair") then
 			for _, hair in character:GetChildren() do
-				if hair:IsA("Accessory") and hair ~= accessory then
+				if hair:IsA("Accessory") then
 					local handle = hair:FindFirstChild("Handle")
 
 					if handle then
-						print("Hair accessory:", hair.Name)
-						print("Initial Transparency:", handle.Transparency)
-						print("Initial LTM:", handle.LocalTransparencyModifier)
-
 						handle.Transparency = 1
 						handle.LocalTransparencyModifier = 1
-
-						handle.Changed:Connect(function()
-							print("Transparency changed to:", handle.Transparency)
-							print("LTM changed to:", handle.LocalTransparencyModifier)
-						end)
 					end
 				end
 			end
 		end
 
-		Util.quick_weld(character_reference, primary_part_reference, character_reference, "AccessoryWeld")
+		Util.quick_weld(
+			character_reference,
+			clone_primary,
+			character_reference,
+			"AccessoryWeld"
+		)
+		
+		return clone
 	end
-	
-	
-	local string_value = Instance.new("StringValue")
-	string_value.Parent = accessory_folder
-	string_value.Name = accessory.Name
 end
 
 return Util

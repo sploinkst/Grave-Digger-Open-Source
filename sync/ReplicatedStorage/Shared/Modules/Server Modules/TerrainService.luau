@@ -68,6 +68,10 @@ local function carve_entrances()
 	for _, child in pairs(empire_spawn.Entrances:GetChildren()) do
 		terrain_service:FillBlock(child.CFrame, child.Size, Enum.Material.Air)
 	end
+
+	for _, child in pairs(nation_spawn.Entrances:GetChildren()) do
+		terrain_service:FillBlock(child.CFrame, child.Size, Enum.Material.Air)
+	end
 end
 
 

@@ -21,12 +21,19 @@ local RootJointC0 = nil
 local LeftHipJointC0 = nil
 local RightHipJointC0 = nil
 
+local activeConnection = nil  -- track the current RenderStepped connection
+
 local function ExponentialDecay(current, target, decay, deltaTime)
 	return current + (target - current) * (1 - math.exp(-decay * deltaTime))
 end
 
 function module.start_module()
 	local function setupCharacter(character)
+		if activeConnection then
+			activeConnection:Disconnect() -- disconnect previous connection
+			activeConnection = nil
+		end
+		
 		local humanoid = character:WaitForChild("Humanoid")
 		local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 		local torso = character:WaitForChild("Torso")
@@ -44,7 +51,7 @@ function module.start_module()
 		SmoothedValue1 = 0
 		SmoothedValue2 = 0
 		
-		RunService.RenderStepped:Connect(function(deltaTime)
+		activeConnection = RunService.RenderStepped:Connect(function(deltaTime)
 			local force = humanoidRootPart.Velocity * Vector3.new(1, 0, 1)
 			local targetValue1 = 0
 			local targetValue2 = 0

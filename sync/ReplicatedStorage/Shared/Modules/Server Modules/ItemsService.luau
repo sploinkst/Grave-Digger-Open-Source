@@ -8,8 +8,13 @@ local gun_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes.
 
 
 function module.give_item(player: Player, item: string, given_ammo: number)
-    print("Received with:", player.Name, item)
-    local item_module = item_classes:FindFirstChild(item) or gun_classes:FindFirstChild(item)
+	print("Received with:", player.Name, item)
+	
+	if not player.Character then
+		player.CharacterAdded:Wait()
+	end
+
+	local item_module = item_classes:FindFirstChild(item) or gun_classes:FindFirstChild(item)
     if not item_module then
         warn("ItemsService: Item class not found:", item)
         return "ItemService: Item Class not found.", item
@@ -33,22 +38,24 @@ function module.give_item(player: Player, item: string, given_ammo: number)
     print("ItemsService: Gave item", item, "to", player.Name)
 
 	local clip_size
-	
+
 	if object.Max_Capacity then
 		if not given_ammo then
-			clip_size = object.Max_Capacity * 3 or 1
-			print("ItemsService: No given_ammo, referring to tool: Clip Size", clip_size)
+			clip_size = object.Max_Capacity * 3
 		else
-			clip_size = math.clamp(given_ammo, 0, object.Max_Capacity * 3 or 1)
-			print("ItemsService: Referring to Given_Ammo Variable, Clip Size", given_ammo)
+			clip_size = math.clamp(given_ammo, 0, object.Max_Capacity * 3)
 		end
 	end
-	
+
 	local number_value = Instance.new("NumberValue")
 	number_value.Name = "Reserve_Ammo"
 	number_value.Parent = tool
-	number_value.Value = clip_size
+	number_value.Value = clip_size or 0  -- default to 0 for tools with no ammo
 	
+	local number_value = Instance.new("NumberValue")
+	number_value.Name = "Max_Ammo"
+	number_value.Parent = tool
+	number_value.Value = clip_size or 0  -- default to 0 for tools with no ammo
 
     -- check instance property (not class property)
     if object.holster_reference then
