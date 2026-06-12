@@ -34,9 +34,9 @@ local texture_event                 = events_replication_folder.Texture_Connecti
 local casing_event                  = events_replication_folder.Casing_Connection
 
 
-local gun_communication = events_replication_folder.Parent.Gun_Communication
-local drop_connection   = gun_communication.Drop_Connection
-local ammo_communication = gun_communication.Ammo_Connection
+local gun_communication  = events_replication_folder.Parent:WaitForChild("Gun_Communication")
+local drop_connection    = gun_communication.Drop_Connection
+local ammo_communication = gun_communication:WaitForChild("Ammo_Connection")
 local melee_communication = events_replication_folder.Parent.Melee_Communication
 
 local general_sfx        = ReplicatedStorage.Shared.Assets.Guns.Sounds.Shared
@@ -49,15 +49,6 @@ local MOTOR_LERP_ALPHA = 0.15
 local MOTOR_SNAP_DIST  = 0.001
 local CUT              = 0.15
 local CHARACTER_TRANSPARENCY = 0.95
-
--- // Penetration profiles
-
-local Penetration_Profiles = {
-	[4] = { Stud_Limit = 4, Materials = { Enum.Material.Wood, Enum.Material.WoodPlanks }, Distance_Limiter = 70 },
-	[3] = { Stud_Limit = 3, Materials = { Enum.Material.Wood, Enum.Material.WoodPlanks }, Distance_Limiter = 50 },
-	[2] = { Stud_Limit = 2, Materials = { Enum.Material.Wood, Enum.Material.WoodPlanks }, Distance_Limiter = 30 },
-	[1] = { Stud_Limit = 1, Materials = {},                                                Distance_Limiter = 0  },
-}
 
 -- // Class
 
@@ -329,7 +320,7 @@ function BaseTool:init_short_mechanic()
 		local muzzleBlocked = muzzleResult ~= nil
 
 		if shortResult then
-			
+
 			local alpha = math.clamp(
 				1 - (shortResult.Distance / short_distance) + 0.4,
 				0,
@@ -370,12 +361,12 @@ function BaseTool:init_short_mechanic()
 			self.muzzleAttach.Parent = muzzle
 		end
 
-	self.barrelWarning.CFrame = CFrame.new(
-	muzzleBlocked and muzzleResult.Position or (muzzle.Position + aimDirection * short_distance)
-	)
+		self.barrelWarning.CFrame = CFrame.new(
+			muzzleBlocked and muzzleResult.Position or (muzzle.Position + aimDirection * short_distance)
+		)
 
 		if muzzleBlocked then
-			
+
 			if self.warning_beam then
 				self.warning_beam.Attachment0 = self.muzzleAttach
 				self.warning_beam.Attachment1 = self.hitAttach
@@ -400,7 +391,7 @@ function BaseTool:clean_up_short()
 		self.short_connection:Disconnect()
 		self.short_connection = nil
 	end
-	
+
 	self:clearMuzzleFX()
 end
 
@@ -424,7 +415,7 @@ end
 
 function BaseTool:equip()
 	if not self.tool then return end
-	
+
 	self.Equipped  = true
 	self.Equipping = true
 
@@ -433,16 +424,16 @@ function BaseTool:equip()
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
-	
+
 	if not self.actual_holster and self.holster_reference then
 		self.actual_holster = utilities_module.reverse_search_holster(LOCAL_PLAYER, self.holster_reference.Name)
 	end
-	
+
 	character:SetAttribute("Sprint_Animation", self.className)
 	humanoid:EquipTool(self.tool)
 
 	if self._on_equip then self:_on_equip() end
-	
+
 	self:define_shorts()
 	if self.RegisteredAnimations then
 		local draw = self.RegisteredAnimations.Draw
@@ -494,7 +485,7 @@ function BaseTool:equip()
 		if not track:IsA("AnimationTrack") then continue end
 
 		table.insert(self.keyframe_connections, track.KeyframeReached:Connect(function(keyframe)
-			
+
 			local rightArm = LOCAL_PLAYER.Character:FindFirstChild("Right Arm")
 			if not rightArm then return end
 			local round = rightArm:FindFirstChild(self.Round.Name)
@@ -574,7 +565,7 @@ function BaseTool:equip()
 			end
 		end))
 	end
-	
+
 	self.Moving_Connection = character.Humanoid:GetPropertyChangedSignal("MoveDirection"):Connect(function()
 		self.LastMovedTime = tick()
 	end)
@@ -646,8 +637,6 @@ function BaseTool:get_spread(muzzle, shootDir)
 		end
 	end
 
-	-- Original game uses moving_accuracy when moving/in air.
-	-- Assuming LastMovedTime is maintained elsewhere.
 	local isMoving = (tick() - (self.LastMovedTime or 0)) <= 0.1
 
 	local spread = isMoving and self.Moving_Accuracy or self.Accuracy
@@ -775,7 +764,7 @@ function BaseTool:_restoreBase()
 		else
 			self:aim()
 		end
-		
+
 		self:init_short_mechanic()
 	else
 		self:_killAimTracks()
@@ -941,7 +930,7 @@ function BaseTool:aim()
 
 	self._smoothedYaw = nil
 	self._lastYaw = nil
-	
+
 	local function updateAimAnimation()
 		self:_killAimTracks()
 
@@ -960,7 +949,7 @@ function BaseTool:aim()
 
 		local aimTrack = self:_aimTrack()
 		if aimTrack then aimTrack:Play(CUT) self.ForceBlockFire = false end
-		
+
 	end
 
 	self.Aiming = true
@@ -1214,16 +1203,13 @@ function BaseTool:_startAimTracking()
 
 			local rawYaw = math.atan2(-lookDir.X, -lookDir.Z)
 
-			-- Initialize on first frame
 			if self._smoothedYaw == nil then
 				self._smoothedYaw = rawYaw
 			end
 
-			-- Normalize _smoothedYaw into [-π, π] to prevent unbounded drift
 			while self._smoothedYaw >  math.pi do self._smoothedYaw -= math.pi * 2 end
 			while self._smoothedYaw < -math.pi do self._smoothedYaw += math.pi * 2 end
 
-			-- Compute shortest-path delta and wrap fully into [-π, π]
 			local deltaYaw = rawYaw - self._smoothedYaw
 			while deltaYaw >  math.pi do deltaYaw -= math.pi * 2 end
 			while deltaYaw < -math.pi do deltaYaw += math.pi * 2 end
@@ -1261,7 +1247,6 @@ function BaseTool:_startAimTracking()
 			)
 		end
 
-		-- Use .Rotation instead of CF - CF.Position for reliable rotation extraction
 		local leftRot  = leftArmCF.Rotation
 		local rightRot = rightArmCF.Rotation
 
@@ -1327,82 +1312,28 @@ function BaseTool:_resetMotor6D()
 	end)
 end
 
--- // Bullet hit & penetration
-
-function BaseTool:_onBulletHit(cast, result, velocity, muzzle, Penetration_Level, damage, knockback_force)
-	local profile = Penetration_Profiles[Penetration_Level]
-	if not profile or not muzzle or cast.UserData.Penetrated then return end
+-- // Bullet hit handler
+function BaseTool:_onBulletHit(cast, result, velocity, muzzle, penetrationLevel, damage, knockback_force)
+	if not result then return end
 
 	local instance  = result.Instance
-	local material  = result.Material
 	local direction = cast.UserData.Direction :: Vector3
 
 	local hitModel    = instance:FindFirstAncestorOfClass("Model")
 	local isCharacter = hitModel and hitModel:FindFirstChildOfClass("Humanoid")
 
 	if isCharacter then
+		-- Apply damage to the character.
 		self:_applyHit(result, damage, direction, knockback_force)
-		cast.UserData.Penetrated = true
 		return
 	end
 
-	if (muzzle.Position - result.Position).Magnitude > profile.Distance_Limiter then
-		cast.UserData.Penetrated = true
-		return
-	end
-
-	local canPenetrate = false
-	for _, mat in ipairs(profile.Materials) do
-		if mat == material then canPenetrate = true; break end
-	end
-
-	self:_applyHit(result, damage, direction, knockback_force)
-
-	if not canPenetrate then
-		cast.UserData.Penetrated = true
-		return
-	end
-
+	-- Non-character solid surface: place a bullet hole decal.
+	-- (If the surface was penetrable, CanPierceFunction already placed
+	--  entry/exit holes and continued the cast; we only reach here when
+	--  the bullet actually stops.)
 	self:bullet_hole(result.Position, result.Normal)
-
-	if material == Enum.Material.Wood then
-		self:emit_effect(FX_WOOD_CHIPS,
-			CFrame.new(result.Position, result.Position + result.Normal),
-			{ "woodchip1", "woodchip2", "woodchip3" },
-			instance, 20, false
-		)
-	end
-
-	local thicknessParams = RaycastParams.new()
-	thicknessParams.FilterType = Enum.RaycastFilterType.Include
-	thicknessParams.FilterDescendantsInstances = { instance }
-
-	if workspace:Raycast(result.Position + direction * 0.05, direction * profile.Stud_Limit, thicknessParams) then
-		cast.UserData.Penetrated = true
-		return
-	end
-
-	local exitParams = RaycastParams.new()
-	exitParams.FilterType = Enum.RaycastFilterType.Include
-	exitParams.FilterDescendantsInstances = { instance }
-
-	local exitResult = workspace:Raycast(result.Position + direction * profile.Stud_Limit, -direction * profile.Stud_Limit, exitParams)
-	if exitResult then self:bullet_hole(exitResult.Position, exitResult.Normal) end
-
-	cast.UserData.Penetrated = true
-
-	local newOrigin = result.Position + direction * 0.2
-	local continuation = self.Caster:Fire(newOrigin, direction, velocity.Magnitude, self.CasterBehavior)
-	self:_connect_FastCast(newOrigin, direction, velocity.Magnitude, {
-		bulletTemplate   = FxFolder.Bullet,
-		bulletContainer  = workspace.Game_Details.Effects.Bullets,
-		isPenetration    = true,
-		penetrationLevel = Penetration_Level,
-		damage           = damage,
-		knockbackForce   = knockback_force,
-	})
-	continuation.UserData.Direction  = direction
-	continuation.UserData.Penetrated = true
+	self:_applyHit(result, damage, direction, knockback_force)
 end
 
 function BaseTool:_applyHit(result: RaycastResult, damage: number, direction: Vector3, knockback_force: number)
@@ -1421,9 +1352,10 @@ end
 function BaseTool:_setupFastCast(fxFolder: Folder, onHitCallback: (any, RaycastResult, Vector3) -> ())
 	local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 	self.Caster, self.CasterBehavior = Util.setupFastCast({
-		bulletTemplate  = fxFolder.Bullet,
-		bulletContainer = workspace.Game_Details.Effects.Bullets,
-		onHit           = onHitCallback,
+		bulletTemplate   = fxFolder.Bullet,
+		bulletContainer  = workspace.Game_Details.Effects.Bullets,
+		penetrationLevel = self.Penetration_Level or 1,
+		onHit            = onHitCallback,
 	})
 end
 
@@ -1445,13 +1377,16 @@ function BaseTool:_fireProjectile(bulletSpeed, penetrationLevel, damage, knockba
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 	raycastParams.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
 
-	local result    = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+	-- Use the shared skip-transparent helper so invisible walls between the
+	-- camera and the target don't deflect the aimed direction.
+	local result    = utilities_module.raycastSkipTransparent(ray.Origin, ray.Direction * 1000, raycastParams)
 	local targetPos = result and result.Position or (ray.Origin + ray.Direction * 1000)
 	local shootDir  = (targetPos - muzzle.Position).Unit
 
 	local activeCast = self.Caster:Fire(muzzle.Position, shootDir, bulletSpeed, self.CasterBehavior)
 	activeCast.UserData.Direction  = shootDir
 	activeCast.UserData.Penetrated = false
+	activeCast.UserData.Origin     = muzzle.Position
 
 	self:_connect_FastCast(muzzle.Position, shootDir, bulletSpeed)
 	return true
@@ -1588,8 +1523,6 @@ function BaseTool:_enable_aiming_ui(max_aiming: number)
 
 		currentSpread = currentSpread + (targetSpread - currentSpread) * 0.3
 
-		-- Normal resting offset is 5px.
-		-- Holding breath can now pull it below that.
 		local offset = math.max(1, 5 + currentSpread)
 
 		up.Position    = UDim2.new(0.5, 0, 0, -offset)
@@ -1606,12 +1539,10 @@ function BaseTool:_bounce_scoped_ui()
 	local currentSize = main.Size.X.Offset
 	local kickSize = currentSize + 40
 
-	-- Pop out
 	TweenService:Create(main, TweenInfo.new(0.03, Enum.EasingStyle.Linear), {
 		Size = UDim2.new(0, kickSize, 0, kickSize)
 	}):Play()
 
-	-- Bounce back
 	task.delay(0.03, function()
 		TweenService:Create(main, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Size = UDim2.new(0, currentSize, 0, currentSize)
@@ -1644,7 +1575,7 @@ function BaseTool:ammo_check()
 	if not self.RegisteredAnimations or not self.RegisteredAnimations.Check then return end
 	if self:_isBusy() or self.Checking or self.Check_Delayed then return end
 	if self.Equipping then return end
-	
+
 	self:_set_sprint_arms(true)
 	self.Checking     = true
 	self.Check_Delayed = true

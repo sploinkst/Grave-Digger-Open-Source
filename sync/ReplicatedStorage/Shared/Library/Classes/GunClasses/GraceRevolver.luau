@@ -22,8 +22,9 @@ local Tool_Folder    = Assets.Guns.ToolModels
 local Anim_Folder    = Assets.Animations.Tools.Guns.GraceRevolver
 local FxFolder       = Assets.Guns.Effects.Shooting
 
-local SoundFolder   = Assets.Guns:WaitForChild("Sounds"):WaitForChild("GraceRevolver")
-local fire_sound = SoundFolder.fire
+local SoundFolder = Assets.Guns:WaitForChild("Sounds"):WaitForChild("GraceRevolver")
+local fire_sound  = SoundFolder.fire
+
 -- // Tuning
 
 local FIRE_RATE    = 0.25
@@ -159,8 +160,8 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.animation_speeds = {
 		Melee1            = 0.7,
 		Melee2            = 0.7,
-		Fire             = 0.75,
-		Fire_Left       = 0.75,
+		Fire              = 0.75,
+		Fire_Left         = 0.75,
 		Draw              = 0.2,
 		Aim               = 0.125,
 		Aim_Left          = 0.125,
@@ -183,10 +184,10 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Short_Distance          = 4
 	self.MuzzlePartName          = "GraceRevolver_Muzzle"
 	self.Can_Drop                = true
-	self.Melee_Distance			 = 5
-	self.Melee_Damage			 = 80
-	self.Accuracy = 6
-	self.Moving_Accuracy = 50
+	self.Melee_Distance          = 5
+	self.Melee_Damage            = 80
+	self.Accuracy                = 6
+	self.Moving_Accuracy         = 50
 
 	self.SoundFolder             = SoundFolder
 
@@ -275,21 +276,23 @@ function GraceRevolver:fire()
 	local camera = workspace.CurrentCamera
 
 	local mousePos = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+	local ray      = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
 
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 	raycastParams.FilterDescendantsInstances = { game.Players.LocalPlayer.Character }
 
-	local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+	-- Skip transparent parts so invisible walls don't deflect the aimed direction.
+	local result    = Util.raycastSkipTransparent(ray.Origin, ray.Direction * 1000, raycastParams)
 	local targetPos = result and result.Position or (ray.Origin + ray.Direction * 1000)
+	local shootDir  = (targetPos - muzzle.Position).Unit
 
-	local shootDir = (targetPos - muzzle.Position).Unit
-	
 	shootDir = self:get_spread(muzzle, shootDir)
+
 	local activeCast = self.Caster:Fire(muzzle.Position, shootDir, BULLET_SPEED, self.CasterBehavior)
 	activeCast.UserData.Direction  = shootDir
 	activeCast.UserData.Penetrated = false
+	activeCast.UserData.Origin     = muzzle.Position
 
 	self:_connect_FastCast(muzzle.Position, shootDir, BULLET_SPEED, {
 		bulletTemplate   = FxFolder.Bullet,
@@ -303,9 +306,9 @@ function GraceRevolver:fire()
 	self.Capacity -= 1
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false)
 
-	local fireAnim = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
+	local fireAnim  = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 	local fireTrack = self:_playAnim(fireAnim)
-	
+
 	self:_play_sfx(fire_sound, muzzle, nil, self.Alt_Mode and 0.5 or nil)
 	self:_bounce_scoped_ui()
 	self:_fireMuzzleFlash()
@@ -332,7 +335,7 @@ function GraceRevolver:reload()
 
 	self.Reloading        = true
 	self._reloadCancelled = false
-	
+
 	game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
 	self:_playAnim("Reload_Start").Stopped:Wait()
 	self.Capacity = 0

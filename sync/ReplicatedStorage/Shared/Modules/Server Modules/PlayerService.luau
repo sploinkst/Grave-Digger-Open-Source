@@ -230,6 +230,12 @@ local function apply_full_appearance(character: Model, player: Player)
 	accessory_connections[player] = accessorysFolder.ChildAdded:Connect(function(child)
 		task.spawn(try_handle_accessory, player, child)
 	end)
+	
+	character.Humanoid.Died:Connect(function()
+		for _, child in pairs(character.CharacterData.Equipment:GetChildren()) do
+			child:Destroy()
+		end
+	end)
 end
 
 local function setup_hitboxes(character: Model)

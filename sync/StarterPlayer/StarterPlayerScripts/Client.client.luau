@@ -15,7 +15,7 @@ local function start_modules()
 				local ok, mod = pcall(require, child)
 
 				if not ok then
-					warn(string.format("Failed to require module %s: %s", child.Name, tostring(mod)))
+					error(string.format("Failed to require module %s: %s", child.Name, tostring(mod)))
 					return
 				end
 
@@ -29,7 +29,7 @@ local function start_modules()
 					end)
 
 					if not success then
-						warn(string.format("Failed to start module %s: %s", child.Name, tostring(err)))
+						error(string.format("Failed to start module %s: %s", child.Name, tostring(err)))
 					end
 				end
 			end)

@@ -7,6 +7,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Accessories_Folder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Accessories")
 local Util = {}
 
+-- // Penetration profiles (used by CanPierceFunction inside setupFastCast)
+
+local Penetration_Profiles = {
+	[4] = { Stud_Limit = 4, Materials = { Enum.Material.Wood, Enum.Material.WoodPlanks }, Distance_Limiter = 70 },
+	[3] = { Stud_Limit = 3, Materials = { Enum.Material.Wood, Enum.Material.WoodPlanks }, Distance_Limiter = 50 },
+	[2] = { Stud_Limit = 2, Materials = { Enum.Material.Wood, Enum.Material.WoodPlanks }, Distance_Limiter = 30 },
+	[1] = { Stud_Limit = 1, Materials = {},                                                Distance_Limiter = 0  },
+}
+
 -- Deep copy table
 function Util.deepCopy(src: {}): {}
 	local copy = {}
@@ -99,6 +108,33 @@ function Util.send_raycast(origin: Vector3, direction: Vector3, blacklist: table
 	return raycast_result
 end
 
+-- // Shared raycast helper that skips fully-transparent parts (invisible walls etc.)
+-- Returns the first non-transparent, non-character RaycastResult, or nil if nothing
+-- is hit within the given direction vector.
+function Util.raycastSkipTransparent(origin: Vector3, direction: Vector3, params: RaycastParams): RaycastResult?
+	local ignoreList = table.clone(params.FilterDescendantsInstances or {})
+
+	while true do
+		params.FilterDescendantsInstances = ignoreList
+
+		local result = workspace:Raycast(origin, direction, params)
+
+		if not result then
+			return nil
+		end
+
+		local hit = result.Instance
+
+		-- Skip transparent parts unless explicitly marked as solid
+		if hit.Transparency >= 1 and not hit:GetAttribute("Unpiercable") then
+			table.insert(ignoreList, hit)
+			continue
+		end
+
+		return result
+	end
+end
+
 function Util.MakeFuzzyFinder(list)
 	local function score(str, pat)
 		local score = 0
@@ -189,73 +225,165 @@ function Util.emit_part(part: Part)
 end
 
 --[[
-	Sets up a FastCast caster with bullet trail visuals.
+	Sets up a FastCast caster with bullet trail visuals and built-in material penetration.
 
 	config = {
-		bulletTemplate  : Instance        -- cosmetic bullet part template
-		bulletContainer : Instance        -- where cosmetic bullets are parented (usually workspace)
-		trailFadeTime   : number?         -- seconds for trail to fade out (default 0.15)
-		trailColor      : BrickColor?     -- trail color (default White)
-		trailThickness  : number?         -- trail diameter (default 0.07)
-		onHit           : (cast, result: RaycastResult, cosmeticBullet: BasePart?) -> ()?
+		bulletTemplate    : Instance        -- cosmetic bullet part template
+		bulletContainer   : Instance        -- where cosmetic bullets are parented
+		penetrationLevel  : number?         -- 1-4, drives CanPierceFunction (default 1)
+		trailFadeTime     : number?         -- seconds for trail to fade out (default 0.15)
+		trailColor        : BrickColor?     -- trail color (default White)
+		trailThickness    : number?         -- trail diameter (default 0.07)
+		onHit             : (cast, result: RaycastResult, velocity: Vector3) -> ()?
 	}
 
 	Returns: caster, behavior
 ]]
-
-
 function Util.setupFastCast(config: {
 	bulletTemplate: Instance,
 	bulletContainer: Instance,
+	penetrationLevel: number?,
 	trailFadeTime: number?,
 	trailColor: BrickColor?,
 	trailThickness: number?,
-	penetrationLevel: number?,
-	armorPenetrationLevel: number?,
-	onHit: ((cast: any, result: RaycastResult, cosmeticBullet: BasePart?) -> ())?,
+	onHit: ((cast: any, result: RaycastResult, velocity: Vector3) -> ())?,
 	})
 	local FastCast = require(game:GetService("ReplicatedStorage").Shared.Library.Externals.FastCast)
-	local TweenService = game:GetService("TweenService")
 
-	local caster = FastCast.new()
+	local caster   = FastCast.new()
 	local behavior = FastCast.newBehavior()
 
-	-- RaycastParams setup to hit everything except the bullets themselves
 	local rayParams = RaycastParams.new()
 	rayParams.IgnoreWater = true
-	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterType  = Enum.RaycastFilterType.Exclude
 	rayParams.FilterDescendantsInstances = { config.bulletContainer }
 	behavior.RaycastParams = rayParams
 
-	behavior.RaycastParams = rayParams
-	behavior.CosmeticBulletTemplate = config.bulletTemplate
+	behavior.CosmeticBulletTemplate  = config.bulletTemplate
 	behavior.CosmeticBulletContainer = config.bulletContainer
-	behavior.AutoIgnoreContainer = true
+	behavior.AutoIgnoreContainer     = true
 
-	behavior.HighFidelityBehavior = FastCast.HighFidelityBehavior.Always
-	behavior.HighFidelitySegmentSize = 0.1 -- smaller segments for fast bullets
-	
+	behavior.HighFidelityBehavior    = FastCast.HighFidelityBehavior.Default
+	behavior.HighFidelitySegmentSize = 0.5
+
+	-- Tracks the pierce snap position per cast, cleared deferred so
+	-- FastCast's own internal reposition cannot clobber the snap
+	local pierceSnapData: { [any]: Vector3 } = {}
+
 	behavior.CanPierceFunction = function(cast, result, segmentVelocity)
-		local hit = result.Instance
+		if not cast.UserData then
+			cast.UserData = {}
+		end
 
-		if not hit then
+		local hit = result.Instance
+		if not hit then return false end
+
+		if hit.Transparency >= 1 then
+			return not hit:GetAttribute("Unpiercable")
+		end
+
+		local profile = Penetration_Profiles[config.penetrationLevel or 1]
+		if not profile then return false end
+
+		local origin = cast.UserData.Origin
+		if origin and (origin - result.Position).Magnitude > profile.Distance_Limiter then
 			return false
 		end
 
-		-- Invisible parts are ignored unless explicitly marked as unpierceable
-		if hit.Transparency >= 1 then
-			if hit:GetAttribute("Unpiercable") then
-				return false
-			end
+		local material = result.Material
+		local canPierce = false
 
-			return true
+		for _, mat in ipairs(profile.Materials) do
+			if mat == material then
+				canPierce = true
+				break
+			end
 		end
 
-		return false
+		if not canPierce then return false end
+
+		local direction = segmentVelocity.Unit
+
+		local thicknessParams = RaycastParams.new()
+		thicknessParams.FilterType = Enum.RaycastFilterType.Include
+		thicknessParams.FilterDescendantsInstances = { hit }
+
+		local tooThick = workspace:Raycast(
+			result.Position + direction * 0.05,
+			direction * profile.Stud_Limit,
+			thicknessParams
+		)
+
+		if tooThick then return false end
+
+		-- // FX
+
+		local FxFolder       = ReplicatedStorage.Shared.Assets.Guns.Effects.Shooting
+		local FX_BULLET_HOLE = FxFolder.BulletHole
+		local FX_WOOD_CHIPS  = FxFolder.Parent.Environment.Wood_Chips
+		local holesFolder    = workspace.Game_Details.Effects.BulletHoles
+
+		local entryClone = FX_BULLET_HOLE:Clone()
+		entryClone.CFrame = CFrame.new(result.Position, result.Position + result.Normal)
+		entryClone.Parent = holesFolder
+
+		if material == Enum.Material.Wood or material == Enum.Material.WoodPlanks then
+			for _, child in pairs(FX_WOOD_CHIPS:GetDescendants()) do
+				if table.find({ "woodchip1", "woodchip2", "woodchip3" }, child.Name) then
+					local clone = child:Clone()
+					local part = Instance.new("Part")
+
+					part.Size = Vector3.new(0.05, 0.05, 0.05)
+					part.Anchored = true
+					part.CanCollide = false
+					part.Transparency = 1
+					part.CFrame = CFrame.new(result.Position, result.Position + result.Normal)
+					part.Parent = workspace
+
+					clone.Parent = part
+
+					if clone:IsA("ParticleEmitter") then
+						clone:Emit(20)
+						task.delay(clone.Lifetime.Max + 0.1, function()
+							part:Destroy()
+						end)
+					end
+				end
+			end
+		end
+
+		-- // EXIT LOGIC
+
+		local exitParams = RaycastParams.new()
+		exitParams.FilterType = Enum.RaycastFilterType.Include
+		exitParams.FilterDescendantsInstances = { hit }
+
+		local exitOrigin = result.Position + direction * 0.01
+
+		local exitResult = workspace:Raycast(
+			exitOrigin,
+			direction * profile.Stud_Limit,
+			exitParams
+		)
+
+		if exitResult then
+			local exitClone = FX_BULLET_HOLE:Clone()
+			exitClone.CFrame = CFrame.new(exitResult.Position, exitResult.Position + exitResult.Normal)
+			exitClone.Parent = holesFolder
+		end
+
+		-- Store in both places: UserData for legacy reads, pierceSnapData
+		-- for the deferred-clear snap override in LengthChanged
+		cast.UserData.LastPiercePosition = result.Position
+		pierceSnapData[cast] = result.Position
+
+		return true
 	end
-	
-	local fadeTime = config.trailFadeTime or 0.15
-	local trailColor = config.trailColor or BrickColor.new("White")
+
+	-- // Trail helpers
+
+	local fadeTime       = config.trailFadeTime  or 0.15
+	local trailColor     = config.trailColor     or BrickColor.new("White")
 	local trailThickness = config.trailThickness or 0.07
 
 	local castTrails: { [any]: Part } = {}
@@ -274,28 +402,19 @@ function Util.setupFastCast(config: {
 
 	caster.LengthChanged:Connect(function(cast, lastPoint, direction, length, velocity, cosmeticBullet)
 		if cosmeticBullet then
-			cosmeticBullet.Position = lastPoint + (direction * length)
+			local snapPos = pierceSnapData[cast]
+			if snapPos then
+				-- Snap to the pierce position. Use task.defer to clear AFTER
+				-- this frame fully resolves so FastCast's own internal reposition
+				-- cannot overwrite our snap before it renders.
+				cosmeticBullet.Position = snapPos
+				task.defer(function()
+					pierceSnapData[cast] = nil
+				end)
+			else
+				cosmeticBullet.Position = lastPoint + (direction * length)
+			end
 		end
-
-		if not castTrails[cast] then
-			local trail = Instance.new("Part")
-			trail.Anchored = true
-			trail.CanCollide = false
-			trail.CanQuery = false
-			trail.CastShadow = false
-			trail.Material = Enum.Material.Neon
-			trail.BrickColor = trailColor
-			trail.Transparency = 0.4
-			trail.Parent = workspace
-			castTrails[cast] = trail
-		end
-
-		local trail = castTrails[cast]
-		local tipPosition = lastPoint + (direction * length)
-		local midPoint = (lastPoint + tipPosition) / 2
-
-		trail.Size = Vector3.new(trailThickness, trailThickness, length)
-		trail.CFrame = CFrame.new(midPoint, tipPosition)
 	end)
 
 	caster.RayHit:Connect(function(cast, result, velocity, cosmeticBullet)
@@ -310,6 +429,8 @@ function Util.setupFastCast(config: {
 			cosmeticBullet:Destroy()
 		end
 
+		pierceSnapData[cast] = nil
+
 		local trail = castTrails[cast]
 		if trail then
 			castTrails[cast] = nil
@@ -318,6 +439,8 @@ function Util.setupFastCast(config: {
 	end)
 
 	caster.CastTerminating:Connect(function(cast)
+		pierceSnapData[cast] = nil
+
 		local trail = castTrails[cast]
 		if trail then
 			castTrails[cast] = nil
@@ -348,16 +471,59 @@ function Util.applyRecoil(recoil: number, recoilCount: number, spread: number, d
 end
 
 function Util.fetch_accessory(accessory_name)
-		local Accessory = Accessories_Folder:FindFirstChild(accessory_name, true)
+	local Accessory = Accessories_Folder:FindFirstChild(accessory_name, true)
 
-		if not Accessory then
-			warn("Accessory not found:", accessory_name)
-			return false
-		end
-
-		return Accessory
+	if not Accessory then
+		warn("Accessory not found:", accessory_name)
+		return false
 	end
 
+	return Accessory
+end
+
+function Util.create_object(character, accessory)
+	local accessory_folder = character:WaitForChild("CharacterData"):WaitForChild("Equipment")
+
+	local clone = accessory:Clone()
+	clone.Parent = accessory_folder
+
+	local clone_primary = clone.PrimaryPart
+	if not clone_primary then
+		warn("Accessory has no PrimaryPart:", clone.Name)
+		clone:Destroy()
+		return
+	end
+
+	local character_reference = character:FindFirstChild(clone_primary.Name)
+
+	if not character_reference then
+		warn("Accessory's PrimaryPart not found in character:", clone_primary.Name)
+		clone:Destroy()
+		return
+	end
+
+	if clone:GetAttribute("HideHair") then
+		for _, hair in character:GetChildren() do
+			if hair:IsA("Accessory") then
+				local handle = hair:FindFirstChild("Handle")
+
+				if handle then
+					handle.Transparency = 1
+					handle.LocalTransparencyModifier = 1
+				end
+			end
+		end
+	end
+
+	Util.quick_weld(
+		character_reference,
+		clone_primary,
+		character_reference,
+		"AccessoryWeld"
+	)
+
+	return clone
+end
 
 function Util.quick_give_accessory(player, accessory: Model, create_object: boolean, server_handled: boolean, create_string: boolean)
 	if not accessory then
@@ -378,52 +544,7 @@ function Util.quick_give_accessory(player, accessory: Model, create_object: bool
 	end
 
 	if create_object then
-		local character = player.Character
-		if not character then
-			return
-		end
-
-		local accessory_folder = character:WaitForChild("CharacterData"):WaitForChild("Equipment")
-
-		local clone = accessory:Clone()
-		clone.Parent = accessory_folder
-
-		local clone_primary = clone.PrimaryPart
-		if not clone_primary then
-			warn("Accessory has no PrimaryPart:", clone.Name)
-			clone:Destroy()
-			return
-		end
-
-		local character_reference = character:FindFirstChild(clone_primary.Name)
-
-		if not character_reference then
-			warn("Accessory's PrimaryPart not found in character:", clone_primary.Name)
-			clone:Destroy()
-			return
-		end
-
-		if clone:GetAttribute("HideHair") then
-			for _, hair in character:GetChildren() do
-				if hair:IsA("Accessory") then
-					local handle = hair:FindFirstChild("Handle")
-
-					if handle then
-						handle.Transparency = 1
-						handle.LocalTransparencyModifier = 1
-					end
-				end
-			end
-		end
-
-		Util.quick_weld(
-			character_reference,
-			clone_primary,
-			character_reference,
-			"AccessoryWeld"
-		)
-		
-		return clone
+		return Util.create_object(player.Character, accessory)
 	end
 end
 

@@ -9,6 +9,7 @@ local TweenService      = game:GetService("TweenService")
 local InsertService 	= game:GetService("InsertService")
 local Lighting          = game:GetService("Lighting")
 local RunService 		= game:GetService("RunService")
+local WorkspaceService  = game:GetService("Workspace")
 
 -- Shared references
 local shared    = ReplicatedStorage:WaitForChild("Shared")
@@ -22,6 +23,10 @@ local heartbeat_sound: Sound? = nil
 local lastHeartbeatTime = 0
 
 local Name_Billboard = ReplicatedStorage:WaitForChild('Shared'):WaitForChild("Assets"):WaitForChild('UI'):WaitForChild("Name_Billboard")
+
+
+local game_details = WorkspaceService:WaitForChild("Game_Details")
+local bodies_folder = game_details:WaitForChild("Bodies")
 
 -- Replication tracking
 local MAX_REPLICATION_EVENTS = 300
@@ -421,6 +426,7 @@ local function handle_accessory(player, child)
 		print("Set dogtag name to:", player.Name)
 	end
 end
+
 local function on_character_added(char: Model, player: Player)
 	local hrp = char:WaitForChild("HumanoidRootPart")
 
@@ -1382,6 +1388,29 @@ function module.start_module()
 		local_player:SetAttribute("Force_Flinch", nil)
 		module.flinch_local_player(3)
 		print("FLINCHING DONE")
+	end)
+	
+	print("[ReplicantService] Module started successfully")
+	bodies_folder.ChildAdded:Connect(function(ragdoll)
+		print(ragdoll.Name, "is added to the bodies_folder.")
+		
+		local player_reference = Players:FindFirstChild(ragdoll.Name)
+		if player_reference then
+			print(player_reference.Name, "is found in the player list.")
+			local player_accessories = player_reference.GameData.Accessorys
+			
+			for _, child in pairs(player_accessories:GetChildren()) do
+				
+				local accessory = utilities.fetch_accessory(child.Name) 
+				if not accessory then 
+					print("[REPLICANTSERVICE] No accessory found for:", child.Name)
+					continue
+				end
+				
+				utilities.create_object(ragdoll, accessory)
+				print("Accessory created for:", child.Name)
+			end
+		end
 	end)
 end
 
