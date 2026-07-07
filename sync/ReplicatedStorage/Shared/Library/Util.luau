@@ -3,6 +3,7 @@
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 local Accessories_Folder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Accessories")
 local Util = {}
@@ -266,8 +267,6 @@ function Util.setupFastCast(config: {
 	behavior.HighFidelityBehavior    = FastCast.HighFidelityBehavior.Default
 	behavior.HighFidelitySegmentSize = 0.5
 
-	-- Tracks the pierce snap position per cast, cleared deferred so
-	-- FastCast's own internal reposition cannot clobber the snap
 	local pierceSnapData: { [any]: Vector3 } = {}
 
 	behavior.CanPierceFunction = function(cast, result, segmentVelocity)
@@ -316,6 +315,12 @@ function Util.setupFastCast(config: {
 
 		if tooThick then return false end
 
+
+		if hit:FindFirstAncestorWhichIsA("Model"):FindFirstChild("Humanoid") then
+			local player = Players:GetPlayerFromCharacter(hit:FindFirstAncestorWhichIsA("Model")) 
+			
+			if player then if player.Team.Name ~= game.Players.LocalPlayer.Team.Name then return false end end
+		end
 		-- // FX
 
 		local FxFolder       = ReplicatedStorage.Shared.Assets.Guns.Effects.Shooting
@@ -352,6 +357,7 @@ function Util.setupFastCast(config: {
 			end
 		end
 
+
 		-- // EXIT LOGIC
 
 		local exitParams = RaycastParams.new()
@@ -376,7 +382,7 @@ function Util.setupFastCast(config: {
 		-- for the deferred-clear snap override in LengthChanged
 		cast.UserData.LastPiercePosition = result.Position
 		pierceSnapData[cast] = result.Position
-
+		
 		return true
 	end
 

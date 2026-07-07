@@ -12,7 +12,7 @@ local Tool_Folder               = ReplicatedStorage.Shared.Assets.Guns.ToolModel
 local Animations_Folder         = ReplicatedStorage.Shared.Assets.Animations.Tools.Utility.Medkit
 
 local Heal_RemoteEvent          = ReplicatedStorage.Shared.Library.Events.Replicant_Communication.Heal_Connection
-local HealNotify_RemoteEvent	= ReplicatedStorage.Shared.Library.Events.Replicant_Communication.HealNotify_Connection
+local HealNotify_RemoteEvent    = ReplicatedStorage.Shared.Library.Events.Replicant_Communication.HealNotify_Connection
 local Status_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Status_Communication.Status_Connection
 
 local local_player = player_service.LocalPlayer
@@ -41,7 +41,7 @@ function Medkit.new(info: { name: string }): Medkit
 	self.Aiming    = false
 	self.locked_in = false
 
-	self.Checking          = false
+	self.Checking           = false
 	self.original_walkspeed = nil
 
 	self.item_image  = "rbxassetid://17778483663"
@@ -168,6 +168,7 @@ function Medkit:_play_heal_sequence(wound_value: StringValue, is_last_wound: boo
 		if target then return end
 		if humanoid and self.original_walkspeed ~= nil then
 			humanoid.WalkSpeed = self.original_walkspeed
+			self.original_walkspeed = nil
 		end
 	end
 
@@ -224,12 +225,20 @@ function Medkit:_play_heal_sequence(wound_value: StringValue, is_last_wound: boo
 		local connection
 		connection = track.KeyframeReached:Connect(function(name)
 			if name == "vfx_firstaid_tweezer_round" then
-				if data[4] == "Round" then
-					self.actual_model.Medkit_Tweezers.Medkit_Round.Transparency = 0
-				elseif data[4] == "Pellet" then
-					self.actual_model.Medkit_Tweezers.Medkit_Pellet.Transparency = 0
-				elseif data[4] == "Sharpnel" then
-					self.actual_model.Medkit_Tweezers.Medkit_Shrapnel.Transparency = 0
+				-- FIX: nil-safe access to tweezer model parts
+				local tweezers = self.actual_model and self.actual_model:FindFirstChild("Medkit_Tweezers")
+				if tweezers then
+					local round    = tweezers:FindFirstChild("Medkit_Round")
+					local pellet   = tweezers:FindFirstChild("Medkit_Pellet")
+					local shrapnel = tweezers:FindFirstChild("Medkit_Shrapnel")
+
+					if data[4] == "Round" and round then
+						round.Transparency = 0
+					elseif data[4] == "Pellet" and pellet then
+						pellet.Transparency = 0
+					elseif data[4] == "Sharpnel" and shrapnel then
+						shrapnel.Transparency = 0
+					end
 				end
 
 				if is_last_wound and not fired_concussion then
@@ -238,9 +247,16 @@ function Medkit:_play_heal_sequence(wound_value: StringValue, is_last_wound: boo
 				end
 
 			elseif name == "vfx_firstaid_tweezer_throw" then
-				self.actual_model.Medkit_Tweezers.Medkit_Round.Transparency    = 1
-				self.actual_model.Medkit_Tweezers.Medkit_Pellet.Transparency   = 1
-				self.actual_model.Medkit_Tweezers.Medkit_Shrapnel.Transparency = 1
+				-- FIX: nil-safe access to tweezer model parts
+				local tweezers = self.actual_model and self.actual_model:FindFirstChild("Medkit_Tweezers")
+				if tweezers then
+					local round    = tweezers:FindFirstChild("Medkit_Round")
+					local pellet   = tweezers:FindFirstChild("Medkit_Pellet")
+					local shrapnel = tweezers:FindFirstChild("Medkit_Shrapnel")
+					if round    then round.Transparency    = 1 end
+					if pellet   then pellet.Transparency   = 1 end
+					if shrapnel then shrapnel.Transparency = 1 end
+				end
 			end
 		end)
 
@@ -273,20 +289,32 @@ function Medkit:_perform_surgery(wound: StringValue, target: Model?)
 	self.Healing = true
 	self.Character:SetAttribute("SprintBlocked", true)
 
-	local target_wounds = target and target:FindFirstChild("CharacterData") and target.CharacterData:FindFirstChild("Wounds") or self.Wounds_folder
-	local is_last_wound = (#target_wounds:GetChildren() == 1)
+	-- FIX: pcall wrapper ensures Healing is always reset even if an error is thrown mid-sequence
+	local ok, result = pcall(function()
+		local target_wounds = target
+			and target:FindFirstChild("CharacterData")
+			and target.CharacterData:FindFirstChild("Wounds")
+			or self.Wounds_folder
 
-	print("[MEDKIT] Starting Surgery. Target:", target and target.Name or "Self", "| Wound:", wound.Name)
+		local is_last_wound = (#target_wounds:GetChildren() == 1)
 
-	local success = self:_play_heal_sequence(wound, is_last_wound, target)
+		print("[MEDKIT] Starting Surgery. Target:", target and target.Name or "Self", "| Wound:", wound.Name)
+
+		return self:_play_heal_sequence(wound, is_last_wound, target)
+	end)
+
+	local success = ok and result
 
 	if success then
 		print("[MEDKIT] Surgery Complete. Firing Remote.")
 		Heal_RemoteEvent:FireServer(target or local_player, wound)
+	elseif not ok then
+		warn("[MEDKIT] Surgery error:", result)
 	else
-		print("[MEDKIT] Surgery Failed.")
+		print("[MEDKIT] Surgery Failed or Cancelled.")
 	end
 
+	-- FIX: cleanup always runs regardless of success/failure/error
 	self.Character:SetAttribute("SprintBlocked", nil)
 	self.Character:SetAttribute("Tool_Locked", nil)
 	self.Healing = false
@@ -314,7 +342,8 @@ function Medkit:_process_self_heal()
 end
 
 function Medkit:_process_target_heal(target: Model)
-	local actual_player = player_service:GetPlayerFromCharacter(target) or player_service:GetPlayerFromCharacter(target.Parent)
+	local actual_player = player_service:GetPlayerFromCharacter(target)
+		or player_service:GetPlayerFromCharacter(target.Parent)
 
 	if not actual_player then
 		print("[MEDKIT] Target-Heal aborted: Could not resolve player.")
@@ -367,13 +396,17 @@ function Medkit:_begin_heal_loop(target: Model?)
 		return
 	end
 
-	self._healLoopConnection = task.spawn(function()
+	-- FIX: renamed to _healLoopThread to accurately reflect it holds a task thread, not a RBXScriptConnection
+	self._healLoopThread = task.spawn(function()
 		print("[MEDKIT] Starting heal loop.")
 		while self.HoldingM1 and self.Equipped do
 			local success = false
 
-			if target and self.Aiming then
-				success = self:_process_target_heal(target)
+			-- FIX: re-raycast each loop iteration so target is always fresh
+			local current_target = self.Aiming and self:_raycast_target() or nil
+
+			if current_target and self.Aiming then
+				success = self:_process_target_heal(current_target)
 			elseif not self.Aiming then
 				success = self:_process_self_heal()
 			end
@@ -437,6 +470,8 @@ function Medkit:_on_equip()
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			self.HoldingM1 = true
+			-- FIX: target is now re-raycasted inside the loop each iteration;
+			-- we still pass the initial target here but the loop refreshes it
 			local target = self:_raycast_target()
 			self:_begin_heal_loop(target)
 
@@ -484,9 +519,10 @@ function Medkit:_on_unequip()
 	if self._inputBegan then self._inputBegan:Disconnect() end
 	if self._inputEnded then self._inputEnded:Disconnect() end
 
-	if self._healLoopConnection then
-		task.cancel(self._healLoopConnection)
-		self._healLoopConnection = nil
+	-- FIX: renamed from _healLoopConnection to _healLoopThread
+	if self._healLoopThread then
+		task.cancel(self._healLoopThread)
+		self._healLoopThread = nil
 	end
 
 	if self.RegisteredAnimations.Special_Aim.IsPlaying then
@@ -496,6 +532,7 @@ function Medkit:_on_unequip()
 	local humanoid = self.Character and self.Character:FindFirstChildOfClass("Humanoid")
 	if humanoid and self.original_walkspeed then
 		humanoid.WalkSpeed = self.original_walkspeed
+		self.original_walkspeed = nil
 	end
 end
 

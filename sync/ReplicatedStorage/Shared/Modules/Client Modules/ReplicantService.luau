@@ -944,7 +944,7 @@ local function stop_concussion_effect()
 	local FADE_OUT_DURATION = 0.5
 
 	-- keep existing connection running, but switch it into "fade-out mode"
-	if concussion_connection and concussion_connection:IsA("RBXScriptConnection") then
+	if concussion_connection and concussion_connection.Connected then
 		concussion_connection:Disconnect()
 	end
 

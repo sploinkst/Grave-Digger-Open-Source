@@ -1,10 +1,11 @@
 local module = {}
+
 local player_service = game:GetService("Players")
 
 local health_wait  = 0.15
 local health_tick  = 1
 local health_delay = 5
-local health_gate = 99
+local health_gate  = 99
 
 local function health_loop(humanoid)
 	local last_damage_time = tick()
@@ -20,7 +21,10 @@ local function health_loop(humanoid)
 	task.spawn(function()
 		while humanoid and humanoid.Parent do
 			task.wait(health_wait)
-			if humanoid.Health > 0 and humanoid.Health < humanoid.MaxHealth and humanoid.Health < health_gate then
+			if humanoid.Health > 0
+				and humanoid.Health < humanoid.MaxHealth
+				and humanoid.Health <= health_gate
+			then
 				if tick() - last_damage_time >= health_delay then
 					humanoid.Health = math.min(
 						humanoid.Health + health_tick,

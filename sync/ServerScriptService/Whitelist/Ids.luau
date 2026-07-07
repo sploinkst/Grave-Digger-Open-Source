@@ -11,7 +11,10 @@ return {
 	[34366405] = true, -- // aduremaister,
 
 	[3800497291] = true, -- // BruhBot8707,
-	[98677788] = true, -- // EndetX3,
+	[98677788] = true ,-- // EndetX3,
 	[5648718529] = true, -- // Kat_TunnelDog
 	[8248014626] = true, -- // Rajin
+	[1180726175] = true, -- // jan125majm
+	[1865722518] = true, -- // UsarRook
+	[126550640 ] = true, -- // Mun
 }

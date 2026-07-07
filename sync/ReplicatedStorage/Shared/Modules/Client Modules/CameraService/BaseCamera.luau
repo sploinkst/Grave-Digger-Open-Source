@@ -623,6 +623,7 @@ local function handle_object(part, isFirstPerson)
 	local hide        = should_hide(part)
 	local parent      = part.Parent
 	local grandparent = parent and parent.Parent
+	local grandparent2 = grandparent and grandparent.Parent
 
 	if grandparent and grandparent.Name == "Rendered_Holsters" then
 		hide = true
@@ -632,6 +633,38 @@ local function handle_object(part, isFirstPerson)
 				break
 			end
 		end
+		
+	elseif grandparent and grandparent.Name == "Equipment" then
+		local isBodyPart =
+			parent:FindFirstChild("Head")
+			or parent:FindFirstChild("Torso")
+
+		if isBodyPart then
+			hide = true
+
+			for part_name in pairs(transparency_table) do
+				if string.find(part.Name, part_name, 1, true) then
+					hide = false
+					break
+				end
+			end
+		end
+		
+	elseif grandparent2 and grandparent2.Name == "Equipment" then
+		local isBodyPart =
+			grandparent:FindFirstChild("Head")
+			or grandparent:FindFirstChild("Torso")
+
+		if isBodyPart then
+			hide = true
+
+			for part_name in pairs(transparency_table) do
+				if string.find(part.Name, part_name, 1, true) then
+					hide = false
+					break
+				end
+			end
+		end	
 	end
 
 	if not hide then return end

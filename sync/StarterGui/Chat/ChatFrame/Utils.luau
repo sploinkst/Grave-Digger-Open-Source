@@ -1,29 +1,62 @@
 local module = {}
 
 local function format_username(username: string, team: string)
-	local hex = team == "Golden Empire" and "#FFD454" or "#7F16AF"
-	return "<b><font color='" .. hex .. "'>ARM " .. username .. "</font></b>"
+	local hex =
+		team == "Golden Empire"
+		and "#FFD454"
+		or "#7F16AF"
+
+	return "<b><font color='" .. hex .. "'>ARM "
+		.. username
+		.. "</font></b>"
 end
 
 function module.create_chat(player: Player, chat: string)
-	local ChatFrame:ScrollingFrame = game.Players.LocalPlayer.PlayerGui.Chat.ChatFrame
-	local Example_Frame = ChatFrame:WaitForChild("Example")
-	
-	local example_clone = Example_Frame:Clone()
-	example_clone.Name = tostring(#ChatFrame:GetChildren() - 1)
-	example_clone.Parent = ChatFrame
-	example_clone.Visible = true
+	local ChatFrame: ScrollingFrame =
+		game.Players.LocalPlayer.PlayerGui.Chat.ChatFrame
 
-	local playername = example_clone:FindFirstChild("playername")
-	local playertext = example_clone:FindFirstChild("playertext")
+	local Example =
+		ChatFrame:WaitForChild("Example")
+
+	local clone = Example:Clone()
+
+	clone.Name = tostring(os.clock())
+
+	clone.Visible = true
+	clone.Parent = ChatFrame
+
+	local formattedName =
+		format_username(
+			player.Name,
+			player.Team.Name
+		)
+
+	local playername =
+		clone:FindFirstChild("playername")
+
+	local playertext =
+		clone:FindFirstChild("playertext")
 
 	if playername then
-		playername.Text = format_username(player.Name, player.Team.Name)
+		playername.Text = formattedName
 	end
 
 	if playertext then
-		playertext.Text = format_username(player.Name, player.Team.Name) .. ": " .. chat
+		playertext.Text =
+			formattedName
+			.. ": "
+			.. chat
 	end
+
+	task.defer(function()
+		ChatFrame.CanvasPosition = Vector2.new(
+			0,
+			math.max(
+				0,
+				ChatFrame.AbsoluteCanvasSize.Y
+			)
+		)
+	end)
 end
 
 return module

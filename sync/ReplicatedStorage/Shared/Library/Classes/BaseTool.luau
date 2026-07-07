@@ -1075,8 +1075,9 @@ function BaseTool:_connectInput()
 				elseif action == "Reload" then
 					self:reload()
 				elseif action == "Check" then
-					if self.Can_Drop and self.Reloading then
+					if self.Can_Drop and self.Reloading and self.Equipped then
 						self:drop()
+						return
 					else
 						self:ammo_check()
 					end

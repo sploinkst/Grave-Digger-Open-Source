@@ -196,6 +196,8 @@ function module.pop_helmet(character, helmet_model, knockable: boolean)
 
 			-- Remove velocity object shortly after
 			Debris:AddItem(velocity, 0.15)
+			
+			child.Parent = workspace.Game_Details.Debris
 		end
 		
 		helmet_model:SetAttribute("Knocked", true)
@@ -263,8 +265,11 @@ function module.start_module()
 
 		local hitCharacter = model
 		local hitPlayer    = game.Players:GetPlayerFromCharacter(hitCharacter)
+		
+
 
 		-- Prevent self-damage
+		if player.Team.Name == hitPlayer.Team.Name then return end
 		if hitPlayer and hitPlayer == player then return end
 
 		-- Knockback
