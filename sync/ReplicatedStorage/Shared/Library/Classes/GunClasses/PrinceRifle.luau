@@ -200,6 +200,7 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.Alt_Mode         = true
 	self.Alting           = false
 	self._reloadCancelled = false
+	self._ToCancelReload  = false
 	self.Checking         = false
 	self.Check_Delayed    = false
 	self.Meleeing         = false
@@ -393,7 +394,7 @@ function PrinceRifle:reload()
 		end
 
 		game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
-		while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
+		while self.Capacity < self.Max_Capacity and not self._reloadCancelled and not self._ToCancelReload do
 			self:_playAnim("Reload_Loop").Stopped:Wait()
 			if self._reloadCancelled then break end
 			self.Capacity += 1
@@ -426,6 +427,10 @@ function PrinceRifle:activate()
 		self:fire()
 	else
 		self:melee()
+	end
+	
+	if self.Reloading then
+		self._ToCancelReload = true
 	end
 end
 
