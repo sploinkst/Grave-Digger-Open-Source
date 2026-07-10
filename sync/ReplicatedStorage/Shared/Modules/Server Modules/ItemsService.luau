@@ -134,13 +134,24 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 			if object.Round then
 				if object.Round_Target_Part then
 					if not player.Character:FindFirstChild(object.Round_Target_Part) then return end
-					player.Character:FindFirstChild(object.Round_Target_Part):FindFirstChild(object.Round.Name):Destroy()
-					player.Character:FindFirstChild(object.Round_Target_Part):FindFirstChild("Round_Motor6d"):Destroy()
+					local round = player.Character:FindFirstChild(object.Round_Target_Part):FindFirstChild(object.Round.Name)
+					local roundm6 = player.Character:FindFirstChild(object.Round_Target_Part):FindFirstChild("Round_Motor6d")
+					
+					if round then
+						round:Destroy()
+					end
+					
+					if roundm6 then
+						roundm6:Destroy()
+					end
 				else
 					player.Character["Right Arm"]:FindFirstChild(object.Round.Name):Destroy()
 					player.Character["Right Arm"]:FindFirstChild("Round_Motor6d"):Destroy()
 				end
 			end
+			
+			local ToolMotor = player.Character:FindFirstChild("ToolMotor", true)
+			ToolMotor:Destroy()
 		end)
 	end
 	

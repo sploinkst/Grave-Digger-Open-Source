@@ -131,6 +131,8 @@ function Medkit:_raycast_target()
 		local hitCharacter = hitPart:FindFirstAncestorWhichIsA("Model")
 
 		if hitCharacter and hitCharacter:FindFirstChildOfClass("Humanoid") then
+			if not hitCharacter:FindFirstChild("HumanoidRootPart") then return end
+			
 			local distance = (self.Character.HumanoidRootPart.Position - hitCharacter.HumanoidRootPart.Position).Magnitude
 			if distance <= 6 then
 				print("[MEDKIT] Target detected:", hitCharacter.Name)

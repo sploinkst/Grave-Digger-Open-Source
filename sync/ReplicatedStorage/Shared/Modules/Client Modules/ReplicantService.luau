@@ -427,6 +427,24 @@ local function handle_accessory(player, child)
 	end
 end
 
+local function set_character_no_collision(char)
+	for _, descendant in ipairs(char:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = false
+		end
+	end
+
+	char.DescendantAdded:Connect(function(descendant)
+		if descendant:IsA("BasePart") then
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = false
+		end
+	end)
+end
+
 local function on_character_added(char: Model, player: Player)
 	local hrp = char:WaitForChild("HumanoidRootPart")
 
@@ -447,8 +465,10 @@ local function on_character_added(char: Model, player: Player)
 	-- Don't add a billboard for the local player themselves
 	if player == local_player then return end
 
-	-- Only add billboard if this player is a teammate
+	-- Only add billboard if this player is a teammate/disable collision
 	if player.Team == local_player.Team then
+		set_character_no_collision(char)
+		
 		local clone = Name_Billboard:Clone()
 		clone.Parent = hrp
 		clone.playername.Text = "ARM " .. player.Name
@@ -503,6 +523,8 @@ local function setup_player(player: Player)
 	accessories.ChildAdded:Connect(function(child)
 		handle_accessory(player, child)
 	end)
+	
+	
 end
 
 

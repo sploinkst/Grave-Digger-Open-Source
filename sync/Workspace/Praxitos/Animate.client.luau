@@ -373,7 +373,7 @@ local function update_movement(speed: number)
 		end
 
 		if freelook then
-			play_base("CrouchWalk_Forward")
+			play_base("Walk_Forward")
 		else
 			play_base(get_crouch_animation())
 		end
@@ -548,10 +548,10 @@ humanoid.StateChanged:Connect(function(_, new_state)
 		is_climbing = true
 		is_airborne = false   -- FIX: always clear airborne when climbing begins
 
-		--reset state so set_state() won't no-op when we leave climbing
+		-- FIX: reset state so set_state() won't no-op when we leave climbing
 		current_state = nil
 
-		-- explicitly stop all sprint overlays by name, not just
+		-- FIX: explicitly stop all sprint overlays by name, not just
 		-- whatever happens to be in active_overlays
 		clear_sprint_overlays(0.1)
 

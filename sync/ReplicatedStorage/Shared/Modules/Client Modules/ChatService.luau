@@ -39,13 +39,6 @@ local local_player = Players.LocalPlayer
 
 local input_connections: {RBXScriptConnection} = {}
 
-local message_history: {{
-	player: Player,
-	chat: string
-}} = {}
-
-local MAX_HISTORY = 50
-
 local function scroll_to_bottom()
 	local chatFrame =
 		local_player.PlayerGui.Chat.ChatFrame
@@ -143,19 +136,6 @@ local function restore_chat_history()
 	local chatFrame =
 		local_player.PlayerGui.Chat.ChatFrame
 
-	for _, child in ipairs(chatFrame:GetChildren()) do
-		if child:IsA("Frame") and child.Name ~= "Example" then
-			child:Destroy()
-		end
-	end
-
-	for _, entry in ipairs(message_history) do
-		chat_utils.create_chat(
-			entry.player,
-			entry.chat
-		)
-	end
-
 	scroll_to_bottom()
 end
 
@@ -176,14 +156,6 @@ function module.start_module()
 		player: Player,
 		chat: string
 	)
-		table.insert(message_history, {
-			player = player,
-			chat = chat
-		})
-
-		if #message_history > MAX_HISTORY then
-			table.remove(message_history, 1)
-		end
 
 		chat_utils.create_chat(player, chat)
 

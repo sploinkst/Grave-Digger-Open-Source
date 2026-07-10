@@ -31,14 +31,14 @@ local current_equipped = nil
 local slots_visible    = false
 local fade_token       = 0
 local selected_key     = nil
+local EquipBusy = false
 
 local Equipment_BB = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("UI"):WaitForChild("Equipment_BB")
 local Utils = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 
 local EquipmentBBClone = nil
------------------------------------------------------------------------
--- Helpers
------------------------------------------------------------------------
+
+-- // Helpers
 
 local function tween_slot(ui, props)
 	local frame = ui.Frame
@@ -213,12 +213,41 @@ local function find_first_empty_slot(designation)
 	return nil
 end
 
+-- // Equip (single, debounced entry point — used by every key press)
+
 local function equip_tool(toolObject)
-	if current_equipped and current_equipped ~= toolObject then
-		current_equipped:unequip()
+	if EquipBusy then
+		return false
 	end
-	toolObject:equip()
-	current_equipped = toolObject
+	EquipBusy = true
+
+	local ok, err = pcall(function()
+		if current_equipped == toolObject then
+			if current_equipped then
+				current_equipped:unequip()
+			end
+			current_equipped = nil
+		else
+			if current_equipped then
+				current_equipped:unequip()
+			end
+			current_equipped = nil
+
+			if toolObject then
+				toolObject:equip()
+				current_equipped = toolObject
+			end
+		end
+	end)
+
+	EquipBusy = false
+
+	if not ok then
+		warn("[Inventory] equip_tool failed: " .. tostring(err))
+		current_equipped = nil
+	end
+
+	return ok
 end
 
 local function assign_tool(toolObject)
@@ -262,7 +291,6 @@ local function remove_tool(toolObject)
 		local slot = InventorySlots[key]
 		if slot.Tool == toolObject then
 			if current_equipped == toolObject then
-				toolObject:unequip()
 				current_equipped = nil
 			end
 
@@ -287,20 +315,24 @@ local function Add_EquipmentBB(character)
 		EquipmentBBClone:Destroy()
 		EquipmentBBClone = nil
 	end
-	
+
 	local character_hrp = character:WaitForChild("HumanoidRootPart")
 	EquipmentBBClone = Equipment_BB:Clone()
 
 	EquipmentBBClone.Parent = character_hrp
-	
+
 	local weld = Utils.quick_weld(character_hrp, EquipmentBBClone, character_hrp, "EquipmentBB")
 	weld.C0 = CFrame.new(3,2,0)
 end
+
 local function on_character_added(character)
-	current_equipped = nil
-	selected_key     = nil
-	fade_token      += 1
-	slots_visible    = false
+	-- // Always release the equip lock on respawn, in case a previous
+	-- // equip/unequip call was interrupted (e.g. tool destroyed on death)
+	EquipBusy         = false
+	current_equipped  = nil
+	selected_key      = nil
+	fade_token       += 1
+	slots_visible     = false
 
 	for _, key in ipairs(SLOT_ORDER) do
 		local slot = InventorySlots[key]
@@ -318,7 +350,7 @@ local function on_character_added(character)
 			create_slot_ui(key, slot)
 		end
 	end
-	
+
 	Add_EquipmentBB(character)
 end
 
@@ -335,27 +367,28 @@ function module.start_module()
 	if player.Character then
 		on_character_added(player.Character)
 	end
-	
+
 	player.CharacterAdded:Connect(on_character_added)
 
 	UIS.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then
 			return
 		end
-		
+
 		if input.KeyCode == Enum.KeyCode.G then
 			if EquipmentDebounce then return end
-			
+			if not EquipmentBBClone then return end
+
 			EquipmentDebounce = true
-			
+
 			local count = EquipmentBBClone.bb.count
 			local image1 = EquipmentBBClone.bb.progress.frame1.img
 			local image2 = EquipmentBBClone.bb.progress.frame2.img
-			
+
 			local tween1 = tween_service:Create(count, TweenInfo.new(0.2), {TextTransparency = 0})
 			local tween2 = tween_service:Create(image1, TweenInfo.new(0.2), {ImageTransparency = 0})
 			local tween3 = tween_service:Create(image2, TweenInfo.new(0.2), {ImageTransparency = 0})
-			
+
 			tween1:Play()
 			tween2:Play()
 			tween3:Play()
@@ -363,7 +396,7 @@ function module.start_module()
 				local tween1 = tween_service:Create(count, TweenInfo.new(0.2), {TextTransparency = 1})
 				local tween2 = tween_service:Create(image1, TweenInfo.new(0.2), {ImageTransparency = 1})
 				local tween3 = tween_service:Create(image2, TweenInfo.new(0.2), {ImageTransparency = 1})
-				
+
 				tween1:Play()
 				tween2:Play()
 				tween3:Play()
@@ -371,11 +404,13 @@ function module.start_module()
 					EquipmentDebounce = false
 				end)
 			end)
-			
+
 		end
-		
+
 		if player:GetAttribute("CantUnequip") then return end
-		
+
+		-- // Slot key handling — routed entirely through equip_tool()
+		-- // so rapid key presses can't desync current_equipped
 		for _, key in ipairs(SLOT_ORDER) do
 			local slot = InventorySlots[key]
 
@@ -383,35 +418,18 @@ function module.start_module()
 				local tool = slot.Tool
 
 				on_inventory_key(key)
-				if not tool then
-					if current_equipped then
-						current_equipped:unequip()
-						current_equipped = nil
-					end
 
-					selected_key = nil
-					update_highlight(key)
+				if not equip_tool(tool) then
+					-- // Debounced: another equip was already in progress, ignore this press
 					break
 				end
 
-				-- Same tool pressed again
-				if current_equipped == tool then
-					tool:unequip()
-					current_equipped = nil
-
-					selected_key = nil
-					update_highlight(nil)
-				else
-					if current_equipped then
-						current_equipped:unequip()
-					end
-
-					tool:equip()
-					current_equipped = tool
-
+				if tool and current_equipped == tool then
 					selected_key = key
-					update_highlight(key)
+				else
+					selected_key = nil
 				end
+				update_highlight(selected_key)
 
 				break
 			end

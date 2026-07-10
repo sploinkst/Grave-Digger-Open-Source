@@ -1,57 +1,72 @@
 local module = {}
 
-local player_service = game:GetService("Players")
+local Players = game:GetService("Players")
 
-local health_wait  = 0.15
-local health_tick  = 1
-local health_delay = 5
-local health_gate  = 99
+local HEALTH_WAIT = 0.15
+local HEALTH_TICK = 1
+local HEALTH_DELAY = 5
+local HEALTH_GATE = 99
+
+local ActiveHumanoids = {}
 
 local function health_loop(humanoid)
-	local last_damage_time = tick()
-	local last_health      = humanoid.Health
+	if ActiveHumanoids[humanoid] then
+		return
+	end
 
-	humanoid.HealthChanged:Connect(function(new_health)
-		if new_health < last_health then
-			last_damage_time = tick()
+	ActiveHumanoids[humanoid] = true
+
+	local lastDamageTime = os.clock()
+	local lastHealth = humanoid.Health
+
+	humanoid.HealthChanged:Connect(function(newHealth)
+		if newHealth < lastHealth then
+			lastDamageTime = os.clock()
 		end
-		last_health = new_health
+
+		lastHealth = newHealth
+	end)
+
+	humanoid.Destroying:Connect(function()
+		ActiveHumanoids[humanoid] = nil
 	end)
 
 	task.spawn(function()
-		while humanoid and humanoid.Parent do
-			task.wait(health_wait)
-			if humanoid.Health > 0
-				and humanoid.Health < humanoid.MaxHealth
-				and humanoid.Health <= health_gate
-			then
-				if tick() - last_damage_time >= health_delay then
+		while humanoid.Parent and humanoid.Health > 0 do
+			task.wait(HEALTH_WAIT)
+
+			if humanoid.Health >= 100 and humanoid.Health < humanoid.MaxHealth then
+				if os.clock() - lastDamageTime >= HEALTH_DELAY then
 					humanoid.Health = math.min(
-						humanoid.Health + health_tick,
+						humanoid.Health + HEALTH_TICK,
 						humanoid.MaxHealth
 					)
 				end
 			end
 		end
+
+		ActiveHumanoids[humanoid] = nil
 	end)
 end
 
-local function on_character_added(character)
+local function onCharacterAdded(character)
 	local humanoid = character:WaitForChild("Humanoid")
 	health_loop(humanoid)
 end
 
-local function on_player_added(player)
-	player.CharacterAdded:Connect(on_character_added)
+local function onPlayerAdded(player)
+	player.CharacterAdded:Connect(onCharacterAdded)
+
 	if player.Character then
-		on_character_added(player.Character)
+		onCharacterAdded(player.Character)
 	end
 end
 
 function module.start_module()
-	player_service.PlayerAdded:Connect(on_player_added)
-	for _, player in ipairs(player_service:GetPlayers()) do
-		on_player_added(player)
+	Players.PlayerAdded:Connect(onPlayerAdded)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		onPlayerAdded(player)
 	end
 end
 
