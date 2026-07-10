@@ -49,6 +49,7 @@ function Util.quick_weld(p0, p1, parent, name, weld_type)
 	weld_type.Part1 = p1
 	weld_type.Parent = parent
 	weld_type.Name = name
+	return weld_type
 end
 
 function Util.hide_holster(player: Player, holster_reference: Instance)
@@ -554,4 +555,41 @@ function Util.quick_give_accessory(player, accessory: Model, create_object: bool
 	end
 end
 
+function Util.hasfullammo(player)
+	local full = true
+	
+	for _, tool in player.Backpack:GetChildren() do
+		if tool:FindFirstChild("Reserve_Ammo") then
+			if tool.Max_Ammo.Value ~= tool.Reserve_Ammo.Value then
+				full = false
+			end
+		end
+	end
+	
+	for _, tool in player.Character:GetChildren() do
+		if tool:FindFirstChild("Reserve_Ammo") then
+			if tool.Max_Ammo.Value ~= tool.Reserve_Ammo.Value then
+				full = false
+			end
+		end
+	end
+	
+	return full
+end
+function Util.setammo(player)
+	print("[INTERACTIONMANAGER] Adding ammo to player's tools", player.Name)
+	for _, tool in player.Backpack:GetChildren() do
+		if tool:FindFirstChild("Reserve_Ammo") then
+			tool.Reserve_Ammo.Value = tool.Max_Ammo.Value
+			print("[INTERACTIONMANAGER] Added ammo to " .. tool.Name)
+		end
+	end
+	
+	for _, tool in player.Character:GetChildren() do
+		if tool:FindFirstChild("Reserve_Ammo") then
+			tool.Reserve_Ammo.Value = tool.Max_Ammo.Value
+			print("[INTERACTIONMANAGER] Added ammo to " .. tool.Name)
+		end
+	end
+end
 return Util
