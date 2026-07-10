@@ -10,6 +10,7 @@ local empty_icon = "rbxassetid://112388032303745"
 
 local TWEEN_INFO  = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
 local FADE_DELAY  = 3
+local EquipmentDebounce = false
 
 local InventorySlots = {
 	["1"] = {Keybind = Enum.KeyCode.One,   Tool = nil, UI = nil, Designation = "Primary",       PermanentUISpot = true},
@@ -31,6 +32,10 @@ local slots_visible    = false
 local fade_token       = 0
 local selected_key     = nil
 
+local Equipment_BB = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("UI"):WaitForChild("Equipment_BB")
+local Utils = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
+
+local EquipmentBBClone = nil
 -----------------------------------------------------------------------
 -- Helpers
 -----------------------------------------------------------------------
@@ -277,6 +282,20 @@ end
 
 -- // Respawn Reset
 
+local function Add_EquipmentBB(character)
+	if EquipmentBBClone then
+		EquipmentBBClone:Destroy()
+		EquipmentBBClone = nil
+	end
+	
+	local character_hrp = character:WaitForChild("HumanoidRootPart")
+	EquipmentBBClone = Equipment_BB:Clone()
+
+	EquipmentBBClone.Parent = character_hrp
+	
+	local weld = Utils.quick_weld(character_hrp, EquipmentBBClone, character_hrp, "EquipmentBB")
+	weld.C0 = CFrame.new(3,2,0)
+end
 local function on_character_added(character)
 	current_equipped = nil
 	selected_key     = nil
@@ -299,6 +318,8 @@ local function on_character_added(character)
 			create_slot_ui(key, slot)
 		end
 	end
+	
+	Add_EquipmentBB(character)
 end
 
 -- // Init
@@ -311,12 +332,46 @@ function module.start_module()
 			create_slot_ui(key, slot)
 		end
 	end
-
+	if player.Character then
+		on_character_added(player.Character)
+	end
+	
 	player.CharacterAdded:Connect(on_character_added)
 
 	UIS.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then
 			return
+		end
+		
+		if input.KeyCode == Enum.KeyCode.G then
+			if EquipmentDebounce then return end
+			
+			EquipmentDebounce = true
+			
+			local count = EquipmentBBClone.bb.count
+			local image1 = EquipmentBBClone.bb.progress.frame1.img
+			local image2 = EquipmentBBClone.bb.progress.frame2.img
+			
+			local tween1 = tween_service:Create(count, TweenInfo.new(0.2), {TextTransparency = 0})
+			local tween2 = tween_service:Create(image1, TweenInfo.new(0.2), {ImageTransparency = 0})
+			local tween3 = tween_service:Create(image2, TweenInfo.new(0.2), {ImageTransparency = 0})
+			
+			tween1:Play()
+			tween2:Play()
+			tween3:Play()
+			task.delay(4, function()
+				local tween1 = tween_service:Create(count, TweenInfo.new(0.2), {TextTransparency = 1})
+				local tween2 = tween_service:Create(image1, TweenInfo.new(0.2), {ImageTransparency = 1})
+				local tween3 = tween_service:Create(image2, TweenInfo.new(0.2), {ImageTransparency = 1})
+				
+				tween1:Play()
+				tween2:Play()
+				tween3:Play()
+				tween3.Completed:Connect(function()
+					EquipmentDebounce = false
+				end)
+			end)
+			
 		end
 		
 		if player:GetAttribute("CantUnequip") then return end
@@ -363,6 +418,7 @@ function module.start_module()
 		end
 	end)
 end
+
 
 function module.assign_tool(tool)
 	assign_tool(tool)
