@@ -3,7 +3,7 @@ local module = {}
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
 local player_service = game:GetService("Players")
-
+local RunService = game:GetService("RunService")
 local replicant_folder = ReplicatedStorage.Shared.Library.Events.Replicant_Communication
 
 local fastcast_replicant = replicant_folder.FastCast_Connection
@@ -30,6 +30,11 @@ local status_service = require(script.Parent.StatusService)
 local item_service = require(script.Parent.ItemsService)
 
 local stumble_animation = ReplicatedStorage:WaitForChild("Shared").Assets.Animations.Character.Miscellanous.Stumble
+
+local AmmoPackEvent = replicant_folder.Parent.Equipment_Communication.AmmoPack
+local AmmoPack = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Equipment"):WaitForChild("AmmoPack")
+
+local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 
 -- // funcs
 
@@ -269,7 +274,7 @@ function module.start_module()
 
 
 		-- Prevent self-damage
-		if player.Team.Name == hitPlayer.Team.Name then return end
+		--if player.Team.Name == hitPlayer.Team.Name then return end
 		if hitPlayer and hitPlayer == player then return end
 
 		-- Knockback
@@ -387,10 +392,12 @@ function module.start_module()
 
 			local velocity = Instance.new("BodyVelocity")
 			velocity.Velocity = force
-			velocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+			velocity.MaxForce = Vector3.new(100, 100, 100)
 			velocity.Parent = model_clone.PrimaryPart
 
-			game:GetService("Debris"):AddItem(velocity, 0.25)
+			task.delay(0.1, function()
+				velocity:Destroy()
+			end)
 		end
 	end)
 	
@@ -413,6 +420,87 @@ function module.start_module()
 		print("Received ammo_connection from", tool.Name, "count:", count)
 		
 		tool.Reserve_Ammo.Value -= count
+	end)
+	
+	AmmoPackEvent.OnServerEvent:Connect(function(player, target)
+		print("Received AmmoPackEvent from", player.Name)
+		if not target then
+			local character = player.Character
+			if not character then
+				return
+			end
+
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+			if not hrp then
+				return
+			end
+
+			local clone = AmmoPack:Clone()
+			clone.Position = hrp.Position + hrp.CFrame.LookVector * 1.5
+			clone.CanCollide = true
+			clone.Parent = workspace
+
+			local velocity = Instance.new("BodyVelocity")
+			velocity.Velocity = hrp.CFrame.LookVector * 8 + Vector3.new(0, 6, 0)
+			velocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+			velocity.Parent = clone
+			
+
+			clone.Touched:Connect(function(hit)
+				if not hit.Parent:FindFirstChild("Humanoid") then return end
+				local player = game.Players:GetPlayerFromCharacter(hit.Parent)
+				if Util.hasfullammo(player) then return end
+				
+				Util.setammo(player)
+				print("AmmoPackEvent destroyed")
+				clone:Destroy()
+			end)
+			task.delay(0.1, function()
+				velocity:Destroy()
+				clone.CanTouch = true
+			end)
+			
+			task.delay(30, function()
+				if clone then
+					clone:Destroy()
+				end
+			end)
+		else
+			local clone = AmmoPack:Clone()
+			clone.Parent = workspace
+			clone.Position = player.Character.Torso.Position
+			clone.Anchored = true
+			-- // lerp towards the target.Torso
+			local connection
+
+			connection = RunService.Heartbeat:Connect(function()
+				if not target.Torso then
+					connection:Disconnect()
+					clone:Destroy()
+					return
+				end
+
+				local torso = target:FindFirstChild("Torso")
+					or target:FindFirstChild("HumanoidRootPart")
+
+				if not torso then
+					connection:Disconnect()
+					clone:Destroy()
+					return
+				end
+
+				clone.Position = clone.Position:Lerp(torso.Position, 0.1)
+
+				if (clone.Position - torso.Position).Magnitude < 2 then
+					connection:Disconnect()
+
+					Util.setammo(game.Players:GetPlayerFromCharacter(target))
+					clone:Destroy()
+				end
+			end)
+			
+			
+		end
 	end)
 end
 
