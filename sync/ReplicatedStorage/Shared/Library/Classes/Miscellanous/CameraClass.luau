@@ -1,5 +1,3 @@
--- This file is a part of the ... library. ... is licensed under the terms of the MIT License. For more information, see LICENSE.md
-
 --!strict
 --!native
 --!optimize 2

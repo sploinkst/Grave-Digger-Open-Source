@@ -239,6 +239,12 @@ function RagdollModule.SetRagdoll(character: Model, value: boolean, applyPushOnR
 		if applyPushOnRagdoll then
 			applyPush(character, pushMagnitude)
 		end
+		
+		if character:FindFirstChildWhichIsA("BodyVelocity", true) then
+			task.delay(0.1, function()
+				character:FindFirstChildWhichIsA("BodyVelocity", true):Destroy()
+			end)
+		end
 
 	else -- Unragdoll the character
 		resetJoints(character, humanoid)
