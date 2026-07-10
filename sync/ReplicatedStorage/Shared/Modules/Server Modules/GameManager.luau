@@ -212,7 +212,6 @@ local function handle_reinforcement_wave(
 	infinite_respawns: BoolValue?
 )
 	while rein_count.Value > 0 do
-		task.wait(1)
 
 		if wave_timer.Value > 0 then
 			wave_timer.Value -= 1
@@ -220,7 +219,8 @@ local function handle_reinforcement_wave(
 		end
 
 		if not has_eligible_players(team) then continue end
-
+		
+		task.wait(3)
 		spawn_wave(team)
 
 		if not (infinite_respawns and infinite_respawns.Value == true) then
