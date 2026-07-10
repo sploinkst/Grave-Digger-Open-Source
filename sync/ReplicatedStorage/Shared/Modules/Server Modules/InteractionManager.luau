@@ -5,7 +5,7 @@ local ToolService		= require(script.Parent.ItemsService)
 
 local Interaction_Communication = replicatedstorage_service:WaitForChild("Shared"):WaitForChild('Library'):WaitForChild("Events"):WaitForChild("Interaction_Communication")
 local Interaction_Connection = Interaction_Communication.Interact_Connection
-
+local Util = require(replicatedstorage_service:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 
 function module.start_module()
 	print("[INTERACTIONMANAGER] Started!")
@@ -17,12 +17,7 @@ function module.start_module()
 		if object.Name == "ammocache" or object.Name == "obj_cache" then
 			print("[INTERACTIONMANAGER] Interacted with an ammocache")
 			
-			for _, tool in player.Backpack:GetChildren() do
-				if tool:FindFirstChild("Reserve_Ammo") then
-					tool.Reserve_Ammo.Value = tool.Max_Ammo.Value
-					print("[INTERACTIONMANAGER] Added ammo to " .. tool.Name)
-				end
-			end
+			Util.setammo(player)
 
 			-- // find first child that has a helmet within its name
 			for _, child in pairs(player.Character.CharacterData.Equipment:GetChildren()) do
