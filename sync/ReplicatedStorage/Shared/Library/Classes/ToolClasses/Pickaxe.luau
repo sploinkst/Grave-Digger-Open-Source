@@ -163,7 +163,7 @@ function Pickaxe:activate()
 	local camera = workspace.CurrentCamera
 	if not camera then return end
 
-	local origin = camera.CFrame.Position
+	local origin = character:FindFirstChild("Head").Position
 	local direction = camera.CFrame.LookVector * 10
 
 	local raycast = utilities_module.send_raycast(
