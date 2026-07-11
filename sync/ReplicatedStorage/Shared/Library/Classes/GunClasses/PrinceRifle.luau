@@ -267,7 +267,9 @@ function PrinceRifle:fire()
 	if self.Firing then return end
 	self.Firing = true
 
-	if self:_if_sprinting() or self.ForceBlockFire then
+	-- Added self:_if_jumping() so hip-firing (not just aiming) is blocked
+	-- while jumping, matching the existing aiming-block behavior in BaseTool.
+	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then
 		self.Firing = false
 		return
 	end
