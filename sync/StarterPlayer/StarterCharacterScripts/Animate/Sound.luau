@@ -32,8 +32,6 @@ module.Play_WalkSFX = function()
 	sound:Play()
 	sfx_replicant:FireServer(sound, script.Parent.Parent.HumanoidRootPart)
 	
-	print(sound.Name, "Is playing")
-	
 	sound.Ended:Connect(function()
 		sound:Destroy()
 	end)

@@ -1,7 +1,6 @@
 ----------------------
 -- @Praxitos
 -- Animation Handler
--- FIXED: Climbing/sprint animation conflict
 ----------------------
 
 -- // Services
@@ -138,7 +137,6 @@ local function load_animations()
 		
 		loaded_animations[animation.Name]:GetMarkerReachedSignal("Footstep"):Connect(function()
 			sound_module.Play_WalkSFX()
-			print("Footstep")
 		end)
 	end
 end
@@ -422,6 +420,15 @@ local function update_movement(speed: number)
 			play_overlay("Sprint_Lean", 0.15)
 
 			playing_sprint_arms = true
+			
+			character:GetAttributeChangedSignal("Sprint_Animation"):Connect(function()
+				clear_sprint_overlays()
+
+
+				if character:GetAttribute("Sprinting") then
+					play_overlay(sprint_arms_overlay(), 0.2, nil, 1)
+				end
+			end)	
 		end
 
 		return
