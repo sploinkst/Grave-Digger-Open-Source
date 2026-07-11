@@ -8,6 +8,8 @@ local Players = game:GetService("Players")
 local Accessories_Folder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Accessories")
 local Util = {}
 
+local HitMarker = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("UI"):WaitForChild('HitMarker')
+
 -- // Penetration profiles (used by CanPierceFunction inside setupFastCast)
 
 local Penetration_Profiles = {
@@ -442,6 +444,17 @@ function Util.setupFastCast(config: {
 		if trail then
 			castTrails[cast] = nil
 			fadeAndDestroy(trail)
+		end
+		
+		
+		if result.Instance and result.Instance.Parent:FindFirstChild("Humanoid") then
+			print("HIT")
+			local Clone = HitMarker:Clone()
+			Clone.Parent = game.Workspace
+			Clone.CFrame = CFrame.new(result.Position)
+			local tween = TweenService:Create(Clone.bb.img, TweenInfo.new(1), {ImageTransparency = 1})
+			tween:Play()
+			game.Debris:AddItem(Clone, 3)
 		end
 	end)
 
