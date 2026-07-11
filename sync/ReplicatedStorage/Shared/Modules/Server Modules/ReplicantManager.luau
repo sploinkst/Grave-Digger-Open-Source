@@ -274,7 +274,7 @@ function module.start_module()
 
 
 		-- Prevent self-damage
-		--if player.Team.Name == hitPlayer.Team.Name then return end
+		if player.Team.Name == hitPlayer.Team.Name then return end
 		if hitPlayer and hitPlayer == player then return end
 
 		-- Knockback

@@ -18,19 +18,26 @@ local function FetchClasses()
 		end
 	end
 end
+
+local function handleEquipment(character)
+	local value = character:GetAttribute("Equipment")
+	if value == "" then return end
+
+	local class = Classes[value]
+	if not class then print("Class not found for", value, Classes) return end
+
+	local object = class.new()
+	object:Start(character)
+	print("Started", object.className, "for", character.Name)
+end
 local function TrackEquipment(character)
 	if not character:GetAttribute("Equipment") then character:SetAttribute("Equipment", "") end
 	
+	if character:GetAttribute("Equipment") then
+		handleEquipment(character)
+	end
 	character:GetAttributeChangedSignal("Equipment"):Connect(function()
-		local value = character:GetAttribute("Equipment")
-		if value == "" then return end
-		
-		local class = Classes[value]
-		if not class then print("Class not found for", value, Classes) return end
-		
-		local object = class.new()
-		object:Start(character)
-		print("Started", object.className, "for", character.Name)
+		handleEquipment(character)
 	end)
 end
 

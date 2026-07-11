@@ -39,6 +39,8 @@ local points_folder = main_game.Points
 local spawn_anims = shared:WaitForChild("Assets"):WaitForChild("Animations"):WaitForChild("Character"):WaitForChild("Spawns")
 local core_maps   = shared.Assets.Maps["Core Maps"]
 
+local Sounds = shared:WaitForChild("Assets"):WaitForChild("Sounds"):WaitForChild("Game")
+local Tick = Sounds:WaitForChild("ObjectiveTick")
 -- Points billboard
 local ui_folder        = shared.Assets.UI
 local points_billboard = ui_folder.Points_Billboard
@@ -49,7 +51,15 @@ local fastcast_module         = require(shared.Library.Externals.FastCast)
 
 -- State
 local time_tick = false
+local round_active = false
+local intermission_time = 20
 
+local empire_team = game.Teams["Golden Empire"]
+local nation_team = game.Teams["Royal Nation"]
+
+-- Constants
+local SERVER_READY_TIMEOUT   = 15  -- seconds to wait for the client before giving up / forcing items
+local ITEM_GIVE_DELAY        = 1.5 -- seconds after ServerReady before items are handed out
 
 -- Time
 
@@ -76,6 +86,7 @@ end
 
 
 -- Spawning
+
 
 local function get_spawn_animation(spawn_name: string): Animation?
 	local folder = spawn_anims:FindFirstChild(spawn_name)
@@ -114,6 +125,158 @@ local function has_eligible_players(team: Team): boolean
 	return false
 end
 
+-- Hands the player their loadout. Pulled into its own function so every
+-- spawn path (wave spawns, intermission spawns, late joiners) gives items
+-- the exact same way instead of three slightly different copies drifting
+-- out of sync with each other.
+local function give_starting_equipment(player: Player, character: Model)
+	if not player or not player.Parent then return end
+	if not character or character.Parent == nil then return end
+
+	local player_data = player:FindFirstChild("PlayerData")
+	if not player_data then
+		warn("[GameManager] No PlayerData found for", player.Name, "- cannot give items.")
+		return
+	end
+
+	local player_data_folder = player_data:WaitForChild("PlayerData", 5)
+	if not player_data_folder then
+		warn("[GameManager] PlayerData.PlayerData never appeared for", player.Name, "- cannot give items.")
+		return
+	end
+
+	local equipment = player_data_folder:WaitForChild("Equipment", 5)
+	if not equipment then
+		warn("[GameManager] No Equipment folder for", player.Name, "- cannot give items.")
+		return
+	end
+
+	local primary_tool   = equipment:FindFirstChild("Primary")
+	local secondary_tool = equipment:FindFirstChild("Secondary")
+
+	-- Bail out early and loudly instead of silently handing out nothing.
+	if not primary_tool or primary_tool.Value == "" then
+		warn("[GameManager]", player.Name, "has no Primary tool set — skipping.")
+	else
+		ToolService.give_item(player, primary_tool.Value)
+	end
+
+	if not secondary_tool or secondary_tool.Value == "" then
+		warn("[GameManager]", player.Name, "has no Secondary tool set — skipping.")
+	else
+		ToolService.give_item(player, secondary_tool.Value)
+	end
+
+	ToolService.give_item(player, "Compass")
+	ToolService.give_item(player, "Medkit")
+	ToolService.give_item(player, "Pickaxe")
+
+	if character and character.Parent then
+		character:SetAttribute("Equipment", "AmmoPack")
+	end
+
+	print("[GameManager] Gave starting equipment to", player.Name)
+end
+
+-- Waits for the client to signal it's ready, then hands out items after a
+-- short delay. If the client never signals ready within the timeout, items
+-- are still given (with a warning) rather than silently skipped — a timeout
+-- used to mean the player got nothing and no one noticed.
+local function equip_when_ready(player: Player, character: Model)
+	task.spawn(function()
+		local deadline = tick() + SERVER_READY_TIMEOUT
+
+		while not character:GetAttribute("ServerReady") do
+			if not player.Character or player.Character ~= character then
+				return -- player respawned/left before ever becoming ready
+			end
+			if tick() > deadline then
+				warn("[GameManager] Timed out waiting for ServerReady on", player.Name, "- giving items anyway.")
+				break
+			end
+			task.wait(0.1)
+		end
+
+		if not player.Character or player.Character ~= character then
+			return
+		end
+
+		task.wait(ITEM_GIVE_DELAY)
+
+		if not player.Character or player.Character ~= character then
+			return
+		end
+
+		give_starting_equipment(player, character)
+	end)
+end
+
+-- Single shared entry point for spawning a player into a spawn room:
+-- loads the character, places it in an empty slot, plays the spawn
+-- animation, wires up slot-release/animation-stop on movement or death,
+-- and queues up item giving. Used by wave spawns, intermission spawns,
+-- and players who join mid-intermission.
+local function spawn_and_equip_player(player: Player, spawn_room: Model)
+	if not spawn_room then
+		warn("[GameManager] spawn_and_equip_player called with no spawn_room for", player.Name)
+		return
+	end
+
+	player:SetAttribute("Active", true)
+	player:LoadCharacterAsync()
+
+	local character = player.Character or player.CharacterAdded:Wait()
+	local slot       = find_empty_spawn(spawn_room)
+
+	slot:SetAttribute("Occupied", true)
+	character:PivotTo(slot.CFrame)
+
+	local anim_track: AnimationTrack?
+	local animation = get_spawn_animation(slot.Name)
+
+	if animation then
+		local animator = character:WaitForChild("Humanoid"):FindFirstChildOfClass("Animator")
+		if animator then
+			anim_track = animator:LoadAnimation(animation)
+			anim_track:Play()
+		end
+	end
+
+	character:SetAttribute("DontRotate", true)
+
+	local humanoid: Humanoid = character:WaitForChild("Humanoid")
+
+	task.spawn(function()
+		while character.Parent and humanoid.Health > 0 do
+			if humanoid.MoveDirection.Magnitude > 0 then
+				slot:SetAttribute("Occupied", nil)
+
+				if anim_track then
+					anim_track.Looped = false
+					anim_track:Stop()
+				end
+
+				character:SetAttribute("DontRotate", nil)
+				break
+			end
+
+			task.wait()
+		end
+	end)
+
+	humanoid.Died:Connect(function()
+		slot:SetAttribute("Occupied", nil)
+
+		if anim_track then
+			anim_track:Stop()
+		end
+	end)
+
+	equip_when_ready(player, character)
+
+	return character
+end
+
 local function spawn_wave(team: Team)
 	print("[GameManager] Spawning reinforcements for:", team.Name)
 
@@ -123,85 +286,7 @@ local function spawn_wave(team: Team)
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Team ~= team or player:GetAttribute("Active") then continue end
 
-		player:SetAttribute("Active", true)
-		player:LoadCharacterAsync()
-
-		local character = player.Character or player.CharacterAdded:Wait()
-		local slot      = find_empty_spawn(spawn_room)
-
-		slot:SetAttribute("Occupied", true)
-		character:PivotTo(slot.CFrame)
-
-		local anim_track: AnimationTrack?
-		local animation = get_spawn_animation(slot.Name)
-
-		if animation then
-			local animator = character:WaitForChild("Humanoid"):FindFirstChildOfClass("Animator")
-			if animator then
-				anim_track = animator:LoadAnimation(animation)
-				anim_track:Play()
-			end
-		end
-		
-		character:SetAttribute("DontRotate", true)
-
-		local humanoid: Humanoid = character:WaitForChild("Humanoid")
-		task.spawn(function()
-			while character.Parent and humanoid.Health > 0 do
-				if humanoid.MoveDirection.Magnitude > 0 then
-
-					slot:SetAttribute("Occupied", nil)
-
-					if anim_track then
-						anim_track.Looped = false
-						anim_track:Stop()
-					end
-
-					character:SetAttribute("DontRotate", nil)
-					break
-				end
-
-				task.wait()
-			end
-		end)
-
-		humanoid.Died:Connect(function()
-			slot:SetAttribute("Occupied", nil)
-
-			if anim_track then
-				anim_track:Stop()
-			end
-		end)
-
-		task.spawn(function()
-			local deadline = tick() + 15
-			while not character:GetAttribute("ServerReady") do
-				if tick() > deadline then
-					warn("[GameManager] Timed out waiting for ServerReady on", player.Name)
-					return
-				end
-				if not player.Character or player.Character ~= character then
-					return
-				end
-				task.wait(0.1)
-			end
-
-			if not player.Character or player.Character ~= character then
-				return
-			end
-
-			task.delay(1.5, function()
-				local equipment    = player.PlayerData.PlayerData:WaitForChild("Equipment")
-				local primary_tool = equipment.Primary
-				local secondary_tool = equipment.Secondary
-
-				ToolService.give_item(player, primary_tool.Value)
-				ToolService.give_item(player, secondary_tool.Value)
-				ToolService.give_item(player, "Compass")
-				ToolService.give_item(player, "Medkit")
-				ToolService.give_item(player, "Pickaxe")
-			end)
-		end)
+		spawn_and_equip_player(player, spawn_room)
 	end
 end
 
@@ -211,15 +296,27 @@ local function handle_reinforcement_wave(
 	team: Team,
 	infinite_respawns: BoolValue?
 )
-	while rein_count.Value > 0 do
+	while true do
+		if not round_active then
+			task.wait(1)
+			continue
+		end
+
+		if rein_count.Value <= 0 then
+			break
+		end
 
 		if wave_timer.Value > 0 then
+			task.wait(1)
 			wave_timer.Value -= 1
 			continue
 		end
 
-		if not has_eligible_players(team) then continue end
-		
+		if not has_eligible_players(team) then
+			task.wait(1)
+			continue
+		end
+
 		task.wait(3)
 		spawn_wave(team)
 
@@ -421,6 +518,73 @@ local function setup_capture_point(point: Instance, model: Model)
 	end)
 end
 
+local function set_basecolours(spawnroom, value)
+	for _, child:Part in pairs(spawnroom.Walls:GetChildren()) do
+		if child.Name ~= "basecolour" then continue end
+
+		child.Transparency = value == true and 0 or 1
+		child.CanCollide = value
+	end
+end
+
+local function get_spawn_room_for(player: Player): Model?
+	if player.Team == game.Teams["Golden Empire"] then
+		return empire_spawn
+	elseif player.Team == game.Teams["Royal Nation"] then
+		return nation_spawn
+	end
+	return nil
+end
+
+local function start_intermission()
+	print("[GameManager] Starting intermission.")
+
+	set_basecolours(empire_spawn, true)
+	set_basecolours(nation_spawn, true)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		local spawn_room = get_spawn_room_for(player)
+		if spawn_room then
+			spawn_and_equip_player(player, spawn_room)
+		end
+	end
+
+	-- Players joining mid-intermission now go through the exact same
+	-- spawn_and_equip_player path — previously this branch spawned and
+	-- animated the player but never gave them any items at all.
+	local player_added_connection
+	player_added_connection = Players.PlayerAdded:Connect(function(player)
+		local spawn_room = get_spawn_room_for(player)
+		if spawn_room then
+			spawn_and_equip_player(player, spawn_room)
+		end
+	end)
+
+	-- Countdown
+	for i = intermission_time,1,-1 do
+		print("[GameManager] Round starts in:",i)
+		if i <= 3 and i ~= 0 then
+			local TickClone = Tick:Clone()
+			TickClone.Parent = game:GetService("SoundService")
+			TickClone:Play()
+			TickClone.Stopped:Connect(function()
+				TickClone:Destroy()
+			end)
+		elseif i == 0 then
+			-- // fire event
+		end
+		task.wait(1)
+	end
+
+	player_added_connection:Disconnect()
+
+	print("[GameManager] Intermission complete.")
+
+	round_active = true
+
+	set_basecolours(empire_spawn, false)
+	set_basecolours(nation_spawn, false)
+end
 
 -- Module entry
 
@@ -483,28 +647,52 @@ function module.start_module()
 		end)
 	end
 
+	task.spawn(start_intermission)
+
 	time_tick = true
 	task.spawn(begin_time)
 
-	local empire_team = game.Teams["Golden Empire"]
-	local nation_team = game.Teams["Royal Nation"]
+	task.spawn(handle_reinforcement_wave, 
+		empire_rein_count,
+		empire_rein_wave_timer,
+		empire_team,
+		empire_infinite_respawns
+	)
 
-	-- Pass the infinite_respawns flag into each wave handler so it can
-	-- skip ticket consumption and respect quick respawns on every reset
-	task.spawn(handle_reinforcement_wave, empire_rein_count, empire_rein_wave_timer, empire_team, empire_infinite_respawns)
-	task.spawn(handle_reinforcement_wave, nation_rein_count, nation_rein_wave_timer, nation_team, nation_infinite_respawns)
+	task.spawn(handle_reinforcement_wave,
+		nation_rein_count,
+		nation_rein_wave_timer,
+		nation_team,
+		nation_infinite_respawns
+	)
 
-	-- Assign a random map to each active capture point
-	local available_points = points_folder:GetChildren()
+	-- Assign a random map to each active capture point.
+	-- Build a pool of empty, unassigned points up front and pop from it,
+	-- so we can never loop forever looking for a valid point.
+	local all_points  = points_folder:GetChildren()
+	local empty_points: { Instance } = {}
+
+	for _, point in ipairs(all_points) do
+		if #point:GetChildren() == 0 then
+			table.insert(empty_points, point)
+		end
+	end
+
 	local active_points: { Instance } = {}
 
-	for i = 1, capture_points_count.Value do
+	local points_to_assign = math.min(capture_points_count.Value, #empty_points)
+	if points_to_assign < capture_points_count.Value then
+		warn(string.format(
+			"[GameManager] Only %d empty capture point(s) available, but Capture_Points_Count wants %d.",
+			#empty_points, capture_points_count.Value
+			))
+	end
+
+	for i = 1, points_to_assign do
 		local map = select_random_map()
 
-		local point
-		repeat
-			point = available_points[math.random(1, #available_points)]
-		until #point:GetChildren() == 0
+		local index = math.random(1, #empty_points)
+		local point = table.remove(empty_points, index)
 
 		place_map(map, point)
 		carve_air_block(map)
@@ -518,6 +706,7 @@ function module.start_module()
 	-- Infinite-ticket sides are immune to draining.
 	task.spawn(function()
 		local n = #active_points
+		if n == 0 then return end
 
 		while true do
 			task.wait(3)
@@ -546,6 +735,10 @@ function module.start_module()
 				else
 					local total_drain = 3 * empire_owned / n
 					nation_rein_count.Value = math.max(0, math.floor(nation_rein_count.Value - total_drain))
+					print(string.format(
+						"[GameManager] Empire owns %d/%d points — draining %.2f tickets from Nation.",
+						empire_owned, n, total_drain
+						))
 				end
 			end
 
@@ -554,12 +747,11 @@ function module.start_module()
 				if empire_infinite_respawns and empire_infinite_respawns.Value == true then
 					print("[GameManager] Empire infinite tickets — drain skipped.")
 				else
-					local drain_per_point = (3 * nation_owned) / n
-					local total_drain     = drain_per_point * nation_owned
-					empire_rein_count.Value = math.max(0, empire_rein_count.Value - total_drain)
+					local total_drain = 3 * nation_owned / n
+					empire_rein_count.Value = math.max(0, math.floor(empire_rein_count.Value - total_drain))
 					print(string.format(
-						"[GameManager] Nation owns %d/%d points — draining %.2f tickets from Empire (%.2f per point).",
-						nation_owned, n, total_drain, drain_per_point
+						"[GameManager] Nation owns %d/%d points — draining %.2f tickets from Empire.",
+						nation_owned, n, total_drain
 						))
 				end
 			end
