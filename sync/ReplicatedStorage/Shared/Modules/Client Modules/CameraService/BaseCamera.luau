@@ -63,7 +63,7 @@ local HOLD_BREATH_FADE_SPEED     = 0.5
 local HOLD_BREATHE_RELEASE_SPEED = 0.2
 local RECOIL_YANK_STRENGTH       = 16
 
-local RECOIL_SPRING_SPEED   = 12
+local RECOIL_SNAPPINESS     = 100
 local SHOULDER_SWITCH_SPEED = 6
 local TRANSITION_SPEED      = 0.5
 
@@ -124,12 +124,11 @@ function BaseCamera.new(cameraInfo)
 	self.MaxTurnRate = math.rad(700)
 	self.MaxTurnRate_Transitioning = math.rad(1000)
 
-	-- Horizontal recoil (yaw) is a springy punch that snaps and decays.
-	-- Vertical recoil (pitch) is applied permanently and directly to
-	-- CameraPitch in ApplyRecoil, so it never auto-decays back down —
-	-- the player has to manually pull it back with the mouse.
-	self.RecoilOffsetYaw   = 0
-	self.RecoilSpringSpeed = RECOIL_SPRING_SPEED
+	self.RecoilPitch       = 0
+	self.RecoilYaw         = 0
+	self.RecoilTargetPitch = 0
+	self.RecoilTargetYaw   = 0
+	self.RecoilSnappiness  = RECOIL_SNAPPINESS
 
 	self.ShoulderAlpha       = 1
 	self.ShoulderTarget      = 1
@@ -207,15 +206,8 @@ function BaseCamera:_getHumanoid()
 	return character and character:FindFirstChildOfClass("Humanoid")
 end
 
--- Springy punch: horizontal recoil offset + positional kick decay together
--- on the same alpha every frame, so they never visually separate.
--- Vertical (pitch) recoil is NOT handled here — it's baked permanently
--- into CameraPitch directly inside ApplyRecoil.
-function BaseCamera:_updateRecoilAndKick(dt: number)
-	local alpha = math.clamp(self.RecoilSpringSpeed * dt, 0, 1)
-
-	self.RecoilOffsetYaw += (0 - self.RecoilOffsetYaw) * alpha
-	self.CameraKick      += (0 - self.CameraKick)       * alpha
+function BaseCamera:_updateCameraKick(dt)
+	self.CameraKick += (0 - self.CameraKick) * math.clamp(12 * dt, 0, 1)
 end
 
 function BaseCamera:_decayCameraOffsetZ(dt: number)
@@ -246,6 +238,24 @@ function BaseCamera:_applyTransition(root: BasePart, targetCFrame: CFrame, dt: n
 	else
 		Camera.CFrame = targetCFrame
 	end
+end
+
+function BaseCamera:_updateRecoil(dt: number)
+	local alpha = math.clamp(self.RecoilSnappiness * dt, 0, 1)
+
+	local oldPitch = self.RecoilPitch
+	local oldYaw   = self.RecoilYaw
+
+	self.RecoilPitch += (self.RecoilTargetPitch - self.RecoilPitch) * alpha
+	self.RecoilYaw   += (self.RecoilTargetYaw   - self.RecoilYaw)   * alpha
+
+	self.CameraPitch += self.RecoilPitch - oldPitch
+	self.CameraYaw   += self.RecoilYaw   - oldYaw
+
+	self.RecoilPitch       = 0
+	self.RecoilYaw         = 0
+	self.RecoilTargetPitch = 0
+	self.RecoilTargetYaw   = 0
 end
 
 function BaseCamera:_updateHoldBreath()
@@ -623,7 +633,7 @@ local function handle_object(part, isFirstPerson)
 				break
 			end
 		end
-
+		
 	elseif grandparent and grandparent.Name == "Equipment" then
 		local isBodyPart =
 			parent:FindFirstChild("Head")
@@ -639,7 +649,7 @@ local function handle_object(part, isFirstPerson)
 				end
 			end
 		end
-
+		
 	elseif grandparent2 and grandparent2.Name == "Equipment" then
 		local isBodyPart =
 			grandparent:FindFirstChild("Head")
@@ -742,7 +752,7 @@ function BaseCamera:HeadFollowCamera_Setup()
 
 	self.HeadConnection = RunService.RenderStepped:Connect(function(dt)
 		if not character.Parent or not self.HeadFollowEnabled then return end
-		local targetPitch = math.clamp(self.CameraPitch, -NECK_PITCH_CLAMP, NECK_PITCH_CLAMP)
+		local targetPitch = math.clamp(self.CameraPitch + self.RecoilPitch, -NECK_PITCH_CLAMP, NECK_PITCH_CLAMP)
 		local alpha = math.clamp(12 * dt, 0, 1)
 		currentPitch += (targetPitch - currentPitch) * alpha
 		neck.C0 = baseC0 * CFrame.Angles(-currentPitch, 0, 0)
@@ -843,8 +853,8 @@ function BaseCamera:CustomCamera()
 			self.CameraYaw -= delta.X
 			self.CameraPitch = math.clamp(
 				self.CameraPitch - delta.Y,
-				PITCH_MIN,
-				PITCH_MAX
+				PITCH_MIN - self.RecoilPitch,
+				PITCH_MAX - self.RecoilPitch
 			)
 		end
 
@@ -868,7 +878,7 @@ function BaseCamera:CustomCamera()
 				finalZoom = currentZoom + 0.1
 			else
 				finalZoom = math.max(rayResult.Distance - COLLISION_MARGIN, MIN_ZOOM) end
-		end
+			end
 
 		local targetCFrame = CFrame.new(cameraFocus - (cameraDir * finalZoom)) * rotation
 		self:_applyTransition(root, targetCFrame, dt)
@@ -890,8 +900,11 @@ function BaseCamera:FirstPerson()
 	local character, root, head, torso, humanoid = self:_getCharacterParts()
 	if not root or not character then return end
 
-	self.RecoilOffsetYaw = 0
-	self.CameraKick      = 0
+	self.RecoilPitch       = 0
+	self.RecoilYaw         = 0
+	self.RecoilTargetPitch = 0
+	self.RecoilTargetYaw   = 0
+	self.CameraKick        = 0
 
 	if humanoid then
 		local co = humanoid.CameraOffset
@@ -911,8 +924,9 @@ function BaseCamera:FirstPerson()
 	self.transparency_connection = first_person_transparency(character, true)
 
 	self:_bind(function(dt)
-		self:_updateRecoilAndKick(dt)
+		self:_updateRecoil(dt)
 		self:_updateHoldBreath()
+		self:_updateCameraKick(dt)
 		self:_decayCameraOffsetZ(dt)
 
 		local character, root, head, torso, humanoid = self:_getCharacterParts()
@@ -935,7 +949,7 @@ function BaseCamera:FirstPerson()
 		local cameraPosition = root.Position + Vector3.new(0, 1.5, 0)
 
 		local rotation =
-			CFrame.Angles(0, self.CameraYaw + self.RecoilOffsetYaw, 0)
+			CFrame.Angles(0, self.CameraYaw, 0)
 			* CFrame.Angles(self.CameraPitch, 0, 0)
 
 		local kickOffset = -rotation.LookVector * self.CameraKick
@@ -955,8 +969,10 @@ function BaseCamera:OverTheShoulder()
 
 	self.IsFirstPerson = false
 
-	self.RecoilOffsetYaw = 0
-	self.CameraKick      = 0
+	self.RecoilPitch       = 0
+	self.RecoilYaw         = 0
+	self.RecoilTargetPitch = 0
+	self.RecoilTargetYaw   = 0
 
 	local hum = self:_getHumanoid()
 	if hum then
@@ -994,8 +1010,9 @@ function BaseCamera:OverTheShoulder()
 	self:_setupSprintCheck()
 
 	self:_bind(function(dt)
-		self:_updateRecoilAndKick(dt)
+		self:_updateRecoil(dt)
 		self:_updateHoldBreath()
+		self:_updateCameraKick(dt)
 		self:_decayCameraOffsetZ(dt)
 
 		local character, root, head, torso, humanoid = self:_getCharacterParts()
@@ -1011,7 +1028,7 @@ function BaseCamera:OverTheShoulder()
 		)
 
 		local rotation =
-			CFrame.Angles(0, self.CameraYaw + self.RecoilOffsetYaw, 0)
+			CFrame.Angles(0, self.CameraYaw, 0)
 			* CFrame.Angles(self.CameraPitch, 0, 0)
 
 		self.ShoulderAlpha = self:_lerp(
@@ -1157,8 +1174,10 @@ function BaseCamera:Start()
 		self.CameraYaw         = yawFromLook(root.CFrame.LookVector)
 		self.CharacterYaw      = self.CameraYaw
 		self.CameraPitch       = 0
-		self.RecoilOffsetYaw   = 0
-		self.CameraKick        = 0
+		self.RecoilPitch       = 0
+		self.RecoilYaw         = 0
+		self.RecoilTargetPitch = 0
+		self.RecoilTargetYaw   = 0
 		self.IsTransitioning   = false
 		self.TransitionElapsed = 0
 		self.holding_breath    = false
@@ -1278,42 +1297,47 @@ function BaseCamera:Cut()
 	self:End()
 end
 
-
 function BaseCamera:ApplyRecoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?)
 	steps = steps or 6
 
-	-- Original game applied one kick immediately, then repeated it N times.
-	local totalSteps = steps + 1
-	local stepTime = 0.015
+	local totalSteps   = steps + 1
+	local stepInterval = 0.015
+	local elapsed      = 0
+	local stepsApplied = 0
 
-	-- Roll animation
 	if doRoll then
-		task.spawn(function()
-			for _ = 1, 4 do
-				Camera.CFrame *= CFrame.Angles(
-					0,
-					0,
-					math.rad(2)
-				)
-
-				task.wait(stepTime)
+		local rollSteps   = 0
+		local rollElapsed = 0
+		local rollConn
+		rollConn = RunService.RenderStepped:Connect(function(dt)
+			if rollSteps >= 4 then rollConn:Disconnect(); return end
+			rollElapsed += dt
+			local due = math.floor(rollElapsed / stepInterval)
+			for _ = 1, math.min(due - rollSteps, 4 - rollSteps) do
+				Camera.CFrame *= CFrame.Angles(0, 0, math.rad(2))
+				rollSteps += 1
 			end
 		end)
 	end
 
-	task.spawn(function()
-		for _ = 1, totalSteps do
-			-- Vertical recoil is permanent.
-			self.CameraPitch = math.clamp(
-				self.CameraPitch + vertical,
-				PITCH_MIN,
-				PITCH_MAX
-			)
+	local conn
+	conn = RunService.RenderStepped:Connect(function(dt)
+		if stepsApplied >= totalSteps then conn:Disconnect(); return end
 
-			self.CameraYaw += horizontal
-			self.CameraKick += 0.02
+		elapsed += dt
+		local due = math.floor(elapsed / stepInterval)
 
-			task.wait(stepTime)
+		for _ = 1, math.min(due - stepsApplied, totalSteps - stepsApplied) do
+			if self.holding_breath then
+				self.CameraPitch += vertical   * 0.5
+				self.CameraYaw   += horizontal * 0.5
+				self.CameraKick  += 0.15
+			else
+				self.CameraPitch += vertical
+				self.CameraYaw   += horizontal
+				self.CameraKick  += 0.15
+			end
+			stepsApplied += 1
 		end
 	end)
 end

@@ -259,10 +259,10 @@ function BaseTool:init_short_mechanic()
 			self.ForceBlockFire = false
 
 			if self._shortTrack and self._shortTrack.IsPlaying then
-				local w = self._shortTrack.WeightCurrent - 0.5
+				local w = self._shortTrack.WeightCurrent - 0.05
 
 				if w <= 0 then
-					self._shortTrack:Stop(0.8)
+					self._shortTrack:Stop(0.1)
 					self._shortTrack = nil
 				else
 					self._shortTrack:AdjustWeight(w)
@@ -329,10 +329,12 @@ function BaseTool:init_short_mechanic()
 
 			self.IsShorted = true
 
-
-			if not self._shortTrack or not self._shortTrack.IsPlaying then
+			if not self._shortTrack then
 				self._shortTrack = self.RegisteredAnimations.Short
-				self._shortTrack:Play(0.1, alpha, 0.001)
+
+				if not self._shortTrack.IsPlaying then
+					self._shortTrack:Play(0.1, alpha, 0.001)
+				end
 			end
 
 			self._shortTrack:AdjustWeight(alpha)
@@ -341,7 +343,7 @@ function BaseTool:init_short_mechanic()
 			self.IsShorted = false
 
 			if self._shortTrack and self._shortTrack.IsPlaying then
-				local w = self._shortTrack.WeightCurrent - 0.15
+				local w = self._shortTrack.WeightCurrent - 0.05
 
 				if w <= 0 then
 					self._shortTrack:Stop(0.1)
@@ -664,13 +666,6 @@ function BaseTool:_if_sprinting(): boolean
 	return char ~= nil and char:GetAttribute("Sprinting") == true
 end
 
--- Uses the same "Jumping" player attribute the existing Short/aim jump logic
--- already relies on (see aim()'s _jumpAimConnection below), rather than
--- Humanoid state, to stay consistent with the rest of this codebase.
-function BaseTool:_if_jumping(): boolean
-	return LOCAL_PLAYER:GetAttribute("Jumping") == true
-end
-
 -- // Animation helpers
 
 function BaseTool:_stopAllExcept(exception: AnimationTrack?)
@@ -678,13 +673,6 @@ function BaseTool:_stopAllExcept(exception: AnimationTrack?)
 	for _, track in pairs(self.RegisteredAnimations) do
 		if track ~= exception and track:IsA("AnimationTrack") and track.IsPlaying then
 			track:Stop(CUT)
-
-			-- FIX: if this stops the Short track out from under init_short_mechanic's
-			-- render loop, clear the reference immediately so the loop knows to
-			-- replay it next time it's needed, instead of assuming it's still playing.
-			if track == self._shortTrack then
-				self._shortTrack = nil
-			end
 		end
 	end
 end
@@ -939,12 +927,6 @@ function BaseTool:aim()
 	if not self.RegisteredAnimations.Aim then return end
 	if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
 	if self.Equipping or self.IsShorted then return end
-
-	-- NEW: don't let aiming start while jumping. If a jump happens mid-aim,
-	-- the existing _jumpAimConnection below already handles that case
-	-- (forces the Short animation + ForceBlockFire) -- this just stops you
-	-- from starting an aim in the first place while already jumping.
-	if self:_if_jumping() then return end
 
 	self._smoothedYaw = nil
 	self._lastYaw = nil
@@ -1381,7 +1363,7 @@ end
 -- // Projectile firing
 
 function BaseTool:_fireProjectile(bulletSpeed, penetrationLevel, damage, knockbackForce): boolean
-	if self:_if_sprinting() or self:_if_jumping() then return false end
+	if self:_if_sprinting() then return false end
 
 	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName or "Muzzle")
 	if not muzzle then warn(self.className .. ": Muzzle not found") return false end

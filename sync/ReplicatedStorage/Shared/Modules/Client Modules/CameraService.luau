@@ -160,10 +160,10 @@ function module.end_camera_by_name(camera_name: string, abrupt: boolean)
 	end
 end
 
-function module.apply_recoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?)
+function module.apply_recoil(vertical, horizontal)
 	local current_camera = get_top_camera()
 	if current_camera then
-		current_camera:ApplyRecoil(vertical, horizontal, steps, doRoll)
+		current_camera:ApplyRecoil(vertical, horizontal)
 	end
 end
 
