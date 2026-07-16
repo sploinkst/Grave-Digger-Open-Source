@@ -164,7 +164,7 @@ function Pickaxe:activate()
 	if not camera then return end
 
 	local origin = character:FindFirstChild("Head").Position
-	local direction = camera.CFrame.LookVector * 10
+	local direction = camera.CFrame.LookVector * 5
 
 	local raycast = utilities_module.send_raycast(
 		origin,
@@ -190,13 +190,17 @@ function Pickaxe:activate()
 
 	if raycast.Instance == workspace.Terrain and raycast.Material == Enum.Material.Rock then
 		print("Hit rock")
-		delete_terrain:FireServer(raycast.Position, self.mining_power)
+
+		local targetPosition = raycast.Position + direction.Unit * 6
+		delete_terrain:FireServer(targetPosition, self.mining_power)
+
 		local small_rocks_clone = small_rocks:Clone()
 		small_rocks_clone.Position = raycast.Position
 		small_rocks_clone.Parent = workspace
 
 		utilities_module.emit_part(small_rocks_clone)
 		small_rocks_clone:Destroy()
+
 		print("sent rock")
 	end
 end

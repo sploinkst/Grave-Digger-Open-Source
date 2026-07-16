@@ -1,7 +1,7 @@
 local module = {}
 
-local TorsoXRotation = 8
-local TorsoZRotation = 6
+local TorsoXRotation = 2
+local TorsoZRotation = 3
 local LegRotation = 3.5
 
 -- Smoothing settings (higher = smoother but slower response)

@@ -76,7 +76,8 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 
 
 				local character = player.Character
-
+				
+				clone:PivotTo(character:GetPivot())
 				-- Resolve Part0 safely (supports fallback)
 				local part0 = character:FindFirstChild(object.motor_6d_data.Part0)
 					or character:FindFirstChild(object.motor_6d_data.Parent)
@@ -104,7 +105,16 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 			-- // has a round it wants to be weld too
 			if object.Round then
 				local object_bullet_clone = object.Round:Clone()
-				object_bullet_clone.Parent = player.Character["Right Arm"]
+				
+				local roundtargetpart
+				
+				if object.Round_Target_Part then
+					roundtargetpart = player.Character:FindFirstChild(object.Round_Target_Part)
+				else
+					roundtargetpart = player.Character["Right Arm"]
+				end
+				
+				object_bullet_clone.Parent = roundtargetpart
 				
 				local motor6d = Instance.new("Motor6D")
 				
@@ -121,6 +131,10 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 				
 				motor6d.C1 = CFrame.new(0, 0, 0)
 				motor6d.Name = "Round_Motor6d"
+				
+				if object.RoundMotor_6d_Data then
+					motor6d.C0 = object.RoundMotor_6d_Data.C0
+				end
 			end
 		end)
 		
@@ -132,26 +146,21 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 			end
 			
 			if object.Round then
-				if object.Round_Target_Part then
-					if not player.Character:FindFirstChild(object.Round_Target_Part) then return end
-					local round = player.Character:FindFirstChild(object.Round_Target_Part):FindFirstChild(object.Round.Name)
-					local roundm6 = player.Character:FindFirstChild(object.Round_Target_Part):FindFirstChild("Round_Motor6d")
-					
-					if round then
-						round:Destroy()
-					end
-					
-					if roundm6 then
-						roundm6:Destroy()
-					end
-				else
-					player.Character["Right Arm"]:FindFirstChild(object.Round.Name):Destroy()
-					player.Character["Right Arm"]:FindFirstChild("Round_Motor6d"):Destroy()
+				local objectround = player.Character:FindFirstChild(object.Round.Name, true)
+				local Motor6d = player.Character:FindFirstChild("Round_Motor6d", true)
+				
+				if objectround then
+					objectround:Destroy()
+				end
+				if Motor6d then 
+					Motor6d:Destroy()
 				end
 			end
 			
 			local ToolMotor = player.Character:FindFirstChild("ToolMotor", true)
-			ToolMotor:Destroy()
+			if ToolMotor then
+				ToolMotor:Destroy()
+			end
 		end)
 	end
 	

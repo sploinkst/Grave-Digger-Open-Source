@@ -8,6 +8,8 @@ local Players = game:GetService("Players")
 local Accessories_Folder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Accessories")
 local Util = {}
 
+local HitMarker = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("UI"):WaitForChild('HitMarker')
+
 -- // Penetration profiles (used by CanPierceFunction inside setupFastCast)
 
 local Penetration_Profiles = {
@@ -192,8 +194,6 @@ function Util.register_animations(player: Player, animations_table: table)
 	local Animations = {}
 
 	for name, anim in pairs(animations_table) do
-		print("Checking", anim.Name, "has value of:", anim.AnimationId)
-
 		if typeof(anim) ~= "Instance" or not anim:IsA("Animation") then
 			warn("Invalid animation for key:", name, "| Expected Animation, got:", typeof(anim))
 			continue
@@ -280,6 +280,14 @@ function Util.setupFastCast(config: {
 
 		if hit.Transparency >= 1 then
 			return not hit:GetAttribute("Unpiercable")
+		end
+		
+		if not hit.CanCollide then
+			return not hit:GetAttribute("Unpiercable")
+		end
+
+		if hit.Name == "Helmet" and hit.Parent.Name == "Debris" then
+			return true
 		end
 
 		local profile = Penetration_Profiles[config.penetrationLevel or 1]
@@ -443,6 +451,17 @@ function Util.setupFastCast(config: {
 			castTrails[cast] = nil
 			fadeAndDestroy(trail)
 		end
+		
+		
+		if result.Instance and result.Instance.Parent:FindFirstChild("Humanoid") then
+			print("HIT")
+			local Clone = HitMarker:Clone()
+			Clone.Parent = game.Workspace
+			Clone.CFrame = CFrame.new(result.Position)
+			local tween = TweenService:Create(Clone.bb.img, TweenInfo.new(1), {ImageTransparency = 1})
+			tween:Play()
+			game.Debris:AddItem(Clone, 3)
+		end
 	end)
 
 	caster.CastTerminating:Connect(function(cast)
@@ -461,20 +480,25 @@ end
 local Camera_Service = require(game.ReplicatedStorage.Shared.Modules["Client Modules"].CameraService)
 
 -- Recoil
-function Util.applyRecoil(recoil: number, recoilCount: number, spread: number, doRoll: boolean?)
-	local vertical   = recoil / 10
-	local horizontal = math.random(-spread * 10, spread * 10) / 100
+function Util.applyRecoil(
+	recoil: number,
+	recoilCount: number,
+	spread: number,
+	doRoll: boolean?,
+	scale: number
+)
+	local vertical = math.rad(recoil / 10)
+	local horizontal = math.rad(
+		math.random(-spread * 10, spread * 10) / 100
+	)
 
-	Camera_Service.apply_recoil(math.rad(vertical), math.rad(horizontal), recoilCount)
-
-	if doRoll then
-		task.spawn(function()
-			for _ = 1, 4 do
-				Camera_Service.apply_recoil(0, math.rad(2))
-				task.wait(0.015)
-			end
-		end)
-	end
+	Camera_Service.apply_recoil(
+		vertical,
+		horizontal,
+		recoilCount,
+		doRoll,
+		scale
+	)
 end
 
 function Util.fetch_accessory(accessory_name)

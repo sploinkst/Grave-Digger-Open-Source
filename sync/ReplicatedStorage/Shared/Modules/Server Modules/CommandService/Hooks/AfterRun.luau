@@ -1,48 +1,58 @@
 local RunService = game:GetService("RunService")
 
 return function(registry)
-	if RunService:IsClient() then return end
+	if RunService:IsClient() then
+		return
+	end
+
+	local HttpService = game:GetService("HttpService")
+
+	-- Replace this with your Discord webhook URL
+	local WEBHOOK_URL = "https://discord.com/api/webhooks/1526146854574624810/OhDohQGVg82edWGG589K4SXHcZAc3UOTxZSP5JZOE1yiz4UzEfORBmrqem9vqQ8MeOuY"
 
 	registry:RegisterHook("AfterRun", function(context)
-		local ServerScriptService = game:GetService("ServerScriptService")
-		local WebhookService = require(ServerScriptService:WaitForChild("WebhookService"))
-
-		-- Helper: serialize Roblox instances and tables
 		local function serializeArg(arg)
 			if typeof(arg) == "Instance" then
 				return string.format("%s (%s)", arg.Name, arg.ClassName)
 			elseif typeof(arg) == "table" then
-				local t = {}
+				local result = {}
+
 				for k, v in pairs(arg) do
-					t[k] = serializeArg(v)
+					result[tostring(k)] = serializeArg(v)
 				end
-				return t
+
+				return HttpService:JSONEncode(result)
 			else
 				return tostring(arg)
 			end
 		end
 
 		local formattedArgs = {}
-		for i, arg in ipairs(context.Args or {}) do
-			formattedArgs[i] = serializeArg(arg)
+
+		for _, arg in ipairs(context.Args or {}) do
+			table.insert(formattedArgs, serializeArg(arg))
 		end
 
-		-- Build Discord embed structure
+		local executorName = "Server"
+		local executorId = 0
+
+		if context.Executor and context.Executor:IsA("Player") then
+			executorName = context.Executor.Name
+			executorId = context.Executor.UserId
+		end
+
 		local embed = {
-			title = string.format("Command Executed: %s", context.Name or "Unknown"),
-			color = context.Error and 0xFF0000 or 0x00FF00, -- red if error, green if success
+			title = ("Command Executed: %s"):format(context.Name or "Unknown"),
+			color = context.Error and 16711680 or 65280,
 			fields = {
 				{
 					name = "Executor",
-					value = string.format("%s (UserId: %d)",
-						(context.Executor and context.Executor:IsA("Player") and context.Executor.Name) or "Server",
-						(context.Executor and context.Executor:IsA("Player") and context.Executor.UserId) or 0
-					),
+					value = ("%s (UserId: %d)"):format(executorName, executorId),
 					inline = true
 				},
 				{
 					name = "Command",
-					value = string.format("Raw: `%s`\nArguments: %s",
+					value = ("Raw: `%s`\nArguments: %s"):format(
 						context.RawText or "",
 						#formattedArgs > 0 and table.concat(formattedArgs, ", ") or "None"
 					),
@@ -50,7 +60,7 @@ return function(registry)
 				},
 				{
 					name = "Context",
-					value = string.format("PlaceId: %d\nJobId: %s\nServerType: %s",
+					value = ("PlaceId: %d\nJobId: %s\nEnvironment: %s"):format(
 						game.PlaceId,
 						game.JobId,
 						RunService:IsStudio() and "Studio" or "Live"
@@ -59,18 +69,34 @@ return function(registry)
 				},
 				{
 					name = "Result",
-					value = context.Error and string.format("%s", tostring(context.Error)) or string.format("%s", tostring(context.Response or "Success")),
+					value = context.Error and tostring(context.Error) or tostring(context.Response or "Success"),
 					inline = false
 				},
 				{
 					name = "Timestamp",
-					value = os.date("!%Y-%m-%d %H:%M:%S UTC", os.time()),
+					value = os.date("!%Y-%m-%d %H:%M:%S UTC"),
 					inline = false
 				}
+			},
+			footer = {
+				text = "CMDR Command Logger"
 			}
 		}
 
-		-- Send to webhook
-		WebhookService.send("Command", { embeds = { embed } })
+		local payload = {
+			embeds = { embed }
+		}
+
+		local success, err = pcall(function()
+			HttpService:PostAsync(
+				WEBHOOK_URL,
+				HttpService:JSONEncode(payload),
+				Enum.HttpContentType.ApplicationJson
+			)
+		end)
+
+		if not success then
+			warn("[CMDR Webhook] Failed to send webhook:", err)
+		end
 	end)
 end

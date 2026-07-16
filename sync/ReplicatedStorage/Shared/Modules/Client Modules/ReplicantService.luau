@@ -10,6 +10,7 @@ local InsertService 	= game:GetService("InsertService")
 local Lighting          = game:GetService("Lighting")
 local RunService 		= game:GetService("RunService")
 local WorkspaceService  = game:GetService("Workspace")
+local InputService      = game:GetService("UserInputService")
 
 -- Shared references
 local shared    = ReplicatedStorage:WaitForChild("Shared")
@@ -22,8 +23,10 @@ local concussion_connection: RBXScriptConnection? = nil
 local heartbeat_sound: Sound? = nil
 local lastHeartbeatTime = 0
 
-local Name_Billboard = ReplicatedStorage:WaitForChild('Shared'):WaitForChild("Assets"):WaitForChild('UI'):WaitForChild("Name_Billboard")
+local NationStart = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Sounds"):WaitForChild("Game"):WaitForChild("NationStart")
+local EmpireStart = NationStart.Parent.EmpireStart
 
+local Name_Billboard = ReplicatedStorage:WaitForChild('Shared'):WaitForChild("Assets"):WaitForChild('UI'):WaitForChild("Name_Billboard")
 
 local game_details = WorkspaceService:WaitForChild("Game_Details")
 local bodies_folder = game_details:WaitForChild("Bodies")
@@ -494,6 +497,143 @@ local function refresh_all_billboards()
 	end
 end
 
+local function handle_playerlist(player: Player)
+	local PlayerList = Players.LocalPlayer.PlayerGui.Playerlist
+	local EmpireList = PlayerList.playerlist.empirelist
+	local NationList = PlayerList.playerlist.royallist
+	local EmpireExample = EmpireList.Example
+	local NationExample = NationList.Example
+
+	local clone
+
+	local function createEntry()
+		local isEmpire = player.Team and player.Team.Name == "Golden Empire"
+
+		print("[PlayerList] Creating entry for", player.Name, "Empire:", isEmpire)
+
+		local template = isEmpire and EmpireExample or NationExample
+		local parent = isEmpire and EmpireList or NationList
+
+		clone = template:Clone()
+		clone.Name = player.Name
+		clone.Visible = true
+		clone.playername.Text = player.Name
+		clone.Parent = parent
+
+		if player == local_player then
+			if isEmpire then
+				clone.bg.ImageColor3 = Color3.fromRGB(255, 255, 127)
+				clone.classbg.ImageColor3 = Color3.fromRGB(255, 255, 127)
+				clone.rankbg.ImageColor3 = Color3.fromRGB(255, 255, 127)
+			else
+				clone.bg.ImageColor3 = Color3.fromRGB(94, 6, 202)
+				clone.classbg.ImageColor3 = Color3.fromRGB(94, 6, 202)
+				clone.rankbg.ImageColor3 = Color3.fromRGB(94, 6, 202)
+			end
+		else
+			clone.bg.ImageColor3 = Color3.fromRGB(0, 0, 0)
+			clone.classbg.ImageColor3 = Color3.fromRGB(0, 0, 0)
+			clone.rankbg.ImageColor3 = Color3.fromRGB(0, 0, 0)
+		end
+
+		local character = player.Character
+		if character then
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+			if humanoid then
+				print("[PlayerList]", player.Name, "Current Health:", humanoid.Health)
+
+				if humanoid.Health <= 0 then
+					print("[PlayerList]", player.Name, "Already dead, enabling crossout.")
+					clone.crossout.Visible = true
+				else
+					clone.crossout.Visible = false
+				end
+			else
+				warn("[PlayerList]", player.Name, "No humanoid found.")
+				clone.crossout.Visible = false
+			end
+		else
+			print("[PlayerList]", player.Name, "No character yet.")
+			clone.crossout.Visible = false
+		end
+
+		print("[PlayerList] Crossout initial:", clone.crossout.Visible)
+
+		return clone
+	end
+
+	local function handleCharacter(character: Model)
+		print("[PlayerList] handleCharacter:", player.Name)
+
+		local humanoid = character:WaitForChild("Humanoid")
+
+		print("[PlayerList]", player.Name, "Connected to humanoid:", humanoid)
+
+		if clone then
+			clone.crossout.Visible = humanoid.Health <= 0
+			print("[PlayerList]", player.Name, "Initial health:", humanoid.Health, "Crossout:", clone.crossout.Visible)
+		else
+			warn("[PlayerList]", player.Name, "Clone missing during handleCharacter.")
+		end
+
+		humanoid.Died:Connect(function()
+			print("[PlayerList] Died fired for", player.Name)
+
+			if clone then
+				print("[PlayerList] Clone exists:", clone, clone.Parent)
+
+				if clone.Parent then
+					clone.crossout.Visible = true
+					print("[PlayerList] Crossout set TRUE for", player.Name, clone.crossout.Visible)
+				else
+					warn("[PlayerList] Clone has no parent for", player.Name)
+				end
+			else
+				warn("[PlayerList] Clone nil when", player.Name, "died.")
+			end
+		end)
+	end
+
+	createEntry()
+
+	local removingConnection
+	removingConnection = Players.PlayerRemoving:Connect(function(leavingPlayer)
+		if leavingPlayer == player then
+			print("[PlayerList] Removing", player.Name)
+
+			if clone then
+				clone:Destroy()
+			end
+
+			removingConnection:Disconnect()
+		end
+	end)
+
+	player:GetPropertyChangedSignal("Team"):Connect(function()
+		print("[PlayerList] Team changed for", player.Name)
+
+		if clone then
+			clone:Destroy()
+		end
+
+		createEntry()
+
+		if player.Character then
+			handleCharacter(player.Character)
+		end
+	end)
+
+	if player.Character then
+		handleCharacter(player.Character)
+	end
+
+	player.CharacterAdded:Connect(function(character)
+		print("[PlayerList] CharacterAdded:", player.Name)
+		handleCharacter(character)
+	end)
+end
+
 local function setup_player(player: Player)
 	local char = player.Character or player.CharacterAdded:Wait()
 	on_character_added(char, player)
@@ -524,7 +664,7 @@ local function setup_player(player: Player)
 		handle_accessory(player, child)
 	end)
 	
-	
+	handle_playerlist(player)
 end
 
 
@@ -1020,8 +1160,11 @@ local function stop_concussion_effect()
 				heartbeat_sound = nil
 			end
 
-			concussion_connection:Disconnect()
-			concussion_connection = nil
+	
+			if concussion_connection then
+				concussion_connection:Disconnect()
+				concussion_connection = nil
+			end
 		end
 	end)
 end
@@ -1152,57 +1295,65 @@ local function handle_vfx_replication(...)
 	local args = {...}
 
 	local player = args[1]
-	if player.Name == local_player.Name then return end
+	if player.Name == local_player.Name then
+		return
+	end
 
 	local effect = args[2]
 	local CFrame_Value = args[3]
-	local target_tables = args[4]
+	local emissions = args[4]
 	local parent = args[5]
-	local emit_count = args[6] or 10
-	local attach_to_parent = args[7]
+	local attach_to_parent = args[6]
+
 
 	-- Track event
 	push_replication_event("VFX", {
 		Player = player.Name,
 		Effect = effect.Name,
-		EmitCount = emit_count,
+		Emissions = emissions,
 		Attached = attach_to_parent
 	})
 
-	for _, child in pairs(effect:GetDescendants()) do
-		local match = table.find(target_tables, child.Name) 
-			or table.find(target_tables, child.ClassName)
 
-		if not match then continue end
+	for _, child in ipairs(effect:GetDescendants()) do
+		local emit_count = emissions[child.Name]
+
+		if not emit_count then
+			continue
+		end
+
 
 		local clone = child:Clone()
-		local container: Instance = parent
+		local container
+
 
 		if attach_to_parent then
 			clone.Parent = parent
+			container = clone
+
 		else
 			local part = Instance.new("Part")
 			part.Size = Vector3.new(0.05, 0.05, 0.05)
 			part.Anchored = true
 			part.CanCollide = false
 			part.Transparency = 1
+			part.CFrame = CFrame_Value
 			part.Parent = workspace
 
-			part.CFrame = CFrame_Value
 			clone.Parent = part
 			container = part
 		end
+
 
 		if clone:IsA("ParticleEmitter") then
 			clone.Enabled = true
 			clone:Emit(emit_count)
 
 			local lifetime = clone.Lifetime.Max
+
 			task.delay(lifetime + 0.1, function()
-				if attach_to_parent then
-					if clone then clone:Destroy() end
-				else
-					if container then container:Destroy() end
+				if container then
+					container:Destroy()
 				end
 			end)
 		end
@@ -1247,50 +1398,67 @@ local function handle_holster_replication(...)
 	})
 end
 
+
+
+
 function module.handle_sfx_replication(...)
 	local args = {...}
 	local player = args[1]
 	local sound_instance = args[2]
-	
-	if not player or not sound_instance then return end
-	
-	local parent = args[3]
-	local playback_speed = args[4] or sound_instance.PlaybackSpeed
-	local volume = args[5] or sound_instance.Volume
-	local pitch_shift = args[6] or 0
-	local pitch_variation = args[7] or 0 --  pitch variation parameter
-
-	local sound_clone = sound_instance:Clone()
-	sound_clone.Parent = parent
-
-	-- Set base pitch
-	sound_clone.Pitch = sound_instance.Pitch or 1
-
-	-- Apply pitch variation (same logic as the script)
-	if pitch_variation and typeof(pitch_variation) == "number" then
-		sound_clone.Pitch = sound_clone.Pitch + math.random(-pitch_variation * 100, pitch_variation * 100) / 100
-	end
-
-	-- Apply pitch shift (from PitchShiftSoundEffect)
-	if pitch_shift ~= 0 then
-		local pitch_sound = Instance.new("PitchShiftSoundEffect")
+	if player == "BeginRound" then
+		local clone
+		if game.Players.LocalPlayer.Team.Name == "Golden Empire" then
+			clone = EmpireStart:Clone()
+		else
+			clone = NationStart:Clone()
+		end
 		
-		pitch_sound.Octave = pitch_shift
-		pitch_sound.Parent = sound_clone
+		clone.Parent = game:GetService("SoundService")
+		clone:Play()
+		clone.Stopped:Connect(function()
+			clone:Destroy()
+		end)
+		return
+	else
+		if not player or not sound_instance then return end
+		
+		local parent = args[3]
+		local playback_speed = args[4] or sound_instance.PlaybackSpeed
+		local volume = args[5] or sound_instance.Volume
+		local pitch_shift = args[6] or 0
+		local pitch_variation = args[7] or 0 --  pitch variation parameter
+
+		local sound_clone = sound_instance:Clone()
+		sound_clone.Parent = parent
+
+		-- Set base pitch
+		sound_clone.Pitch = sound_instance.Pitch or 1
+
+		-- Apply pitch variation (same logic as the script)
+		if pitch_variation and typeof(pitch_variation) == "number" then
+			sound_clone.Pitch = sound_clone.Pitch + math.random(-pitch_variation * 100, pitch_variation * 100) / 100
+		end
+
+		-- Apply pitch shift (from PitchShiftSoundEffect)
+		if pitch_shift ~= 0 then
+			local pitch_sound = Instance.new("PitchShiftSoundEffect")
+			
+			pitch_sound.Octave = pitch_shift
+			pitch_sound.Parent = sound_clone
+		end
+
+		sound_clone:Play()
+		sound_clone.PlaybackSpeed = playback_speed
+		sound_clone.Volume = volume
+
+		sound_clone.Ended:Connect(function()
+			sound_clone:Destroy()
+		end)
 	end
-
-	sound_clone:Play()
-	sound_clone.PlaybackSpeed = playback_speed
-	sound_clone.Volume = volume
-
-	sound_clone.Ended:Connect(function()
-		sound_clone:Destroy()
-	end)
 end
 
 function module.handle_casing_replication(...)
 	local args = {...}
-	print("Casing replication received with:", args)
 	
 	local player = args[1]
 	local casing = args[2]
@@ -1316,8 +1484,10 @@ function module.handle_casing_replication(...)
 	
 	print("Casing replicated for player:", player.Name)
 end
+
 function module.connect_sfx(...)
 	local args = {...}
+	print("SFX replication received with:", args)
 	module.handle_sfx_replication(...)
 	
 	-- // remove player from the args
@@ -1329,8 +1499,15 @@ function module.connect_sfx(...)
 end
 
 
-
+local function placeUI()
+	for _, child in pairs(game:GetService("ReplicatedStorage").Shared:WaitForChild("Library"):WaitForChild("UI"):GetChildren()) do
+		child:Clone().Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+	end
+end
 function module.start_module()
+	placeUI()
+	
+	
 	rebind_ui()
 
 	fastcast_module.VisualizeCasts = visualize_casts_boolean.Value
@@ -1433,6 +1610,26 @@ function module.start_module()
 				print("Accessory created for:", child.Name)
 			end
 		end
+	end)
+	
+	InputService.InputBegan:Connect(function(input, gps)
+		if gps then return end
+		
+		if input.KeyCode == Enum.KeyCode.Tab then
+			game.Players.LocalPlayer.PlayerGui.Playerlist.Enabled = true
+		end
+	end)
+	
+	InputService.InputEnded:Connect(function(input, gps)
+		if gps then return end
+
+		if input.KeyCode == Enum.KeyCode.Tab then
+			game.Players.LocalPlayer.PlayerGui.Playerlist.Enabled = false
+		end
+	end)
+	
+	local_player.CharacterAdded:Connect(function()
+		placeUI()
 	end)
 end
 

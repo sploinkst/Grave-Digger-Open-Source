@@ -150,9 +150,13 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 
 		if self.animation_speeds then
 			for animName, speed in pairs(self.animation_speeds) do
+				print(animName, speed)
 				local track = self.RegisteredAnimations[animName]
 				if track then
+					print("Adjusting speed for:", track)
 					track:AdjustSpeed(speed)
+				else
+					warn("Animation '" .. animName .. "' not found for speed adjustment")
 				end
 			end
 		end
@@ -259,14 +263,8 @@ function BaseTool:init_short_mechanic()
 			self.ForceBlockFire = false
 
 			if self._shortTrack and self._shortTrack.IsPlaying then
-				local w = self._shortTrack.WeightCurrent - 0.05
-
-				if w <= 0 then
-					self._shortTrack:Stop(0.1)
-					self._shortTrack = nil
-				else
-					self._shortTrack:AdjustWeight(w)
-				end
+				self._shortTrack:Stop()
+				self._shortTrack = nil
 			end
 
 			self:clearMuzzleFX()
@@ -329,12 +327,10 @@ function BaseTool:init_short_mechanic()
 
 			self.IsShorted = true
 
-			if not self._shortTrack then
-				self._shortTrack = self.RegisteredAnimations.Short
 
-				if not self._shortTrack.IsPlaying then
-					self._shortTrack:Play(0.1, alpha, 0.001)
-				end
+			if not self._shortTrack or not self._shortTrack.IsPlaying then
+				self._shortTrack = self.RegisteredAnimations.Short
+				self._shortTrack:Play(0.1, alpha, 0.001)
 			end
 
 			self._shortTrack:AdjustWeight(alpha)
@@ -343,7 +339,7 @@ function BaseTool:init_short_mechanic()
 			self.IsShorted = false
 
 			if self._shortTrack and self._shortTrack.IsPlaying then
-				local w = self._shortTrack.WeightCurrent - 0.05
+				local w = self._shortTrack.WeightCurrent - 0.8
 
 				if w <= 0 then
 					self._shortTrack:Stop(0.1)
@@ -433,7 +429,11 @@ function BaseTool:equip()
 	humanoid:EquipTool(self.tool)
 
 	if self._on_equip then self:_on_equip() end
-
+	
+	if self.CompassRight then
+		character:SetAttribute("CompassRight", true)
+	end
+	
 	self:define_shorts()
 	if self.RegisteredAnimations then
 		local draw = self.RegisteredAnimations.Draw
@@ -488,7 +488,13 @@ function BaseTool:equip()
 
 			local rightArm = LOCAL_PLAYER.Character:FindFirstChild("Right Arm")
 			if not rightArm then return end
-			local round = rightArm:FindFirstChild(self.Round.Name)
+			local round
+			
+			if self.Round_Target_Part then
+				round = LOCAL_PLAYER.Character:FindFirstChild(self.Round_Target_Part):FindFirstChild(self.Round.Name)
+			else
+				round = rightArm:FindFirstChild(self.Round.Name)
+			end
 			if not round then warn("No self.Round in Right_Arm") return end
 
 			if keyframe == "vfx_hand_shell_visible" then
@@ -557,6 +563,8 @@ function BaseTool:equip()
 					end
 				end
 				if #matches > 0 then
+					if not self.actual_model then return end
+					
 					self:_play_sfx(matches[math.random(1, #matches)], self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
 					print("Playing GSFX: " .. matches[math.random(1, #matches)].Name)
 				else
@@ -621,6 +629,7 @@ function BaseTool:unequip()
 		self.keyframe_connections = {}
 	end
 
+	character:SetAttribute("CompassRight", nil)
 	self.Moving_Connection = nil
 end
 
@@ -666,6 +675,10 @@ function BaseTool:_if_sprinting(): boolean
 	return char ~= nil and char:GetAttribute("Sprinting") == true
 end
 
+function BaseTool:_if_jumping(): boolean
+	return LOCAL_PLAYER:GetAttribute("Jumping") == true
+end
+
 -- // Animation helpers
 
 function BaseTool:_stopAllExcept(exception: AnimationTrack?)
@@ -673,6 +686,13 @@ function BaseTool:_stopAllExcept(exception: AnimationTrack?)
 	for _, track in pairs(self.RegisteredAnimations) do
 		if track ~= exception and track:IsA("AnimationTrack") and track.IsPlaying then
 			track:Stop(CUT)
+
+			-- FIX: if this stops the Short track out from under init_short_mechanic's
+			-- render loop, clear the reference immediately so the loop knows to
+			-- replay it next time it's needed, instead of assuming it's still playing.
+			if track == self._shortTrack then
+				self._shortTrack = nil
+			end
 		end
 	end
 end
@@ -704,7 +724,15 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean): AnimationTra
 		end
 	end
 
+	local speed = 1
+
+	if self.animation_speeds then
+		speed = self.animation_speeds[name] or 1
+	end
+
 	track:Play(CUT)
+	track:AdjustSpeed(speed)
+
 	return track
 end
 
@@ -927,6 +955,7 @@ function BaseTool:aim()
 	if not self.RegisteredAnimations.Aim then return end
 	if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
 	if self.Equipping or self.IsShorted then return end
+	if self:_if_jumping() then return end
 
 	self._smoothedYaw = nil
 	self._lastYaw = nil
@@ -948,11 +977,13 @@ function BaseTool:aim()
 		end
 
 		local aimTrack = self:_aimTrack()
-		if aimTrack then aimTrack:Play(CUT) self.ForceBlockFire = false end
-
+		if aimTrack then
+			aimTrack:Play(CUT) 
+			self.ForceBlockFire = false
+			self.Aiming = true
+		end
 	end
 
-	self.Aiming = true
 	self._aimVersion += 1
 	self:_startAimTracking()
 
@@ -978,6 +1009,18 @@ function BaseTool:aim()
 	if not self._freeLookAimConnection then
 		self._freeLookAimConnection = LOCAL_PLAYER:GetAttributeChangedSignal("FreeLook"):Connect(function()
 			if LOCAL_PLAYER:GetAttribute("FreeLook") then self:endAiming() end
+		end)
+	end
+	
+	if not self._sprintConnection then
+		self._sprintConnection = LOCAL_PLAYER:GetAttributeChangedSignal("Sprinting"):Connect(function()
+			if LOCAL_PLAYER:GetAttribute("Sprinting") then self:endAiming() end
+		end)
+	end
+	
+	if not self.vaultConnection then
+		self._vaultConnection = LOCAL_PLAYER:GetAttributeChangedSignal("Vaulting"):Connect(function()
+			if LOCAL_PLAYER:GetAttribute("Vaulting") then self:endAiming() end
 		end)
 	end
 end
@@ -1363,7 +1406,7 @@ end
 -- // Projectile firing
 
 function BaseTool:_fireProjectile(bulletSpeed, penetrationLevel, damage, knockbackForce): boolean
-	if self:_if_sprinting() then return false end
+	if self:_if_sprinting() or self:_if_jumping() then return false end
 
 	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName or "Muzzle")
 	if not muzzle then warn(self.className .. ": Muzzle not found") return false end
@@ -1395,16 +1438,63 @@ end
 
 -- // Muzzle flash
 
-function BaseTool:_fireMuzzleFlash()
-	if not self.actual_model then return end
-	local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName or "Muzzle")
-	if not muzzle then return end
+function BaseTool:emit_effect(effect, CFrame_Value, emissions, parent, attach_to_parent)
+	for _, child in ipairs(effect:GetDescendants()) do
+		local emit_count = emissions[child.Name]
 
-	self:emit_effect(
-		ReplicatedStorage.Shared.Assets.Guns.Effects.Shooting.Muzzle_Flash,
-		muzzle.CFrame * CFrame.new(-0.1, 0, -2),
-		{ "smoke_medium", "smoke_forward", "flash_general" },
-		muzzle, 1, false
+		if not emit_count then
+			continue
+		end
+
+		local clone = child:Clone()
+
+		if attach_to_parent then
+			clone.Parent = parent
+
+			if clone:IsA("ParticleEmitter") then
+				clone.Enabled = true
+				clone:Emit(emit_count)
+
+				task.delay(clone.Lifetime.Max + 0.1, function()
+					if clone then
+						clone:Destroy()
+					end
+				end)
+			end
+
+			continue
+		end
+
+
+		local part = Instance.new("Part")
+		part.Size = Vector3.new(0.05, 0.05, 0.05)
+		part.Anchored = true
+		part.CanCollide = false
+		part.Transparency = 1
+		part.CFrame = CFrame_Value
+		part.Parent = workspace
+
+
+		clone.Parent = part
+
+		if clone:IsA("ParticleEmitter") then
+			clone.Enabled = true
+			clone:Emit(emit_count)
+
+			task.delay(clone.Lifetime.Max + 0.1, function()
+				if part then
+					part:Destroy()
+				end
+			end)
+		end
+	end
+
+	vfx_cast_event:FireServer(
+		effect,
+		CFrame_Value,
+		emissions,
+		parent,
+		attach_to_parent
 	)
 end
 
@@ -1626,8 +1716,12 @@ function BaseTool:ammo_check()
 end
 
 function BaseTool:drop()
+	if not self.Equipped then return end
+	
+	self.Equipped = false
 	self._reloadCancelled = true
 	self.Emergency_Drop = true
+	
 
 	if self.RegisteredAnimations then
 		for _, anim in pairs(self.RegisteredAnimations) do
@@ -1643,39 +1737,41 @@ end
 
 -- // VFX
 
-function BaseTool:emit_effect(effect, CFrame_Value, target_tables, parent, emit_count, attach_to_parent)
-	emit_count = emit_count or 10
+function BaseTool:_fireMuzzleFlash()
+	if not self.FireEmissions then return end
+	if not self.actual_model then return end
 
-	for _, child in pairs(effect:GetDescendants()) do
-		if not (table.find(target_tables, child.Name) or table.find(target_tables, child.ClassName)) then continue end
+	local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName or "Muzzle")
+	if not muzzle then return end
 
-		local clone = child:Clone()
+	local emissions = {}
 
-		if attach_to_parent then
-			clone.Parent = parent
-		else
-			local part = Instance.new("Part")
-			part.Size = Vector3.new(0.05, 0.05, 0.05)
-			part.Anchored = true; part.CanCollide = false; part.Transparency = 1
-			part.Parent = workspace; part.CFrame = CFrame_Value
-			clone.Parent = part
-
-			if clone:IsA("ParticleEmitter") then
-				clone.Enabled = true
-				clone:Emit(emit_count)
-				task.delay(clone.Lifetime.Max + 0.1, function() part:Destroy() end)
+	for effect, value in pairs(self.FireEmissions) do
+		if type(value) == "table" and value.chance then
+			if math.random() <= value.chance then
+				emissions[effect] = value.count
 			end
-			continue
-		end
 
-		if clone:IsA("ParticleEmitter") then
-			clone.Enabled = true
-			clone:Emit(emit_count)
-			task.delay(clone.Lifetime.Max + 0.1, function() clone:Destroy() end)
+		elseif type(value) == "function" then
+			emissions[effect] = value()
+
+		else
+			emissions[effect] = value
 		end
 	end
 
-	vfx_cast_event:FireServer(effect, CFrame_Value, target_tables, parent, emit_count, attach_to_parent)
+	if math.random(1, 2) == 1 then
+		emissions.flash = 1
+		emissions.flash_general = 1
+	end
+
+	self:emit_effect(
+		ReplicatedStorage.Shared.Assets.Guns.Effects.Shooting.Muzzle_Flash,
+		muzzle.CFrame * CFrame.new(-0.1, 0, -2),
+		emissions,
+		muzzle,
+		false
+	)
 end
 
 function BaseTool:bullet_hole(position: Vector3, normal: Vector3)
@@ -1715,6 +1811,8 @@ function BaseTool:destroy()
 		self.actual_model:Destroy()
 		self.actual_model = nil
 	end
+	
+	self.Equipped = false
 end
 
 return BaseTool

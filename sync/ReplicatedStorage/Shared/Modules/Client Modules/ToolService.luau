@@ -11,10 +11,23 @@ local Util_Module = require(script.Parent.Parent.Parent.Library.Util)
 
 module.RegisteredTools = {}
 
+-- // Tracks live ChildAdded/ChildRemoved connections per backpack so
+-- // connect_backpack() can be called again on respawn without stacking
+-- // duplicate listeners on the same (reused) Backpack instance.
+local backpack_connections = {}
+
 local function connect_backpack(backpack)
 	print("[ToolService] connect_backpack called on:", backpack:GetFullName())
 
-	backpack.ChildAdded:Connect(function(child)
+	local existing_connections = backpack_connections[backpack]
+	if existing_connections then
+		existing_connections.added:Disconnect()
+		existing_connections.removed:Disconnect()
+		backpack_connections[backpack] = nil
+		print("[ToolService] Disconnected previous listeners on:", backpack:GetFullName())
+	end
+
+	local added_connection = backpack.ChildAdded:Connect(function(child)
 		print("[ToolService] ChildAdded fired:", child.Name, "| IsA Tool:", child:IsA("Tool"))
 
 		if not child:IsA("Tool") then
@@ -55,7 +68,7 @@ local function connect_backpack(backpack)
 		print("[ToolService] Successfully registered tool:", child.Name)
 	end)
 
-	backpack.ChildRemoved:Connect(function(child)
+	local removed_connection = backpack.ChildRemoved:Connect(function(child)
 		if not child:IsA("Tool") then return end
 		print("[ToolService] ChildRemoved fired:", child.Name)
 
@@ -74,6 +87,8 @@ local function connect_backpack(backpack)
 		module.RegisteredTools[child.Name] = nil
 		print("[ToolService] Removed tool from registry:", child.Name)
 	end)
+
+	backpack_connections[backpack] = { added = added_connection, removed = removed_connection }
 
 	-- Scan anything already in the backpack at connect time
 	local existing = backpack:GetChildren()
@@ -108,17 +123,33 @@ local function connect_backpack(backpack)
 	print("[ToolService] connect_backpack finished for:", backpack:GetFullName())
 end
 
+local function wait_for_inventory_ready(character)
+	if character:GetAttribute("InventoryReady") == true then
+		return
+	end
+
+	local deadline = tick() + 10
+	while character:GetAttribute("InventoryReady") ~= true do
+		if tick() > deadline then
+			warn("[ToolService] Timed out waiting for InventoryReady on", character.Name, "- scanning backpack anyway.")
+			return
+		end
+		character:GetAttributeChangedSignal("InventoryReady"):Wait()
+	end
+end
+
 function module.start_module()
 	print("[ToolService] start_module called")
 
+	if LocalPlayer.Character then
+		wait_for_inventory_ready(LocalPlayer.Character)
+	end
 	connect_backpack(LocalPlayer:WaitForChild("Backpack"))
 
 	LocalPlayer.CharacterAdded:Connect(function(character)
 		print("[ToolService] CharacterAdded fired, resetting registered tools")
 		module.RegisteredTools = {}
-
-		-- Backpack is reused across respawns, not recreated.
-		-- Just reconnect directly to it.
+		wait_for_inventory_ready(character)
 		local backpack = LocalPlayer:WaitForChild("Backpack")
 		print("[ToolService] Connecting to backpack:", backpack:GetFullName())
 		connect_backpack(backpack)

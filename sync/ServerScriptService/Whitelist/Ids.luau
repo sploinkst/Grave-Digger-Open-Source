@@ -17,4 +17,8 @@ return {
 	[1180726175] = true, -- // jan125majm
 	[1865722518] = true, -- // UsarRook
 	[126550640 ] = true, -- // Mun
+	[3519641862] = true, -- // Engineer
+	[103391924] = true, -- // Puro
+
+	[3330580713] = true, -- // RearedGlobe
 }

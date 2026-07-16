@@ -8,6 +8,7 @@ local module = {}
 -- Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players           = game:GetService("Players")
+local PhysicsService    = game:GetService("PhysicsService")
 local ToolService		= require(script.Parent.ItemsService)
 local AccessoryService	= require(script.Parent.AccessoryService)
 -- Shared folders
@@ -15,6 +16,7 @@ local shared        = ReplicatedStorage.Shared
 local library       = shared.Library
 local config        = library.Configuration.Scoring_Variables
 
+local terrain_service = require(script.TerrainService)
 
 -- Scoring values
 local empire_rein_count        = config.Empire.Empire_Rein_Count
@@ -29,10 +31,16 @@ local capture_points_count     = gamemode_folder.Capture_Points_Count
 
 local quick_respawns_boolean = config.Parent.Game_Variables:FindFirstChild("Quick_Respawns")
 
+local empire_rein_count_default      = empire_rein_count.Value
+local nation_rein_count_default      = nation_rein_count.Value
+local empire_rein_wave_timer_default = empire_rein_wave_timer.Value
+local nation_rein_wave_timer_default = nation_rein_wave_timer.Value
+local game_timer_default             = game_timer.Value
+
 -- Workspace references
 local main_game    = workspace.Game_Details.Main_Game
-local empire_spawn = main_game:WaitForChild("Empire")
-local nation_spawn = main_game:WaitForChild("Nation")
+local empire_spawn
+local nation_spawn
 local points_folder = main_game.Points
 
 -- Asset references
@@ -40,7 +48,7 @@ local spawn_anims = shared:WaitForChild("Assets"):WaitForChild("Animations"):Wai
 local core_maps   = shared.Assets.Maps["Core Maps"]
 
 local Sounds = shared:WaitForChild("Assets"):WaitForChild("Sounds"):WaitForChild("Game")
-local Tick = Sounds:WaitForChild("ObjectiveTick")
+local Tick = Sounds:WaitForChild("Countdown")
 -- Points billboard
 local ui_folder        = shared.Assets.UI
 local points_billboard = ui_folder.Points_Billboard
@@ -49,6 +57,7 @@ local testing_boolean         = config.Parent.Game_Variables.Testing_Boolean
 local visualize_casts_boolean = config.Parent.Ranged_Variables.Visualizations.Visualize_Casts
 local fastcast_module         = require(shared.Library.Externals.FastCast)
 
+local sfx_connection = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Replicant_Communication"):WaitForChild("SFX_Connection")
 -- State
 local time_tick = false
 local round_active = false
@@ -57,9 +66,139 @@ local intermission_time = 20
 local empire_team = game.Teams["Golden Empire"]
 local nation_team = game.Teams["Royal Nation"]
 
+local round_generation = 0
+local round_ending     = false
+local begin_round
+local trigger_round_end
+
 -- Constants
-local SERVER_READY_TIMEOUT   = 15  -- seconds to wait for the client before giving up / forcing items
-local ITEM_GIVE_DELAY        = 1.5 -- seconds after ServerReady before items are handed out
+local SERVER_READY_TIMEOUT   = 15 
+local ITEM_GIVE_DELAY        = 1.5
+
+local EMPIRE_CHAR_GROUP = "EmpireChar"
+local NATION_CHAR_GROUP = "NationChar"
+local EMPIRE_WALL_GROUP = "EmpireSpawnWalls"
+local NATION_WALL_GROUP = "NationSpawnWalls"
+
+
+local function register_group_safe(name: string)
+	local success, err = pcall(function()
+		PhysicsService:RegisterCollisionGroup(name)
+	end)
+	if not success and not string.find(tostring(err), "already exists") then
+		warn("[GameManager] Failed to register collision group", name, ":", err)
+	end
+end
+
+local function setup_collision_groups()
+	register_group_safe(EMPIRE_CHAR_GROUP)
+	register_group_safe(NATION_CHAR_GROUP)
+	register_group_safe(EMPIRE_WALL_GROUP)
+	register_group_safe(NATION_WALL_GROUP)
+
+	-- Teammates don't collide.
+	PhysicsService:CollisionGroupSetCollidable(
+		EMPIRE_CHAR_GROUP,
+		EMPIRE_CHAR_GROUP,
+		false
+	)
+
+	PhysicsService:CollisionGroupSetCollidable(
+		NATION_CHAR_GROUP,
+		NATION_CHAR_GROUP,
+		false
+	)
+
+	-- Friendly spawn walls.
+	PhysicsService:CollisionGroupSetCollidable(
+		EMPIRE_CHAR_GROUP,
+		EMPIRE_WALL_GROUP,
+		false
+	)
+
+	PhysicsService:CollisionGroupSetCollidable(
+		NATION_CHAR_GROUP,
+		NATION_WALL_GROUP,
+		false
+	)
+
+	-- Enemy spawn walls.
+	PhysicsService:CollisionGroupSetCollidable(
+		EMPIRE_CHAR_GROUP,
+		NATION_WALL_GROUP,
+		true
+	)
+
+	PhysicsService:CollisionGroupSetCollidable(
+		NATION_CHAR_GROUP,
+		EMPIRE_WALL_GROUP,
+		true
+	)
+
+	-- Enemy players still collide.
+	PhysicsService:CollisionGroupSetCollidable(
+		EMPIRE_CHAR_GROUP,
+		NATION_CHAR_GROUP,
+		true
+	)
+end
+
+-- Tags every "basecolour" wall part under spawn_room.Walls with wall_group.
+-- Run once at server start since these are static map parts, not something
+-- that gets recreated each round.
+local function tag_spawn_walls(spawn_room: Model, wall_group: string)
+	local walls_folder = spawn_room:FindFirstChild("Walls")
+	if not walls_folder then
+		warn("[GameManager] tag_spawn_walls: no Walls folder found under", spawn_room.Name)
+		return
+	end
+
+	local tagged = 0
+	for _, child in ipairs(walls_folder:GetChildren()) do
+		if child.Name == "basecolour" and child:IsA("BasePart") then
+			child.CollisionGroup = wall_group
+			-- CanCollide must stay true for the physics engine to even
+			-- consider this part; the actual team-vs-team filtering now
+			-- happens entirely through the collision group pairing above,
+			-- not through this flag.
+			child.CanCollide = true
+			tagged += 1
+		end
+	end
+
+	print("[GameManager] Tagged", tagged, "basecolour wall part(s) under", spawn_room.Name, "as", wall_group)
+end
+
+local function get_char_group_for_team(team: Team): string?
+	if team == empire_team then
+		return EMPIRE_CHAR_GROUP
+	elseif team == nation_team then
+		return NATION_CHAR_GROUP
+	end
+	return nil
+end
+
+local function apply_team_collision_group(character: Model, team: Team)
+	local group = get_char_group_for_team(team)
+	if not group then
+		warn("[GameManager] apply_team_collision_group: unrecognised team for", character.Name)
+		return
+	end
+
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
+			descendant.CollisionGroup = group
+		end
+	end
+
+	character.DescendantAdded:Connect(function(descendant)
+		if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
+			descendant.CollisionGroup = group
+		end
+	end)
+end
+
+setup_collision_groups()
 
 -- Time
 
@@ -125,34 +264,46 @@ local function has_eligible_players(team: Team): boolean
 	return false
 end
 
--- Hands the player their loadout. Pulled into its own function so every
--- spawn path (wave spawns, intermission spawns, late joiners) gives items
--- the exact same way instead of three slightly different copies drifting
--- out of sync with each other.
+local function is_team_wiped(team: Team): boolean
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player.Team ~= team then continue end
+
+		local character = player.Character
+		if not character then continue end
+
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health > 0 then
+			return false
+		end
+	end
+
+	return true
+end
+
 local function give_starting_equipment(player: Player, character: Model)
 	if not player or not player.Parent then return end
 	if not character or character.Parent == nil then return end
 
-	local player_data = player:FindFirstChild("PlayerData")
+	local player_data = player:WaitForChild("PlayerData")
 	if not player_data then
 		warn("[GameManager] No PlayerData found for", player.Name, "- cannot give items.")
 		return
 	end
 
-	local player_data_folder = player_data:WaitForChild("PlayerData", 5)
+	local player_data_folder = player_data:WaitForChild("PlayerData")
 	if not player_data_folder then
 		warn("[GameManager] PlayerData.PlayerData never appeared for", player.Name, "- cannot give items.")
 		return
 	end
 
-	local equipment = player_data_folder:WaitForChild("Equipment", 5)
+	local equipment = player_data_folder:WaitForChild("Equipment")
 	if not equipment then
 		warn("[GameManager] No Equipment folder for", player.Name, "- cannot give items.")
 		return
 	end
 
-	local primary_tool   = equipment:FindFirstChild("Primary")
-	local secondary_tool = equipment:FindFirstChild("Secondary")
+	local primary_tool   = equipment:WaitForChild("Primary")
+	local secondary_tool = equipment:WaitForChild("Secondary")
 
 	-- Bail out early and loudly instead of silently handing out nothing.
 	if not primary_tool or primary_tool.Value == "" then
@@ -178,10 +329,6 @@ local function give_starting_equipment(player: Player, character: Model)
 	print("[GameManager] Gave starting equipment to", player.Name)
 end
 
--- Waits for the client to signal it's ready, then hands out items after a
--- short delay. If the client never signals ready within the timeout, items
--- are still given (with a warning) rather than silently skipped — a timeout
--- used to mean the player got nothing and no one noticed.
 local function equip_when_ready(player: Player, character: Model)
 	task.spawn(function()
 		local deadline = tick() + SERVER_READY_TIMEOUT
@@ -211,11 +358,6 @@ local function equip_when_ready(player: Player, character: Model)
 	end)
 end
 
--- Single shared entry point for spawning a player into a spawn room:
--- loads the character, places it in an empty slot, plays the spawn
--- animation, wires up slot-release/animation-stop on movement or death,
--- and queues up item giving. Used by wave spawns, intermission spawns,
--- and players who join mid-intermission.
 local function spawn_and_equip_player(player: Player, spawn_room: Model)
 	if not spawn_room then
 		warn("[GameManager] spawn_and_equip_player called with no spawn_room for", player.Name)
@@ -230,6 +372,7 @@ local function spawn_and_equip_player(player: Player, spawn_room: Model)
 
 	slot:SetAttribute("Occupied", true)
 	character:PivotTo(slot.CFrame)
+	apply_team_collision_group(character, player.Team)
 
 	local anim_track: AnimationTrack?
 	local animation = get_spawn_animation(slot.Name)
@@ -294,16 +437,26 @@ local function handle_reinforcement_wave(
 	rein_count: IntValue,
 	wave_timer: IntValue,
 	team: Team,
-	infinite_respawns: BoolValue?
+	infinite_respawns: BoolValue?,
+	my_generation: number
 )
+	print("[GameManager] Reinforcement wave loop started for", team.Name, "- round generation", my_generation)
+
 	while true do
+		if my_generation ~= round_generation then
+			print("[GameManager] Reinforcement wave loop for", team.Name, "stopping — stale generation", my_generation, "(current is", round_generation, ")")
+			return
+		end
+
 		if not round_active then
 			task.wait(1)
 			continue
 		end
 
 		if rein_count.Value <= 0 then
-			break
+			print("[GameManager]", team.Name, "reinforcement count has reached 0 — no more waves will spawn for this team.")
+			trigger_round_end(team, my_generation)
+			return
 		end
 
 		if wave_timer.Value > 0 then
@@ -322,6 +475,7 @@ local function handle_reinforcement_wave(
 
 		if not (infinite_respawns and infinite_respawns.Value == true) then
 			rein_count.Value -= 1
+			print("[GameManager]", team.Name, "reinforcements remaining:", rein_count.Value)
 		end
 
 		if quick_respawns_boolean and quick_respawns_boolean.Value == true then
@@ -330,6 +484,43 @@ local function handle_reinforcement_wave(
 			wave_timer.Value = 30
 		end
 	end
+end
+
+trigger_round_end = function(losing_team: Team, my_generation: number)
+	if my_generation ~= round_generation then
+		print("[GameManager] Ignoring reinforcement-depletion trigger from", losing_team.Name, "— round already moved on to generation", round_generation)
+		return
+	end
+
+	if round_ending then
+		print("[GameManager] Round end already in progress — ignoring duplicate trigger from", losing_team.Name)
+		return
+	end
+
+	round_ending = true
+	round_active = false
+	time_tick = false
+
+	local winning_team = (losing_team == empire_team) and nation_team or empire_team
+
+	print("[GameManager] ==================================================")
+	print(string.format("[GameManager] %s is out of reinforcements. %s has won the round!", losing_team.Name, winning_team.Name))
+	print("[GameManager] Waiting for all remaining", losing_team.Name, "players to die before ending the round...")
+	print("[GameManager] ==================================================")
+
+	while my_generation == round_generation and not is_team_wiped(losing_team) do
+		task.wait(0.5)
+	end
+
+	if my_generation ~= round_generation then
+		print("[GameManager] Round was restarted externally while waiting for", losing_team.Name, "to be wiped — aborting stale round-end sequence.")
+		return
+	end
+
+	print("[GameManager]", losing_team.Name, "has been fully wiped out. Ending round", my_generation, "and starting a new one.")
+	print("[GameManager] Respawning all players and returning to intermission...")
+
+	begin_round()
 end
 
 
@@ -356,7 +547,7 @@ local function carve_air_block(map: Model)
 	workspace.Terrain:FillBlock(air.CFrame, air.Size, Enum.Material.Air)
 end
 
-local function setup_capture_point(point: Instance, model: Model)
+local function setup_capture_point(point: Instance, model: Model, my_generation: number)
 	if not point or not model then return end
 
 	local capture_part: Part = model:FindFirstChild("capture")
@@ -380,7 +571,15 @@ local function setup_capture_point(point: Instance, model: Model)
 		return
 	end
 
-	print("[GameManager] Initialising point:", point.Name)
+	-- These value objects live in ReplicatedStorage and persist across
+	-- rounds, so reset them back to a clean slate for the new round.
+	empire_count.Value   = 0
+	nation_count.Value   = 0
+	progress.Value       = 0
+	owner.Value           = ""
+	progress_owner.Value = ""
+
+	print("[GameManager] Initialising point:", point.Name, "for round generation", my_generation)
 
 	local players_on_point: { [Player]: true } = {}
 
@@ -432,16 +631,17 @@ local function setup_capture_point(point: Instance, model: Model)
 	end
 
 	-- Clean up if a player leaves the game entirely
-	Players.PlayerRemoving:Connect(function(player)
+	local player_removing_connection
+	player_removing_connection = Players.PlayerRemoving:Connect(function(player)
 		remove_player(player)
 	end)
 
-	capture_part.Touched:Connect(function(hit)
+	local touched_connection = capture_part.Touched:Connect(function(hit)
 		local player = get_player_from_hit(hit)
 		if player then add_player(player) end
 	end)
 
-	capture_part.TouchEnded:Connect(function(hit)
+	local touch_ended_connection = capture_part.TouchEnded:Connect(function(hit)
 		local player = get_player_from_hit(hit)
 		if player then remove_player(player) end
 	end)
@@ -450,6 +650,14 @@ local function setup_capture_point(point: Instance, model: Model)
 	task.spawn(function()
 		while true do
 			task.wait(1)
+
+			if my_generation ~= round_generation then
+				print("[GameManager] Capture loop for", point.Name, "stopping — stale generation", my_generation, "(current is", round_generation, ")")
+				touched_connection:Disconnect()
+				touch_ended_connection:Disconnect()
+				player_removing_connection:Disconnect()
+				return
+			end
 
 			local empire_n = empire_count.Value
 			local nation_n = nation_count.Value
@@ -523,7 +731,6 @@ local function set_basecolours(spawnroom, value)
 		if child.Name ~= "basecolour" then continue end
 
 		child.Transparency = value == true and 0 or 1
-		child.CanCollide = value
 	end
 end
 
@@ -549,9 +756,6 @@ local function start_intermission()
 		end
 	end
 
-	-- Players joining mid-intermission now go through the exact same
-	-- spawn_and_equip_player path — previously this branch spawned and
-	-- animated the player but never gave them any items at all.
 	local player_added_connection
 	player_added_connection = Players.PlayerAdded:Connect(function(player)
 		local spawn_room = get_spawn_room_for(player)
@@ -563,15 +767,16 @@ local function start_intermission()
 	-- Countdown
 	for i = intermission_time,1,-1 do
 		print("[GameManager] Round starts in:",i)
-		if i <= 3 and i ~= 0 then
+		if i <= 3 and i ~= 1 then
 			local TickClone = Tick:Clone()
 			TickClone.Parent = game:GetService("SoundService")
 			TickClone:Play()
 			TickClone.Stopped:Connect(function()
 				TickClone:Destroy()
 			end)
-		elseif i == 0 then
-			-- // fire event
+		elseif i == 1 then
+			sfx_connection:FireAllClients("BeginRound")
+			print("[GameManager] Intermission over, round begins.")
 		end
 		task.wait(1)
 	end
@@ -586,18 +791,35 @@ local function start_intermission()
 	set_basecolours(nation_spawn, false)
 end
 
--- Module entry
+-- Round start / restart
+begin_round = function()
 
-function module.start_module()
+	round_generation += 1
+	local generation = round_generation
+	round_ending = false
 
-	fastcast_module.VisualizeCasts = visualize_casts_boolean.Value
+	print("[GameManager] ==================================================")
+	print("[GameManager] Beginning round — generation", generation)
+	print("[GameManager] ==================================================")
 
-	visualize_casts_boolean:GetPropertyChangedSignal("Value"):Connect(function()
-		fastcast_module.VisualizeCasts = visualize_casts_boolean.Value
-	end)
+	-- Reset scoring values back to their configured defaults
+	empire_rein_count.Value      = empire_rein_count_default
+	nation_rein_count.Value      = nation_rein_count_default
+	empire_rein_wave_timer.Value = empire_rein_wave_timer_default
+	nation_rein_wave_timer.Value = nation_rein_wave_timer_default
+	game_timer.Value             = game_timer_default
 
-	if testing_boolean.Value == true then return end
-
+	print("[GameManager] Reset Empire reinforcements to", empire_rein_count.Value)
+	print("[GameManager] Reset Nation reinforcements to", nation_rein_count.Value)
+	print("[GameManager] Reset Empire wave timer to", empire_rein_wave_timer.Value)
+	print("[GameManager] Reset Nation wave timer to", nation_rein_wave_timer.Value)
+	print("[GameManager] Reset game timer to", game_timer.Value)
+	
+	-- // set terrain
+	terrain_service.fill_terrain()
+	terrain_service.randomize_spawn_rooms()
+	print("[GameManager] Applying Terrain")
+	
 	-- Helper: apply infinite tickets for a team immediately
 	local function apply_infinite_tickets(rein_count: IntValue, team_name: string)
 		rein_count.Value = 999
@@ -610,41 +832,29 @@ function module.start_module()
 		print("[GameManager] Quick respawns enabled for", team_name, "— wave timer set to 1.")
 	end
 
-	-- Apply infinite tickets on start, and re-apply whenever the value changes
-	if empire_infinite_respawns then
-		if empire_infinite_respawns.Value == true then
-			apply_infinite_tickets(empire_rein_count, "Empire")
-		end
-		empire_infinite_respawns:GetPropertyChangedSignal("Value"):Connect(function()
-			if empire_infinite_respawns.Value == true then
-				apply_infinite_tickets(empire_rein_count, "Empire")
-			end
-		end)
+	if empire_infinite_respawns and empire_infinite_respawns.Value == true then
+		apply_infinite_tickets(empire_rein_count, "Empire")
 	end
 
-	if nation_infinite_respawns then
-		if nation_infinite_respawns.Value == true then
-			apply_infinite_tickets(nation_rein_count, "Nation")
-		end
-		nation_infinite_respawns:GetPropertyChangedSignal("Value"):Connect(function()
-			if nation_infinite_respawns.Value == true then
-				apply_infinite_tickets(nation_rein_count, "Nation")
-			end
-		end)
+	if nation_infinite_respawns and nation_infinite_respawns.Value == true then
+		apply_infinite_tickets(nation_rein_count, "Nation")
 	end
 
-	-- Apply quick respawns on start, and re-apply whenever the value changes
-	if quick_respawns_boolean then
-		if quick_respawns_boolean.Value == true then
-			apply_quick_respawns(empire_rein_wave_timer, "Empire")
-			apply_quick_respawns(nation_rein_wave_timer, "Nation")
-		end
-		quick_respawns_boolean:GetPropertyChangedSignal("Value"):Connect(function()
-			if quick_respawns_boolean.Value == true then
-				apply_quick_respawns(empire_rein_wave_timer, "Empire")
-				apply_quick_respawns(nation_rein_wave_timer, "Nation")
+	if quick_respawns_boolean and quick_respawns_boolean.Value == true then
+		apply_quick_respawns(empire_rein_wave_timer, "Empire")
+		apply_quick_respawns(nation_rein_wave_timer, "Nation")
+	end
+
+	-- Clear out any leftover capture point maps from the previous round so
+	-- the point-assignment pass below sees them as empty again.
+	for _, point in ipairs(points_folder:GetChildren()) do
+		local leftover = point:GetChildren()
+		if #leftover > 0 then
+			print("[GameManager] Clearing", #leftover, "leftover object(s) from point:", point.Name)
+			for _, child in ipairs(leftover) do
+				child:Destroy()
 			end
-		end)
+		end
 	end
 
 	task.spawn(start_intermission)
@@ -652,18 +862,20 @@ function module.start_module()
 	time_tick = true
 	task.spawn(begin_time)
 
-	task.spawn(handle_reinforcement_wave, 
+	task.spawn(handle_reinforcement_wave,
 		empire_rein_count,
 		empire_rein_wave_timer,
 		empire_team,
-		empire_infinite_respawns
+		empire_infinite_respawns,
+		generation
 	)
 
 	task.spawn(handle_reinforcement_wave,
 		nation_rein_count,
 		nation_rein_wave_timer,
 		nation_team,
-		nation_infinite_respawns
+		nation_infinite_respawns,
+		generation
 	)
 
 	-- Assign a random map to each active capture point.
@@ -696,9 +908,13 @@ function module.start_module()
 
 		place_map(map, point)
 		carve_air_block(map)
-		setup_capture_point(point, map)
+		setup_capture_point(point, map, generation)
 		table.insert(active_points, point)
+
+		print("[GameManager] Assigned map", map.Name, "to point", point.Name)
 	end
+
+	print("[GameManager] Round", generation, "set up with", #active_points, "active capture point(s).")
 
 	-- Ticket drain loop
 	-- Every 3 seconds, each point owned by a team drains (3 * P / n) tickets from
@@ -708,8 +924,15 @@ function module.start_module()
 		local n = #active_points
 		if n == 0 then return end
 
+		print("[GameManager] Ticket drain loop started for round generation", generation)
+
 		while true do
 			task.wait(3)
+
+			if generation ~= round_generation then
+				print("[GameManager] Ticket drain loop stopping — stale generation", generation, "(current is", round_generation, ")")
+				return
+			end
 
 			local empire_owned = 0
 			local nation_owned = 0
@@ -757,6 +980,55 @@ function module.start_module()
 			end
 		end
 	end)
+end
+
+-- Module entry
+
+function module.start_module()
+	terrain_service.start_module()
+	
+	empire_spawn = main_game:WaitForChild("Empire")
+	nation_spawn = main_game:WaitForChild("Nation")
+	tag_spawn_walls(empire_spawn, EMPIRE_WALL_GROUP)
+	tag_spawn_walls(nation_spawn, NATION_WALL_GROUP)
+	
+	fastcast_module.VisualizeCasts = visualize_casts_boolean.Value
+
+	visualize_casts_boolean:GetPropertyChangedSignal("Value"):Connect(function()
+		fastcast_module.VisualizeCasts = visualize_casts_boolean.Value
+	end)
+
+	if testing_boolean.Value == true then return end
+
+	if empire_infinite_respawns then
+		empire_infinite_respawns:GetPropertyChangedSignal("Value"):Connect(function()
+			if empire_infinite_respawns.Value == true then
+				empire_rein_count.Value = 999
+				print("[GameManager] Empire infinite tickets toggled on mid-round — set to 999.")
+			end
+		end)
+	end
+
+	if nation_infinite_respawns then
+		nation_infinite_respawns:GetPropertyChangedSignal("Value"):Connect(function()
+			if nation_infinite_respawns.Value == true then
+				nation_rein_count.Value = 999
+				print("[GameManager] Nation infinite tickets toggled on mid-round — set to 999.")
+			end
+		end)
+	end
+
+	if quick_respawns_boolean then
+		quick_respawns_boolean:GetPropertyChangedSignal("Value"):Connect(function()
+			if quick_respawns_boolean.Value == true then
+				empire_rein_wave_timer.Value = 1
+				nation_rein_wave_timer.Value = 1
+				print("[GameManager] Quick respawns toggled on mid-round — wave timers set to 1.")
+			end
+		end)
+	end
+
+	begin_round()
 end
 
 return module

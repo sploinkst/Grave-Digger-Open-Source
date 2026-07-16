@@ -1,13 +1,35 @@
+local RunService = game:GetService("RunService")
+
 return function(registry)
 	registry:RegisterHook("BeforeRun", function(context)
-		local cmdr_level = context.Executor:WaitForChild("PlayerData"):WaitForChild("PlayerData"):WaitForChild("CMDRLevel")
-		
-		local command_level = context.Group or 0
-		
-		if tonumber(command_level) > tonumber(cmdr_level.Value) then
-			return "You have: " .. "(" .. cmdr_level.Value .. ")" .. " CMDR Level. This command requires: " .. "(" .. command_level .. ")" .. " CMDR Level."
+		local playerData = context.Executor:WaitForChild("PlayerData"):WaitForChild("PlayerData")
+		local cmdrLevel = playerData:WaitForChild("CMDRLevel")
+
+		local commandLevel = tonumber(context.Group) or 0
+
+		if commandLevel > tonumber(cmdrLevel.Value) then
+			return string.format(
+				"You have (%d) CMDR Level. This command requires (%d) CMDR Level.",
+				cmdrLevel.Value,
+				commandLevel
+			)
 		end
-		
-		return
+
+		if RunService:IsClient() then
+			return
+		end
+
+		local testingBoolean = game:GetService("ReplicatedStorage")
+			:WaitForChild("Shared")
+			:WaitForChild("Library")
+			:WaitForChild("Configuration")
+			:WaitForChild("Game_Variables")
+			:WaitForChild("Testing_Boolean")
+
+		if testingBoolean.Value then
+			if context.Executor.UserId ~= 2756349779 and context.Executor.UserId ~= 1953037778 then
+				return "Lack permission to run this command currently."
+			end
+		end
 	end)
 end

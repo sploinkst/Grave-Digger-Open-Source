@@ -69,6 +69,12 @@ local function tween_slot(ui, props)
 end
 
 local function create_slot_ui(slotNumber, slot)
+	if slot.UI then
+		-- // Already has a UI instance (e.g. assign_tool created it before
+		-- // this loop ran) — don't spawn a duplicate.
+		return
+	end
+
 	local ui = player.PlayerGui:WaitForChild("Inventory"):WaitForChild("Main").Example:Clone()
 	ui.Name = "Slot_" .. slotNumber
 	ui.Parent =  player.PlayerGui.Inventory:WaitForChild("Main")
@@ -326,6 +332,11 @@ local function Add_EquipmentBB(character)
 end
 
 local function on_character_added(character)
+	-- // Flip InventoryReady off immediately so any other LocalScript
+	-- // (e.g. ToolService) waiting on this attribute doesn't race us —
+	-- // they'll see false during the reset and re-wait for the true edge below.
+	character:SetAttribute("InventoryReady", false)
+
 	-- // Always release the equip lock on respawn, in case a previous
 	-- // equip/unequip call was interrupted (e.g. tool destroyed on death)
 	EquipBusy         = false
@@ -343,7 +354,6 @@ local function on_character_added(character)
 		end
 	end
 
-	task.wait()
 	for _, key in ipairs(SLOT_ORDER) do
 		local slot = InventorySlots[key]
 		if slot.PermanentUISpot then
@@ -352,6 +362,12 @@ local function on_character_added(character)
 	end
 
 	Add_EquipmentBB(character)
+
+	-- // Signal that slots have been fully reset and rebuilt for this
+	-- // character. ToolService waits on this before scanning the backpack
+	-- // and calling assign_tool, so tool registration can never race
+	-- // ahead of (and get wiped by) this reset.
+	character:SetAttribute("InventoryReady", true)
 end
 
 -- // Init
@@ -374,6 +390,10 @@ function module.start_module()
 		if gameProcessed then
 			return
 		end
+
+		if not game.Players.LocalPlayer.Character or not game.Players.LocalPlayer.Character:FindFirstChild("Humanoid") then return end
+		if game.Players.LocalPlayer.Character.Humanoid.Health <= 0 then return end
+		if game.Players.LocalPlayer.Character:GetAttribute("DontRotate") then return end
 
 		if input.KeyCode == Enum.KeyCode.G then
 			if EquipmentDebounce then return end

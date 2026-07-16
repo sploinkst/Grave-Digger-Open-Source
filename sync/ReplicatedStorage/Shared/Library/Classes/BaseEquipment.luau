@@ -27,6 +27,7 @@ function BaseEquipment.new(info: { name: string }): BaseEquipment
 	self.Tick = 0
 	self.EquipmentBB = nil
 	self.Counting = false
+	self.Activated = false
 
 	return self
 end
@@ -56,8 +57,9 @@ function BaseEquipment:Start(character)
 		HoldingG = true
 
 		task.delay(0.5, function()
-			if HoldingG then
+			if HoldingG and not self.Activated then
 				print("Held G for 3 seconds!")
+				self.Activated = true
 				self:Activate(character)
 			end
 		end)
@@ -73,6 +75,7 @@ function BaseEquipment:Start(character)
 		end
 
 		HoldingG = false
+		self.Activated = false
 		print("Released G")
 	end)
 	

@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
 local player_service = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local replicant_folder = ReplicatedStorage.Shared.Library.Events.Replicant_Communication
 
 local fastcast_replicant = replicant_folder.FastCast_Connection
@@ -24,6 +25,8 @@ local melee_events = replicant_folder.Parent.Melee_Communication
 local melee_connection = melee_events.Melee_Connection
 local casing_connection = replicant_folder.Casing_Connection
 
+local GiveCompassEvent:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Equipment_Communication"):WaitForChild("GiveCompass")
+local RemoveCompass:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Equipment_Communication"):WaitForChild("RemoveCompass")
 
 local status_service = require(script.Parent.StatusService)
 
@@ -213,6 +216,49 @@ function module.pop_helmet(character, helmet_model, knockable: boolean)
 	end
 end
 
+local function tweenLid(lidRotate: Motor6D, angle: number)
+	local currentC0 = lidRotate.C0
+
+	local targetC0 = CFrame.new(currentC0.Position) * CFrame.fromOrientation(
+		0,
+		0,
+		math.rad(angle)
+	)
+
+	local tween = TweenService:Create(
+		lidRotate,
+		TweenInfo.new(
+			0.3,
+			Enum.EasingStyle.Sine,
+			Enum.EasingDirection.Out
+		),
+		{
+			C0 = targetC0
+		}
+	)
+
+	tween:Play()
+	return tween
+end
+
+local function getCompassData(player, arm)
+	local character = player.Character
+	if not character then
+		return
+	end
+
+	local armPart = character:FindFirstChild(arm)
+	if not armPart then
+		return
+	end
+
+	local compass = if player.Team and player.Team.Name == "Golden Empire"
+		then ReplicatedStorage.Shared.Assets.Items.Compass.empirecompass
+		else ReplicatedStorage.Shared.Assets.Items.Compass.nationcompass
+
+	return armPart, compass
+end
+
 function module.start_module()
 
 	fastcast_replicant.OnServerEvent:Connect(function(...)
@@ -276,7 +322,10 @@ function module.start_module()
 		-- Prevent self-damage
 		if player.Team.Name == hitPlayer.Team.Name then return end
 		if hitPlayer and hitPlayer == player then return end
-
+		
+		hitPlayer:SetAttribute("LastTagged", player.Name)
+		print(hitPlayer.Name, "IS TAGGED")
+		
 		-- Knockback
 		local forceDirection = (direction.Unit + Vector3.new(0, 0.1, 0)).Unit
 		local baseForce      = knockback_force or 5
@@ -324,7 +373,7 @@ function module.start_module()
 
 		-- Normal damage
 		humanoid:TakeDamage(damage or 0)
-
+		
 		if humanoid.Health < 100 and hitPlayer then
 			status_service.give_status(hitPlayer, "WoundStatus", nil, instance.Name)
 			status_service.give_status(hitPlayer, "ConcussionStatus")
@@ -436,12 +485,12 @@ function module.start_module()
 			end
 
 			local clone = AmmoPack:Clone()
-			clone.Position = hrp.Position + hrp.CFrame.LookVector * 1.5
-			clone.CanCollide = true
+			clone.Position = hrp.Position + hrp.CFrame.LookVector * 4
+			clone.CanCollide = false
 			clone.Parent = workspace
 
 			local velocity = Instance.new("BodyVelocity")
-			velocity.Velocity = hrp.CFrame.LookVector * 8 + Vector3.new(0, 6, 0)
+			velocity.Velocity = hrp.CFrame.LookVector * 20 + Vector3.new(0, 8, 0)
 			velocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
 			velocity.Parent = clone
 			
@@ -457,7 +506,12 @@ function module.start_module()
 			end)
 			task.delay(0.1, function()
 				velocity:Destroy()
+				clone.CanCollide = true
 				clone.CanTouch = true
+			end)
+			
+			task.delay(0.5, function()
+				clone.CanCollide = true
 			end)
 			
 			task.delay(30, function()
@@ -501,6 +555,70 @@ function module.start_module()
 			
 			
 		end
+	end)
+
+	GiveCompassEvent.OnServerEvent:Connect(function(player, arm)
+		print("Received CompassEvent")
+		
+		local armPart, compass = getCompassData(player, arm)
+		if not armPart then
+			return
+		end
+
+		local existing = player.Character:FindFirstChild(compass.Name, true)
+		if existing then
+			existing:Destroy()
+		end
+		
+		local clone = compass:Clone()
+		clone.Parent = armPart
+		clone:PivotTo(armPart.CFrame)
+
+		local weld = Util.quick_weld(
+			armPart,
+			clone.base,
+			clone,
+			"Weld"
+		)
+
+		if arm == "Right Arm" then
+			weld.C0 =
+				CFrame.new(-0.6, -0.5, 0)
+				* CFrame.fromOrientation(math.rad(180), 0, math.rad(90))
+		else
+			weld.C0 =
+				CFrame.new(0.6, -0.5, 0)
+				* CFrame.fromOrientation(0, 0, math.rad(-90))
+		end
+
+		local lidRotate = clone.base:FindFirstChild("lid_rotate")
+		if lidRotate then
+			task.delay(0.3, function()
+				tweenLid(lidRotate, -90)
+			end)
+		end
+	end)
+
+	RemoveCompass.OnServerEvent:Connect(function(player, arm)
+		local armPart, compass = getCompassData(player, arm)
+		if not armPart then
+			return
+		end
+
+		local existingCompass = armPart:FindFirstChild(compass.Name)
+		if not existingCompass then
+			return
+		end
+
+		print("Destroying Existing Compass")
+
+		local lidRotate = existingCompass.base:FindFirstChild("lid_rotate")
+		if lidRotate then
+			local tween = tweenLid(lidRotate, 0)
+			tween.Completed:Wait()
+		end
+
+		existingCompass:Destroy()
 	end)
 end
 

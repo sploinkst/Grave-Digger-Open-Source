@@ -67,12 +67,35 @@ local function resume_camera(camera)
 	end
 end
 
+local function HandleDeath(character)
+	local humanoid = character:WaitForChild("Humanoid")
+	module.end_camera_by_name("SpectateCamera", true)
+	
+	humanoid.Died:Connect(function()
+		print("[DEATHCAMERA] Died Fired!")
+		module.switch_camera("DeathCamera", true)
+	end)
+end
 -- // Core
 
 function module.start_module()
 	check_cameras()
 	workspace_service.CurrentCamera.CameraType = Enum.CameraType.Scriptable
-	module.switch_camera("BaseCamera")
+	module.switch_camera("SpectateCamera", true)
+	
+	local function OnCharacterAdded(character)
+		module.end_camera_by_name("DeathCamera", true)
+		module.end_camera_by_name("SpectateCamera", true)
+		module.switch_camera("BaseCamera", true)
+		HandleDeath(character)
+	end
+
+	if player_service.LocalPlayer.Character then
+		module.end_camera_by_name("SpectateCamera", true)
+		OnCharacterAdded(player_service.LocalPlayer.Character)	
+	end
+
+	player_service.LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 end
 
 function module.switch_camera(target_camera_name: string, abrupt_change: boolean)
@@ -136,35 +159,33 @@ end
 
 function module.end_camera_by_name(camera_name: string, abrupt: boolean)
 	local index = find_camera_index(camera_name)
-	if not index then return end
 
-	local is_top         = (index == #Cameras_Stack)
+	if not index then
+		return
+	end
+
 	local removed_camera = table.remove(Cameras_Stack, index)
 
-	if is_top then
-		if abrupt then
-			removed_camera:Cut()
-		else
-			removed_camera:End()
-		end
-
-		local previous_camera = get_top_camera()
-
-		if previous_camera then
-			resume_camera(previous_camera)
-		else
-			workspace_service.CurrentCamera.CameraType = Enum.CameraType.Custom
-		end
+	if abrupt then
+		removed_camera:Cut()
 	else
 		removed_camera:End()
 	end
-end
 
-function module.apply_recoil(vertical, horizontal)
+
 	local current_camera = get_top_camera()
+
 	if current_camera then
-		current_camera:ApplyRecoil(vertical, horizontal)
+		resume_camera(current_camera)
+	else
+		workspace_service.CurrentCamera.CameraType = Enum.CameraType.Custom
 	end
 end
 
+function module.apply_recoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?, scale: number?)
+	local current_camera = get_top_camera()
+	if current_camera and current_camera.ApplyRecoil then
+		current_camera:ApplyRecoil(vertical, horizontal, steps, doRoll, scale)
+	end
+end
 return module

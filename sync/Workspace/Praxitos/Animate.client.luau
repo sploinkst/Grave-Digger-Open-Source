@@ -1,7 +1,6 @@
 ----------------------
 -- @Praxitos
 -- Animation Handler
--- FIXED: Climbing/sprint animation conflict
 ----------------------
 
 -- // Services
@@ -138,7 +137,6 @@ local function load_animations()
 		
 		loaded_animations[animation.Name]:GetMarkerReachedSignal("Footstep"):Connect(function()
 			sound_module.Play_WalkSFX()
-			print("Footstep")
 		end)
 	end
 end
@@ -373,7 +371,7 @@ local function update_movement(speed: number)
 		end
 
 		if freelook then
-			play_base("Walk_Forward")
+			play_base("CrouchWalk_Forward")
 		else
 			play_base(get_crouch_animation())
 		end
@@ -422,6 +420,15 @@ local function update_movement(speed: number)
 			play_overlay("Sprint_Lean", 0.15)
 
 			playing_sprint_arms = true
+			
+			character:GetAttributeChangedSignal("Sprint_Animation"):Connect(function()
+				clear_sprint_overlays()
+
+
+				if character:GetAttribute("Sprinting") then
+					play_overlay(sprint_arms_overlay(), 0.2, nil, 1)
+				end
+			end)	
 		end
 
 		return
@@ -548,10 +555,10 @@ humanoid.StateChanged:Connect(function(_, new_state)
 		is_climbing = true
 		is_airborne = false   -- FIX: always clear airborne when climbing begins
 
-		-- FIX: reset state so set_state() won't no-op when we leave climbing
+		--reset state so set_state() won't no-op when we leave climbing
 		current_state = nil
 
-		-- FIX: explicitly stop all sprint overlays by name, not just
+		-- explicitly stop all sprint overlays by name, not just
 		-- whatever happens to be in active_overlays
 		clear_sprint_overlays(0.1)
 

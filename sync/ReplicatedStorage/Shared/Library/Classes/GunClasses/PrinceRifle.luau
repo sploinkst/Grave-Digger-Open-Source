@@ -27,8 +27,8 @@ local fire_sound = SoundFolder.fire
 
 -- // Tuning
 
-local CYCLE_REST_TIME = 1
-local FIRE_RATE       = 0.30
+local CYCLE_REST_TIME = 0.15
+local FIRE_RATE       = 0.3
 local BULLET_SPEED    = 1000
 
 -- // Animation layers
@@ -120,6 +120,9 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.holster_reference = HolsterFolder and HolsterFolder:FindFirstChild("PrinceRifleHolster")
 	self.model_reference   = ToolFolder:FindFirstChild("PrinceRifle")
 	self.Round             = Assets.Guns.Rounds.PrinceRifle_Round
+	self.RoundMotor_6d_Data = {
+		C0 = CFrame.new(-0.1, 0, 0) * CFrame.Angles(0,0,0)
+	}
 
 	self.motor_6d_data = {
 		Parent = "Left Arm",
@@ -159,24 +162,24 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	}
 
 	self.animation_speeds = {
-		Cycle        = 0.55,
-		Draw         = 0.75,
-		Aim          = 0.35,
-		Aim_Left     = 0.35,
-		Reload_Start = 1.6,
-		Reload_Empty = 1.45,
-		Reload_Loop  = 0.65,
-		Reload_End   = 1.45,
-		Reload_Alt   = 1.4,
-		Melee1       = 0.7,
-		Melee2       = 0.7,
+		Cycle        = 1.818182,  -- 1 / 0.55
+		Draw         = 1.333333,  -- 1 / 0.75
+		Aim          = 2.857143,  -- 1 / 0.35
+		Aim_Left     = 2.857143,  -- 1 / 0.35
+		Reload_Start = 0.625,     -- 1 / 1.6
+		Reload_Empty = 0.689655,  -- 1 / 1.45
+		Reload_Loop  = 1.538462,  -- 1 / 0.65
+		Reload_End   = 0.689655,  -- 1 / 1.45
+		Reload_Alt   = 0.714286,  -- 1 / 1.4
+		Melee1       = 1.428571,  -- 1 / 0.7
+		Melee2       = 1.428571,  -- 1 / 0.7
 	}
 
 	self.damage                  = 105
 	self.Max_Capacity            = 7
 	self.Capacity                = 7
 	self.Ammo_Type               = "8mm Smokeless"
-	self.recoil                  = 10
+	self.recoil                  = 20
 	self.recoil_count            = 6
 	self.Penetration_Level       = 2
 	self.Armor_Penetration_Level = 3
@@ -204,7 +207,18 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.Checking         = false
 	self.Check_Delayed    = false
 	self.Meleeing         = false
+	self.CompassRight 	  = true
+	
+	self.FireEmissions = {
+		smoke_medium = function()
+			return math.random(2, 4)
+		end,
 
+		smoke_forward = function()
+			return math.random(4, 6)
+		end,
+	}
+	
 	self:_initShoulderTracking()
 
 	return self
@@ -247,17 +261,22 @@ end
 function PrinceRifle:cycle()
 	if self.Cycling then return end
 	self.Cycling = true
+	self.Cycled  = false
 
-	local anims = self.RegisteredAnimations
-	if not anims then self.Cycling = false; return end
-
-	self:_stopAllExcept()
-	self:_playAnim("Cycle")
+	if not self.RegisteredAnimations then
+		self.Cycling = false
+		return
+	end
 
 	task.delay(CYCLE_REST_TIME, function()
-		self.Cycled  = true
-		self.Cycling = false
-		self:_restoreBase()
+		self:_stopAllExcept()
+		local cycleTrack = self:_playAnim("Cycle")
+
+		cycleTrack.Stopped:Once(function()
+			self.Cycled  = true
+			self.Cycling = false
+			self:_restoreBase()
+		end)
 	end)
 end
 
@@ -265,6 +284,8 @@ function PrinceRifle:fire()
 	if self.Checking then return end
 	if self.Capacity <= 0 then self:reload() return end
 	if self.Firing then return end
+	if not self.Aiming then return end
+	
 	self.Firing = true
 
 	-- Added self:_if_jumping() so hip-firing (not just aiming) is blocked
@@ -330,7 +351,8 @@ function PrinceRifle:fire()
 		self.recoil,
 		self.recoil_count,
 		10,
-		false
+		false,
+		1.8
 	)
 
 	if self.Alt_Mode then
@@ -340,7 +362,9 @@ function PrinceRifle:fire()
 	self:_fireMuzzleFlash()
 
 	fire_track.Stopped:Once(function()
-		self:_restoreBase()
+		if not self.Cycling then
+			self:_restoreBase()
+		end
 	end)
 
 	task.wait(FIRE_RATE)
@@ -398,9 +422,14 @@ function PrinceRifle:reload()
 
 		game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
 		while self.Capacity < self.Max_Capacity do
+			if not self.Equipped then
+				break
+			end
+			
 			self:_playAnim("Reload_Loop").Stopped:Wait()
 
 			if self._reloadCancelled or self._ToCancelReload then
+				self.Capacity += 1
 				break
 			end
 
@@ -468,8 +497,10 @@ function PrinceRifle:_on_equip()
 
 			if keyframe == "vfx_hand_shell_visible" then
 				round.Transparency = 0
+				round:FindFirstChild("bullet").Transparency = 0
 			elseif keyframe == "vfx_hand_shell_invisible" then
 				round.Transparency = 1
+				round:FindFirstChild("bullet").Transparency = 1
 			end
 
 			if keyframe:sub(1, 4) == "sfx_" then
@@ -508,12 +539,6 @@ function PrinceRifle:_on_unequip()
 end
 
 -- // Cleanup
-
-function PrinceRifle:Destroy()
-	self:_disconnectInput()
-	BaseTool.destroy(self)
-end
-
 PrinceRifle.Tool_Image = "rbxassetid://17496049645"
 PrinceRifle.Medal_Cost = 0
 PrinceRifle.Weight     = 2

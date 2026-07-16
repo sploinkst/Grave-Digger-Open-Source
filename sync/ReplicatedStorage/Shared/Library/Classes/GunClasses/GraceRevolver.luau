@@ -27,7 +27,7 @@ local fire_sound  = SoundFolder.fire
 
 -- // Tuning
 
-local FIRE_RATE    = 0.25
+local FIRE_RATE    = 0.75
 local BULLET_SPEED = 800
 
 -- // Animation layers
@@ -158,25 +158,26 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	}
 
 	self.animation_speeds = {
-		Melee1            = 0.7,
-		Melee2            = 0.7,
-		Fire              = 0.75,
-		Fire_Left         = 0.75,
-		Draw              = 0.2,
-		Aim               = 0.125,
-		Aim_Left          = 0.125,
-		Reload_start      = 0.7,
-		Reload_Loop       = 0.2,
-		Reload_Loop_After = 0.1,
-		Reload_End        = 0.65,
+		Melee1            = 1.43,
+		Melee2            = 1.43,
+		Fire              = 1.33,
+		Fire_Left         = 1.33,
+		Draw              = 5.0,
+		Aim               = 8.0,
+		Aim_Left          = 8.0,
+		Reload_Start      = 0.91,
+		Reload_Loop       = 2.5,
+		Reload_Loop_After = 10,
+		Reload_End        = 1.54,
 	}
 
 	self.damage                  = 120
 	self.Max_Capacity            = 6
 	self.Capacity                = 6
 	self.Ammo_Type               = ".45 Lead"
-	self.recoil                  = 15
+	self.recoil                  = 30
 	self.recoil_count            = 6
+	self.do_roll 				 = false
 	self.Penetration_Level       = 1
 	self.Armor_Penetration_Level = 2
 	self.KnockBack_Force         = 8
@@ -200,6 +201,30 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self._reloadCancelled = false
 	self._spinCancelled   = false
 
+	self.FireEmissions = {
+		flash = {
+			chance = 0.5,
+			count = 1,
+		},
+
+		flash_general = {
+			chance = 0.5,
+			count = 1,
+		},
+
+		smoke_flash_heavy = 1,
+
+		smoke_medium = function()
+			return math.random(2, 4)
+		end,
+
+		smoke_forward = function()
+			return math.random(4, 6)
+		end,
+
+		smoke_linger_strong = 1,
+	}
+	
 	self:_initShoulderTracking()
 
 	return self
@@ -304,7 +329,7 @@ function GraceRevolver:fire()
 	})
 
 	self.Capacity -= 1
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false)
+	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1.8)
 
 	local fireAnim  = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 	local fireTrack = self:_playAnim(fireAnim)

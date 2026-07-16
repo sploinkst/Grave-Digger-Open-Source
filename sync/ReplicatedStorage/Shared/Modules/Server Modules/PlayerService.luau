@@ -286,8 +286,6 @@ local function handle_character(player: Player, character: Model, ragdoll_object
 			character_clone.Parent = bodies_folder
 		end
 
-		character:Destroy()
-
 		ragdoll_object:_special_apply(character_clone)
 
 		player:SetAttribute("Active", nil)
@@ -295,9 +293,23 @@ local function handle_character(player: Player, character: Model, ragdoll_object
 		task.delay(60, function()
 			character_clone:Destroy()
 		end)
+		
+		task.delay(0.5, function()
+			character:Destroy()
+		end)
+		player:SetAttribute("LastTagged", nil)
 	end)
 	
+	local LeftHip = character:FindFirstChild("Torso"):FindFirstChild("Left Hip")
+	local RightHip = character:FindFirstChild("Torso"):FindFirstChild("Right Hip")
+	
+	-- // set part 0 as the legs, part1 as the hrp
+	LeftHip.Part0 = character:FindFirstChild("HumanoidRootPart")
+	RightHip.Part0 = character:FindFirstChild("HumanoidRootPart")
+	
+	print("PlayerService: Setup hips")
 	character:SetAttribute("ServerReady", true)
+	--player:SetAttribute("LastTagged", nil)
 end
 
 local function setup_player(player: Player)
@@ -316,18 +328,20 @@ local function setup_player(player: Player)
 	end
 
 	if player.Team.Name == "Golden Empire" then
+		print("Setting up empire player")
 		AccessoryService.give_accessory(player, "Empire_Soldat_Helmet", true, true, false)
 		AccessoryService.give_accessory(player, "Empire_Belt", false, true, false)
 		AccessoryService.give_accessory(player, "Empire_Lantern", false, true, false)
 		AccessoryService.give_accessory(player, "Empire_Dogtag", false, true, false)
 	else
+		print("Setting up nation player")
 		AccessoryService.give_accessory(player, "Nation_Soldat_Helmet", true, true, false)
 		AccessoryService.give_accessory(player, "Nation_Belt", false, true, false)
 		AccessoryService.give_accessory(player, "Nation_Lantern", false, true, false)
 		AccessoryService.give_accessory(player, "Nation_Dogtag", false, true, false)
 	end
 
-	player.Team.Changed:Connect(function()
+	player:GetPropertyChangedSignal("Team"):Connect(function()
 		for _, child in pairs(player.GameData.Accessorys:GetChildren()) do
 			if child.Name == "Empire_Soldat_Helmet" or child.Name == "Nation_Soldat_Helmet"
 				or child.Name == "Empire_Belt" or child.Name == "Nation_Belt"

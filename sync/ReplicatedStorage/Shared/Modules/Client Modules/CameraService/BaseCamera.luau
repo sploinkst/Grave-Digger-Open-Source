@@ -187,7 +187,10 @@ function BaseCamera.new(cameraInfo)
 
 	self.transparency_connection = nil
 	self._shiftLockProcessed     = false
-
+	
+	self.TransitionOffset = nil
+	self.TransitionRotation = nil
+	
 	return self
 end
 
@@ -217,24 +220,42 @@ function BaseCamera:_decayCameraOffsetZ(dt: number)
 	humanoid.CameraOffset = Vector3.new(co.X, co.Y, co.Z + (0 - co.Z) * math.clamp(8 * dt, 0, 1))
 end
 
-function BaseCamera:_applyTransition(root: BasePart, targetCFrame: CFrame, dt: number)
+function BaseCamera:_applyTransition(root: BasePart, targetCFrame: CFrame, dt)
+
 	if self.IsTransitioning then
-		if not self.TransitionStartWorld then
-			self.TransitionStartWorld = Camera.CFrame
-		end
 
 		self.TransitionElapsed += dt
-		local alpha = math.clamp(self.TransitionElapsed / TRANSITION_SPEED, 0, 1)
 
-		local lerpedCFrame = self.TransitionStartWorld:Lerp(targetCFrame, alpha)
-		self.TransitionStartWorld = lerpedCFrame
-		Camera.CFrame = lerpedCFrame
+		local alpha = math.clamp(
+			self.TransitionElapsed / TRANSITION_SPEED,
+			0,
+			1
+		)
+
+		local movingStart = targetCFrame
+
+		if self.TransitionOffset then
+			movingStart =
+				root.CFrame * self.TransitionOffset
+		end
+
+
+		Camera.CFrame = movingStart:Lerp(
+			targetCFrame,
+			TweenService:GetValue(
+				alpha,
+				Enum.EasingStyle.Quad,
+				Enum.EasingDirection.Out
+			)
+		)
+
 
 		if alpha >= 1 then
-			Camera.CFrame             = targetCFrame
-			self.IsTransitioning      = false
-			self.TransitionStartWorld = nil
+			self.IsTransitioning = false
+			self.TransitionOffset = nil
+			self.TransitionElapsed = 0
 		end
+
 	else
 		Camera.CFrame = targetCFrame
 	end
@@ -633,7 +654,7 @@ local function handle_object(part, isFirstPerson)
 				break
 			end
 		end
-		
+
 	elseif grandparent and grandparent.Name == "Equipment" then
 		local isBodyPart =
 			parent:FindFirstChild("Head")
@@ -649,7 +670,7 @@ local function handle_object(part, isFirstPerson)
 				end
 			end
 		end
-		
+
 	elseif grandparent2 and grandparent2.Name == "Equipment" then
 		local isBodyPart =
 			grandparent:FindFirstChild("Head")
@@ -878,7 +899,7 @@ function BaseCamera:CustomCamera()
 				finalZoom = currentZoom + 0.1
 			else
 				finalZoom = math.max(rayResult.Distance - COLLISION_MARGIN, MIN_ZOOM) end
-			end
+		end
 
 		local targetCFrame = CFrame.new(cameraFocus - (cameraDir * finalZoom)) * rotation
 		self:_applyTransition(root, targetCFrame, dt)
@@ -1095,9 +1116,15 @@ function BaseCamera:Switch_Camera(target: string)
 	self.CameraYaw   = math.atan2(-look.X, -look.Z)
 	self.CameraPitch = math.asin(math.clamp(look.Y, -1, 1))
 
-	self.TransitionStartWorld = Camera.CFrame
-	self.IsTransitioning      = true
-	self.TransitionElapsed    = 0
+	local character = LocalPlayer.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+
+	if root then
+		self.TransitionOffset = root.CFrame:ToObjectSpace(Camera.CFrame)
+	end
+
+	self.IsTransitioning = true
+	self.TransitionElapsed = 0
 	self.CurrentMode          = target
 
 	local preset = Presets[target]
@@ -1158,9 +1185,9 @@ end
 function BaseCamera:Start()
 	print("CameraService: BaseCamera started")
 
-	self.IsTransitioning      = false
-	self.TransitionStartWorld = nil
-	self.TransitionElapsed    = 0
+	self.IsTransitioning = false
+	self.TransitionPositionOffset = nil
+	self.TransitionElapsed = 0
 
 	local function onCharacterAdded(character)
 		self:_refreshKeybinds()
@@ -1215,9 +1242,9 @@ function BaseCamera:Resume()
 	print("CameraService: BaseCamera resumed")
 
 	-- reset any leftover transition state from when we were paused
-	self.IsTransitioning      = false
-	self.TransitionStartWorld = nil
-	self.TransitionElapsed    = 0
+	self.IsTransitioning = false
+	self.TransitionPositionOffset = nil
+	self.TransitionElapsed = 0
 
 	-- read current yaw from root so we face the right direction immediately
 	local character = LocalPlayer.Character
@@ -1297,49 +1324,105 @@ function BaseCamera:Cut()
 	self:End()
 end
 
-function BaseCamera:ApplyRecoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?)
+-- Modified ApplyRecoil in BaseCamera
+function BaseCamera:ApplyRecoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?, scale: number?)
+	scale = scale or 1
 	steps = steps or 6
 
-	local totalSteps   = steps + 1
-	local stepInterval = 0.015
-	local elapsed      = 0
-	local stepsApplied = 0
+	-- 1. Permanent weapon kick
+	local targetPitch = vertical * scale
+	local targetYaw = horizontal * scale
 
-	if doRoll then
-		local rollSteps   = 0
-		local rollElapsed = 0
-		local rollConn
-		rollConn = RunService.RenderStepped:Connect(function(dt)
-			if rollSteps >= 4 then rollConn:Disconnect(); return end
-			rollElapsed += dt
-			local due = math.floor(rollElapsed / stepInterval)
-			for _ = 1, math.min(due - rollSteps, 4 - rollSteps) do
-				Camera.CFrame *= CFrame.Angles(0, 0, math.rad(2))
-				rollSteps += 1
-			end
-		end)
-	end
+	local appliedPitch = 0
+	local appliedYaw = 0
+
+	local duration = 0.05 -- 50ms
+	local elapsed = 0
 
 	local conn
 	conn = RunService.RenderStepped:Connect(function(dt)
-		if stepsApplied >= totalSteps then conn:Disconnect(); return end
+		elapsed += dt
+
+		local alpha = math.clamp(elapsed / duration, 0, 1)
+		alpha = TweenService:GetValue(alpha, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+		local pitch = targetPitch * alpha
+		local yaw = targetYaw * alpha
+
+		self.CameraPitch += pitch - appliedPitch
+		self.CameraYaw += yaw - appliedYaw
+
+		appliedPitch = pitch
+		appliedYaw = yaw
+
+		if alpha >= 1 then
+			conn:Disconnect()
+		end
+	end)
+
+	-- 2. Temporary Camera Shake (Procedural)
+	local elapsed = 0
+	local appliedSteps = 0
+	local stepInterval = 0.015
+
+	local conn
+	conn = RunService.RenderStepped:Connect(function(dt)
+		if appliedSteps >= steps then
+			conn:Disconnect()
+			return
+		end
 
 		elapsed += dt
 		local due = math.floor(elapsed / stepInterval)
 
-		for _ = 1, math.min(due - stepsApplied, totalSteps - stepsApplied) do
-			if self.holding_breath then
-				self.CameraPitch += vertical   * 0.5
-				self.CameraYaw   += horizontal * 0.5
-				self.CameraKick  += 0.15
-			else
-				self.CameraPitch += vertical
-				self.CameraYaw   += horizontal
-				self.CameraKick  += 0.15
-			end
-			stepsApplied += 1
+		for _ = 1, math.min(due - appliedSteps, steps - appliedSteps) do
+			-- Note: vertical/horizontal are already in radians from Util
+			local shakePitch = vertical * 0.25 * scale
+			local shakeYaw   = horizontal * 0.25 * scale
+
+			Camera.CFrame *= CFrame.Angles(shakePitch, shakeYaw, 0)
+			appliedSteps += 1
 		end
 	end)
+
+	-- 3. Roll shake
+	if doRoll then
+		local rollSteps = 0
+		local rollElapsed = 0
+		local rollConn
+
+		rollConn = RunService.RenderStepped:Connect(function(dt)
+			if rollSteps >= 4 then rollConn:Disconnect(); return end
+
+			rollElapsed += dt
+			local due = math.floor(rollElapsed / stepInterval)
+
+			for _ = 1, math.min(due - rollSteps, 4 - rollSteps) do
+				-- Roll is usually a fixed small kick; 
+				-- math.rad is appropriate here because 2 is a degrees value.
+				Camera.CFrame *= CFrame.Angles(0, 0, math.rad(2 * scale))
+				rollSteps += 1
+			end
+		end)
+	else
+		local rollSteps = 0
+		local rollElapsed = 0
+		local rollConn
+		
+		rollConn = RunService.RenderStepped:Connect(function(dt)
+			if rollSteps >= 2 then rollConn:Disconnect(); return end
+
+			rollElapsed += dt
+			local due = math.floor(rollElapsed / stepInterval)
+
+			for _ = 1, math.min(due - rollSteps, 4 - rollSteps) do
+				-- Roll is usually a fixed small kick; 
+				-- math.rad is appropriate here because 2 is a degrees value.
+				Camera.CFrame *= CFrame.Angles(0, 0, math.rad(0.25 * scale))
+				rollSteps += 1
+			end
+		end)
+	end
 end
 
 local myCamera = BaseCamera.new({
