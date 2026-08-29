@@ -3,8 +3,7 @@ local replicatedstorage_service = game:GetService("ReplicatedStorage")
 local accessory_service			= require(script.Parent.AccessoryService)
 local ToolService		= require(script.Parent.ItemsService)
 
-local Interaction_Communication = replicatedstorage_service:WaitForChild("Shared"):WaitForChild('Library'):WaitForChild("Events"):WaitForChild("Interaction_Communication")
-local Interaction_Connection = Interaction_Communication.Interact_Connection
+local Interaction_Connection = replicatedstorage_service:WaitForChild("Shared"):WaitForChild('Library'):WaitForChild("Events"):WaitForChild("Interact")
 local Util = require(replicatedstorage_service:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 
 function module.start_module()
@@ -24,7 +23,7 @@ function module.start_module()
 				if string.find(child.Name, "Helmet") then
 					child:Destroy()
 					player.Character.Head:FindFirstChild("AccessoryWeld"):Destroy()
-					accessory_service.give_accessory(player, child.Name, true, false, true)
+					accessory_service.GiveAccessory(player, child.Name, true, false, true)
 					
 					print("[INTERACTIONMANAGER] Added helmet to " .. player.Name)
 					break

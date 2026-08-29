@@ -8,14 +8,14 @@ local Players = game:GetService("Players")
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseTool = require(script.Parent.Parent.BaseTool)
 
-local Holster_Folder = ReplicatedStorage.Shared.Assets.Guns.Holsters:FindFirstChild("Tool Holsters")
+local Holster_Folder = ReplicatedStorage.Shared.Assets.Guns.Holsters
 local Tool_Folder = ReplicatedStorage.Shared.Assets.Guns.ToolModels
 local Animations_Folder = ReplicatedStorage.Shared.Assets.Animations
 local Effects_Folder = ReplicatedStorage.Shared.Assets.Guns.Effects
-local small_rocks = Effects_Folder.Mining.smallrock
+local small_rocks = Effects_Folder.smallrock
 
 local utilities_module = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
-local delete_terrain: RemoteEvent = ReplicatedStorage.Shared.Library.Events.Terrain_Communication.Delete_Terrain
+local delete_terrain: RemoteEvent = ReplicatedStorage.Shared.Library.Events.DeleteTerrain
 
 local LOCAL_PLAYER = Players.LocalPlayer
 
@@ -78,6 +78,7 @@ function Pickaxe.new(PickaxeCreateInfo: Types.BaseToolCreateInfo): Pickaxe
 	self.mining_power = 12
 	self.Mining = false
 	self._activationConnection = nil
+	self.CompassDisabled = false
 
 	return self
 end
@@ -127,13 +128,27 @@ function Pickaxe:equip()
 		local draw = self.RegisteredAnimations.Draw
 		local hold = self.RegisteredAnimations.Hold
 
-		if draw then draw:Play() end
-		if hold then hold:Play() end
+		if draw then
+			draw:Play()
+		end
+
+		if hold then
+			hold:Play()
+		end
+
+		for _, animation in pairs(self.RegisteredAnimations) do
+			if typeof(animation) == "Instance" and animation:IsA("AnimationTrack") then
+				animation:AdjustWeight(5, 0)
+				animation.Priority = Enum.AnimationPriority.Action4
+			end
+		end
 	end
 
 	if self.actual_holster then
 		utilities_module.hide_holster(LOCAL_PLAYER, self.actual_holster)
 	end
+	
+	LOCAL_PLAYER.Character:SetAttribute("CompassDenied", true)	
 end
 
 function Pickaxe:unequip()
@@ -153,6 +168,8 @@ function Pickaxe:unequip()
 	for _, animation in pairs(self.RegisteredAnimations) do
 		animation:Stop()
 	end
+	
+	LOCAL_PLAYER.Character:SetAttribute("CompassDenied", nil)	
 end
 
 function Pickaxe:activate()

@@ -14,7 +14,6 @@ local AmmoPackEvent = ReplicatedStorage
 	:WaitForChild("Shared")
 	:WaitForChild("Library")
 	:WaitForChild("Events")
-	:WaitForChild("Equipment_Communication")
 	:WaitForChild("AmmoPack")
 
 local AssistBB = ReplicatedStorage
@@ -138,6 +137,10 @@ function AmmoPack:SpecialStart()
 			return
 		end
 		
+		if not Players:GetPlayerFromCharacter(character) then
+			return
+		end
+		
 		if Util.hasfullammo(game.Players:GetPlayerFromCharacter(character)) then
 			return
 		end
@@ -165,7 +168,8 @@ end
 
 
 function AmmoPack:Activate()
-	if tonumber(self.EquipmentBB.bb.count.Text) == 0 then
+	local count = self:GetCount()
+	if not count or count <= 0 then
 		return
 	end
 	

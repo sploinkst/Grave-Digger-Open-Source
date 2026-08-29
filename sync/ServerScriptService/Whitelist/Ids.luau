@@ -21,4 +21,8 @@ return {
 	[103391924] = true, -- // Puro
 
 	[3330580713] = true, -- // RearedGlobe
+	[999442131] = true, -- // Z_Clan,
+	[2707824098] = true, -- // NexusTheNormie
+	
+	[4055144969] = true, -- // ThatOneWebbyBoi
 }

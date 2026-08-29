@@ -5,14 +5,14 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local game_points = game:GetService("Workspace").Game_Details.Main_Game.Points
-local GiveCompassEvent:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Equipment_Communication"):WaitForChild("GiveCompass")
-local RemoveCompassEvent:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Equipment_Communication"):WaitForChild("RemoveCompass")
+local GiveCompassEvent:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("GiveCompass")
+local RemoveCompassEvent:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("RemoveCompass")
 
 local BaseTool = require(script.Parent.Parent.BaseTool)
 
 local Assets        = ReplicatedStorage.Shared.Assets
 local SoundFolder   = Assets.Guns:WaitForChild("Sounds"):WaitForChild("PrinceRifle")
-local HolsterFolder = Assets.Guns.Holsters:FindFirstChild("Gun Holsters")
+local HolsterFolder = Assets.Guns.Holsters
 local ToolFolder    = Assets.Guns.ToolModels
 local AnimFolder    = Assets.Animations.Tools.Compass
 
@@ -107,13 +107,13 @@ function Compass:activate()
 		end
 
 		self.DebounceTick = tick()
-		
-		GiveCompassEvent:FireServer(compassArm)
-		print("To show objectives...")
 
 		self:show_ui()
-
+		
+		if game.Players.LocalPlayer.Character:GetAttribute("CompassDenied") then return end
+		
 		self._track = self:_playAnim(compassSide)
+		GiveCompassEvent:FireServer(compassArm)
 		
 		task.delay(0.5, function()
 			if self._track then
@@ -125,8 +125,10 @@ function Compass:activate()
 	else
 		print("To hide objectives...")
 
-		self:hide_ui()
-
+		task.delay(1.5, function()
+			self:hide_ui()
+		end)
+		
 		if self._track then
 			self._track:AdjustSpeed(1)
 			

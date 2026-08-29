@@ -1,36 +1,37 @@
 --!strict
-local module = {}
+
+local Module = {}
 
 -- // Services
-local workspace_service = game:GetService("Workspace")
-local tween_service     = game:GetService("TweenService")
+local WorkspaceService = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 
 -- // Constants
-local Camera      = workspace_service.CurrentCamera
+local Camera = WorkspaceService.CurrentCamera
 local CameraClass = require(script.Parent.Parent.Parent.Parent.Library.Classes.Miscellanous.CameraClass)
-local BaseCamera  = setmetatable({}, { __index = CameraClass })
+local BaseCamera = setmetatable({}, { __index = CameraClass })
 BaseCamera.__index = BaseCamera
 
-local game_details = workspace_service:WaitForChild("Game_Details")
-local menus_folder = game_details:WaitForChild("Menus")
+local GameDetails = WorkspaceService:WaitForChild("Game_Details")
+local MenusFolder = GameDetails:WaitForChild("Menus")
 
-local Camera_Info_Tables = {
-	["Appearance"] = { menus_folder.Appearance_Scene.Camera_Values },
-	["Credits"]    = { menus_folder.Credits_Scene.Camera_Values    },
-	["Loadout"]    = { menus_folder.Loadout_Scene.Camera_Values    },
-	["Servers"]    = { menus_folder.Servers_Scene.Camera_Values    },
-	["Settings"]   = { menus_folder.Settings_Scene.Camera_Values   },
+local CameraInfoTables = {
+	["Appearance"] = { MenusFolder.Appearance_Scene.Camera_Values },
+	["Credits"] = { MenusFolder.Credits_Scene.Camera_Values },
+	["Loadout"] = { MenusFolder.Loadout_Scene.Camera_Values },
+	["Servers"] = { MenusFolder.Servers_Scene.Camera_Values },
+	["Settings"] = { MenusFolder.Settings_Scene.Camera_Values },
 }
 
-local current_scene = "Loadout"
+local currentScene = "Loadout"
 
 -- // Internal State
-local active_tween: Tween? = nil
+local activeTween: Tween? = nil
 
 -- // Utilities
 
-local function get_camera_value(scene: string): CFrame?
-	local data = Camera_Info_Tables[scene]
+local function GetCameraValue(scene: string): CFrame?
+	local data = CameraInfoTables[scene]
 	if not data or not data[1] then
 		warn("[MENUCAMERA::] No data found for scene:", scene)
 		return nil
@@ -38,32 +39,32 @@ local function get_camera_value(scene: string): CFrame?
 	return data[1].Value
 end
 
-local function cancel_tween()
-	if active_tween then
-		active_tween:Cancel()
-		active_tween = nil
+local function CancelTween()
+	if activeTween then
+		activeTween:Cancel()
+		activeTween = nil
 	end
 end
 
-local function tween_to(cf: CFrame, duration: number)
-	cancel_tween()
-	active_tween = tween_service:Create(
+local function TweenTo(cf: CFrame, duration: number)
+	CancelTween()
+	activeTween = TweenService:Create(
 		Camera,
 		TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{ CFrame = cf }
 	)
-	active_tween:Play()
+	activeTween:Play()
 end
 
-local function set_camera_instant(cf: CFrame)
-	cancel_tween()
+local function SetCameraInstant(cf: CFrame)
+	CancelTween()
 	Camera.CFrame = cf
 end
 
-local function set_camera_intro(cf: CFrame)
-	cancel_tween()
+local function SetCameraIntro(cf: CFrame)
+	CancelTween()
 	Camera.CFrame = cf * CFrame.new(0, 0, 3)
-	tween_to(cf, 1.5)
+	TweenTo(cf, 1.5)
 end
 
 -- // Core Methods
@@ -71,45 +72,51 @@ end
 function BaseCamera:Start()
 	print("CameraService: MenuCamera started")
 	Camera.CameraType = Enum.CameraType.Scriptable
-	local cf = get_camera_value(current_scene)
-	if not cf then return end
-	set_camera_intro(cf)
+	local cf = GetCameraValue(currentScene)
+	if not cf then
+		return
+	end
+	SetCameraIntro(cf)
 end
 
 function BaseCamera:Resume()
-	-- MenuCamera has no paused state to restore; treat resume as a fresh start
+	-- // MenuCamera has no paused state to restore; treat resume as a fresh start
 	self:Start()
 end
 
 function BaseCamera:End()
 	print("CameraService: MenuCamera ended")
-	cancel_tween()
-	-- leave CameraType alone — CameraService resets it before handing off
+	CancelTween()
+	-- // leave CameraType alone — CameraService resets it before handing off
 end
 
-function BaseCamera:Cut(target_scene: string?)
-	cancel_tween()
-	if target_scene then
-		if not Camera_Info_Tables[target_scene] then
-			warn("[MENUCAMERA::] No Camera Info Table for scene:", target_scene)
+function BaseCamera:Cut(targetScene: string?)
+	CancelTween()
+	if targetScene then
+		if not CameraInfoTables[targetScene] then
+			warn("[MENUCAMERA::] No Camera Info Table for scene:", targetScene)
 			return
 		end
-		current_scene = target_scene
+		currentScene = targetScene
 	end
-	local cf = get_camera_value(current_scene)
-	if not cf then return end
-	set_camera_instant(cf)
-end
-
-function BaseCamera:Switch(target_scene: string)
-	if not Camera_Info_Tables[target_scene] then
-		warn("[MENUCAMERA::] No Camera Info Table for scene:", target_scene)
+	local cf = GetCameraValue(currentScene)
+	if not cf then
 		return
 	end
-	current_scene = target_scene
-	local cf = get_camera_value(target_scene)
-	if not cf then return end
-	set_camera_intro(cf)
+	SetCameraInstant(cf)
+end
+
+function BaseCamera:Switch(targetScene: string)
+	if not CameraInfoTables[targetScene] then
+		warn("[MENUCAMERA::] No Camera Info Table for scene:", targetScene)
+		return
+	end
+	currentScene = targetScene
+	local cf = GetCameraValue(targetScene)
+	if not cf then
+		return
+	end
+	SetCameraIntro(cf)
 end
 
 -- // Constructor
@@ -117,10 +124,10 @@ end
 function BaseCamera.new(cameraInfo)
 	local self = CameraClass.new(cameraInfo)
 	setmetatable(self, BaseCamera)
-	self.className      = "MenuCamera"
-	self.name           = "MenuCamera"
+	self.className = "MenuCamera"
+	self.name = "MenuCamera"
 	self.CameraPosition = Camera.CFrame.Position
-	self.priority       = 3
+	self.priority = 3
 	return self
 end
 

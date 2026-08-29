@@ -91,11 +91,26 @@ local function create_weapon_options()
 end
 
 local function setup_character()
-	local_player.Character.Archivable = true
-	local character_clone = local_player.Character:Clone()
-	character_clone:WaitForChild("HumanoidRootPart").Anchored = true
+	local character = local_player.Character or local_player.CharacterAdded:Wait()
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		root = character:WaitForChild("HumanoidRootPart", 5)
+	end
+	if not root or character ~= local_player.Character then
+		return
+	end
+
+	character.Archivable = true
+	local character_clone = character:Clone()
+	local clone_root = character_clone:FindFirstChild("HumanoidRootPart")
+	if not clone_root or not clone_root:IsA("BasePart") then
+		character_clone:Destroy()
+		return
+	end
+
+	clone_root.Anchored = true
 	character_clone.Parent = character_spot.Parent
-	character_clone.HumanoidRootPart.CFrame = character_spot.CFrame
+	clone_root.CFrame = character_spot.CFrame
 end
 
 function module.start_module()

@@ -7,15 +7,17 @@ local player_service            = game:GetService("Players")
 
 local BaseTool                  = require(script.Parent.Parent.BaseTool)
 
-local Holster_Folder            = ReplicatedStorage.Shared.Assets.Guns.Holsters:FindFirstChild("Tool Holsters")
+local Holster_Folder            = ReplicatedStorage.Shared.Assets.Guns.Holsters
 local Tool_Folder               = ReplicatedStorage.Shared.Assets.Guns.ToolModels
 local Animations_Folder         = ReplicatedStorage.Shared.Assets.Animations.Tools.Utility.Medkit
 
-local Heal_RemoteEvent          = ReplicatedStorage.Shared.Library.Events.Replicant_Communication.Heal_Connection
-local HealNotify_RemoteEvent    = ReplicatedStorage.Shared.Library.Events.Replicant_Communication.HealNotify_Connection
-local Status_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Status_Communication.Status_Connection
+local Heal_RemoteEvent          = ReplicatedStorage.Shared.Library.Events.Heal
+local HealNotify_RemoteEvent    = ReplicatedStorage.Shared.Library.Events.HealNotify
+local Status_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Status
+local Helmet_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Helmet
 
 local local_player = player_service.LocalPlayer
+local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 
 local Medkit = {}
 Medkit.__index = Medkit
@@ -81,6 +83,9 @@ function Medkit.new(info: { name: string }): Medkit
 		AfterHeal_Water = Animations_Folder["AfterHeal Water"],
 		Suture_Others   = Animations_Folder["Suture Others"],
 		Tweezer_Others  = Animations_Folder["Tweezer Others"],
+		
+		HelmetPlace 	= Animations_Folder["Helmet Place"],
+		HelmetRemove    = Animations_Folder["Helmet Remove"],
 	}
 
 	return self
@@ -291,7 +296,6 @@ function Medkit:_perform_surgery(wound: StringValue, target: Model?)
 	self.Healing = true
 	self.Character:SetAttribute("SprintBlocked", true)
 
-	-- FIX: pcall wrapper ensures Healing is always reset even if an error is thrown mid-sequence
 	local ok, result = pcall(function()
 		local target_wounds = target
 			and target:FindFirstChild("CharacterData")
@@ -310,13 +314,15 @@ function Medkit:_perform_surgery(wound: StringValue, target: Model?)
 	if success then
 		print("[MEDKIT] Surgery Complete. Firing Remote.")
 		Heal_RemoteEvent:FireServer(target or local_player, wound)
+		Helmet_RemoteEvent:FireServer(false)
+		local track = self.RegisteredAnimations.HelmetRemove:Play()
+		
 	elseif not ok then
 		warn("[MEDKIT] Surgery error:", result)
 	else
 		print("[MEDKIT] Surgery Failed or Cancelled.")
 	end
-
-	-- FIX: cleanup always runs regardless of success/failure/error
+	
 	self.Character:SetAttribute("SprintBlocked", nil)
 	self.Character:SetAttribute("Tool_Locked", nil)
 	self.Healing = false
@@ -339,6 +345,14 @@ function Medkit:_process_self_heal()
 		return false
 	end
 
+	if Util.check_for_helmet(game.Players.LocalPlayer.Character) then
+		print("[MEDKIT] Has helmet while healing.") 
+		
+		local track = self.RegisteredAnimations.HelmetRemove:Play()
+		print("[MEDKIT] Helmet removed.")
+		Helmet_RemoteEvent:FireServer(true)
+	end
+	
 	local wound = wounds[math.random(1, #wounds)]
 	return self:_perform_surgery(wound)
 end
@@ -472,8 +486,6 @@ function Medkit:_on_equip()
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
 			self.HoldingM1 = true
-			-- FIX: target is now re-raycasted inside the loop each iteration;
-			-- we still pass the initial target here but the loop refreshes it
 			local target = self:_raycast_target()
 			self:_begin_heal_loop(target)
 
@@ -521,7 +533,6 @@ function Medkit:_on_unequip()
 	if self._inputBegan then self._inputBegan:Disconnect() end
 	if self._inputEnded then self._inputEnded:Disconnect() end
 
-	-- FIX: renamed from _healLoopConnection to _healLoopThread
 	if self._healLoopThread then
 		task.cancel(self._healLoopThread)
 		self._healLoopThread = nil
@@ -538,10 +549,36 @@ function Medkit:_on_unequip()
 	end
 end
 
-function Medkit:_on_give(tool: Tool, holster: Model?, model: Model?)
-	self.Character      = local_player.Character
-	self.Character_data = self.Character:WaitForChild("CharacterData")
-	self.Wounds_folder  = self.Character_data:WaitForChild("Wounds")
+function Medkit:on_give(tool: Tool, holster: Model?, model: Model?)
+	BaseTool.on_give(self, tool, holster)
+
+	self.tool = tool
+	self.Character = local_player.Character
+
+	if self.Character then
+		self.Character_data = self.Character:WaitForChild("CharacterData")
+		self.Wounds_folder = self.Character_data:WaitForChild("Wounds")
+	end
+
+	self.RegisteredAnimations = Util.register_animations(
+		local_player,
+		self.animations
+	)
+
+	if not self.RegisteredAnimations then
+		warn("[Medkit] Failed to register animations")
+	end
+
+	if holster then
+		self.actual_holster = holster
+	elseif self.holster_reference then
+		self.actual_holster = Util.reverse_search_holster(
+			local_player,
+			self.holster_reference.Name
+		)
+	else
+		warn("[Medkit] Missing holster_reference")
+	end
 end
 
 return Medkit

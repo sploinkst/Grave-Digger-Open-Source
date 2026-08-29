@@ -2,7 +2,7 @@ local module = {}
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local sound_folder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Sounds"):WaitForChild('Movement')
-local sfx_replicant = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Replicant_Communication"):WaitForChild("SFX_Connection")
+local sfx_replicant = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Sounds")
 
 local function get_floor()
 	local FloorMaterial = script.Parent.Parent.Humanoid.FloorMaterial
@@ -28,7 +28,9 @@ module.Play_WalkSFX = function()
 	local sound = get_sound()
 	
 	if not sound then return end
-	
+	sound.Volume = 1
+
+
 	sound:Play()
 	sfx_replicant:FireServer(sound, script.Parent.Parent.HumanoidRootPart)
 	

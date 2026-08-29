@@ -1,56 +1,65 @@
-local module = {}
+--!strict
 
-local player_service = game:GetService("Players")
-local workspace_service = game:GetService("Workspace")
-local collection_service = game:GetService("CollectionService")
-local replicatedstorage_service = game:GetService("ReplicatedStorage")
+local Module = {}
 
-local Interaction_Communication = replicatedstorage_service:WaitForChild("Shared"):WaitForChild('Library'):WaitForChild("Events"):WaitForChild("Interaction_Communication")
-local Interaction_Connection = Interaction_Communication.Interact_Connection
+-- // Services
+local PlayerService = game:GetService("Players")
+local WorkspaceService = game:GetService("Workspace")
+local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorageService = game:GetService("ReplicatedStorage")
 
-local local_player = player_service.LocalPlayer
-local mouse = local_player:GetMouse()
+-- // Constants
+local InteractionConnection = ReplicatedStorageService:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Interact")
+local LocalPlayer = PlayerService.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
-local function add_highlight(parent)
+-- // Utilities
+
+local function AddHighlight(parent)
 	local highlight = Instance.new("Highlight")
 	highlight.Parent = parent
 	highlight.FillTransparency = 1
 	highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
 	highlight.OutlineTransparency = 0
 	highlight.DepthMode = Enum.HighlightDepthMode.Occluded
-	
+
 	return highlight
 end
 
-function module.start_module()
+-- // Core
+
+function Module.start_module()
 	print("[INTERACTIONSERVICE] Started!")
+
 	-- // if mouse hits a part named 'click' then highlight the parent of it
-	for _, descendant in pairs(workspace_service:GetDescendants()) do
+	for _, descendant in pairs(WorkspaceService:GetDescendants()) do
 		if descendant:IsA("ClickDetector") then
 			local highlight
 
 			descendant.MouseHoverEnter:Connect(function()
-				highlight = add_highlight(descendant.Parent.Parent)
+				highlight = AddHighlight(descendant.Parent.Parent)
 				print("[INTERACTIONSERVICE] Highlighted!")
 			end)
-			
+
 			descendant.MouseHoverLeave:Connect(function()
 				if highlight then
 					highlight:Destroy()
 					highlight = nil
 				end
-				
+
 				print("[INTERACTIONSERVICE] Unhighlighted!")
 			end)
-			
+
 			descendant.MouseClick:Connect(function()
 				print("[INTERACTIONSERVICE] Clicked!")
-				if local_player.Character:FindFirstChildWhichIsA("Tool") then return end
-				
-				Interaction_Connection:FireServer(descendant.Parent.Parent)
+				if LocalPlayer.Character:FindFirstChildWhichIsA("Tool") then
+					return
+				end
+
+				InteractionConnection:FireServer(descendant.Parent.Parent)
 			end)
 		end
 	end
 end
 
-return module
+return Module

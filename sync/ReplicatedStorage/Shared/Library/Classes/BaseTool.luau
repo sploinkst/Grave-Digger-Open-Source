@@ -19,25 +19,26 @@ local LOCAL_PLAYER = Players.LocalPlayer
 local CAMERA       = workspace.CurrentCamera
 
 local Assets   = ReplicatedStorage.Shared.Assets
-local FxFolder = Assets.Guns.Effects.Shooting
+local FxFolder = Assets.Guns.Effects
 
 local FX_BULLET_HOLE = FxFolder.BulletHole
-local FX_WOOD_CHIPS  = FxFolder.Parent.Environment.Wood_Chips
+local FX_WOOD_CHIPS  = FxFolder.Wood_Chips
 
 local replicant_service             = require(ReplicatedStorage.Shared.Modules["Client Modules"].ReplicantService)
-local events_replication_folder     = ReplicatedStorage.Shared.Library.Events.Replicant_Communication
-local fast_cast_replication         = events_replication_folder.FastCast_Connection
-local hit_connection                = events_replication_folder.Hit_Connection
-local vfx_cast_event                = events_replication_folder.VFX_Connection
-local sfx_cast_event                = events_replication_folder.SFX_Connection
-local texture_event                 = events_replication_folder.Texture_Connection
-local casing_event                  = events_replication_folder.Casing_Connection
+local events_replication_folder     = ReplicatedStorage.Shared.Library.Events
+local fast_cast_replication         = events_replication_folder.FastCast
+local hit_connection                = events_replication_folder.Hit
+local vfx_cast_event                = events_replication_folder.VFX
+local sfx_cast_event                = events_replication_folder.Sounds
+local texture_event                 = events_replication_folder.Texture
+local casing_event                  = events_replication_folder.Casing
 
+local SettingsManager = require(ReplicatedStorage.Shared.Modules["Client Modules"].SettingsManager)
 
-local gun_communication  = events_replication_folder.Parent:WaitForChild("Gun_Communication")
-local drop_connection    = gun_communication.Drop_Connection
-local ammo_communication = gun_communication:WaitForChild("Ammo_Connection")
-local melee_communication = events_replication_folder.Parent.Melee_Communication
+local gun_communication  = events_replication_folder
+local drop_connection    = gun_communication.DropWeapon
+local ammo_communication = gun_communication.Ammo
+local melee_communication = events_replication_folder.Melee
 
 local general_sfx        = ReplicatedStorage.Shared.Assets.Guns.Sounds.Shared
 local bullet_warning_part = ReplicatedStorage.Shared.Assets.UI.Warning_Barrel
@@ -81,6 +82,7 @@ export type BaseTool = typeof(setmetatable({} :: {
 	Checking: boolean,
 	Meleeing: boolean,
 	_activationConnection: RBXScriptConnection?,
+	_drawStoppedConnection: RBXScriptConnection?,
 	_inputBeganConn: RBXScriptConnection?,
 	_inputEndedConn: RBXScriptConnection?,
 	_shoulderChangedConn: RBXScriptConnection?,
@@ -122,6 +124,7 @@ function BaseTool.new(BaseToolCreateInfo: Types.BaseToolCreateInfo): BaseTool
 	self.ForceBlockFire = false
 
 	self._activationConnection = nil
+	self._drawStoppedConnection = nil
 	self._inputBeganConn       = nil
 	self._inputEndedConn       = nil
 	self._shoulderChangedConn  = nil
@@ -410,6 +413,7 @@ end
 -- // Equip / Unequip
 
 function BaseTool:equip()
+	print("Equipping tool:", self.tool.Name)
 	if not self.tool then return end
 
 	self.Equipped  = true
@@ -429,18 +433,30 @@ function BaseTool:equip()
 	humanoid:EquipTool(self.tool)
 
 	if self._on_equip then self:_on_equip() end
-	
+
 	if self.CompassRight then
 		character:SetAttribute("CompassRight", true)
 	end
-	
+
+	if self.CompassDisabled then
+		print("Compass Denied")
+		LOCAL_PLAYER.Character:SetAttribute("CompassDenied", true)
+		print("Given CompassDenied Attribute")
+	else
+		print("Compass Allowed")
+	end
+
 	self:define_shorts()
 	if self.RegisteredAnimations then
 		local draw = self.RegisteredAnimations.Draw
 		local hold = self.RegisteredAnimations.Hold
 		if draw then self:_playAnim("Draw", true) end
 		if hold then
-			draw.Stopped:Connect(function()
+			-- Replace the previous draw callback when the tool is equipped again.
+			if self._drawStoppedConnection then
+				self._drawStoppedConnection:Disconnect()
+			end
+			self._drawStoppedConnection = draw.Stopped:Connect(function()
 				if hold and self.tool and self.tool.Parent == character and self.Equipped then
 					self:_playAnim("Hold", true)
 					hold:AdjustSpeed(0.2)
@@ -489,10 +505,13 @@ function BaseTool:equip()
 			local rightArm = LOCAL_PLAYER.Character:FindFirstChild("Right Arm")
 			if not rightArm then return end
 			local round
+				
 			
 			if self.Round_Target_Part then
+				if not self.Round then return end
 				round = LOCAL_PLAYER.Character:FindFirstChild(self.Round_Target_Part):FindFirstChild(self.Round.Name)
 			else
+				if not self.Round then return end
 				round = rightArm:FindFirstChild(self.Round.Name)
 			end
 			if not round then warn("No self.Round in Right_Arm") return end
@@ -564,7 +583,7 @@ function BaseTool:equip()
 				end
 				if #matches > 0 then
 					if not self.actual_model then return end
-					
+
 					self:_play_sfx(matches[math.random(1, #matches)], self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
 					print("Playing GSFX: " .. matches[math.random(1, #matches)].Name)
 				else
@@ -604,7 +623,14 @@ function BaseTool:unequip()
 	self:_disable_aiming_ui()
 	humanoid:UnequipTools()
 
-	if self.sprint_connection then self.sprint_connection:Disconnect() end
+	if self.sprint_connection then
+		self.sprint_connection:Disconnect()
+		self.sprint_connection = nil
+	end
+	if self._drawStoppedConnection then
+		self._drawStoppedConnection:Disconnect()
+		self._drawStoppedConnection = nil
+	end
 
 	if self.RegisteredAnimations then
 		if self.Emergency_Drop then
@@ -630,7 +656,11 @@ function BaseTool:unequip()
 	end
 
 	character:SetAttribute("CompassRight", nil)
-	self.Moving_Connection = nil
+	LOCAL_PLAYER.Character:SetAttribute("CompassDenied", nil)
+	if self.Moving_Connection then
+		self.Moving_Connection:Disconnect()
+		self.Moving_Connection = nil
+	end
 end
 
 -- // Automatic Spread
@@ -698,16 +728,17 @@ function BaseTool:_stopAllExcept(exception: AnimationTrack?)
 end
 
 function BaseTool:_playAnim(name: string, bypass_equiped: boolean): AnimationTrack?
-	if not self.Equipped and not bypass_equiped then
-		warn(self.className .. ":_playAnim called while not equipped: " .. name)
-		return nil
-	end
-
 	local anims = self.RegisteredAnimations
 	assert(anims, self.className .. ":_playAnim called before animations registered")
 
 	local track = anims[name]
 	assert(track, self.className .. ": unknown animation '" .. tostring(name) .. "'")
+
+	
+	if not self.Equipped and not bypass_equiped then
+		warn(self.className .. ":_playAnim called while not equipped: " .. name)
+		return track 
+	end
 
 	local layers = self.ANIM_LAYERS
 	if layers then
@@ -822,7 +853,6 @@ function BaseTool:melee()
 
 	self.Meleeing = true
 
-	local Players = game:GetService("Players")
 	local player = Players.LocalPlayer
 	local character = player.Character
 	local camera = workspace.CurrentCamera
@@ -840,7 +870,7 @@ function BaseTool:melee()
 
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = {character}
+		params.FilterDescendantsInstances = {LOCAL_PLAYER.Character}
 
 		local origin = camera.CFrame.Position + camera.CFrame.LookVector
 		local lookVector = camera.CFrame.LookVector
@@ -951,6 +981,7 @@ end
 -- // Aim system
 
 function BaseTool:aim()
+	if not self.Equipped then return end 
 	if self.Aiming or self:_isBusy() then return end
 	if not self.RegisteredAnimations.Aim then return end
 	if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
@@ -978,7 +1009,7 @@ function BaseTool:aim()
 
 		local aimTrack = self:_aimTrack()
 		if aimTrack then
-			aimTrack:Play(CUT) 
+			aimTrack:Play(CUT)
 			self.ForceBlockFire = false
 			self.Aiming = true
 		end
@@ -1011,13 +1042,13 @@ function BaseTool:aim()
 			if LOCAL_PLAYER:GetAttribute("FreeLook") then self:endAiming() end
 		end)
 	end
-	
+
 	if not self._sprintConnection then
 		self._sprintConnection = LOCAL_PLAYER:GetAttributeChangedSignal("Sprinting"):Connect(function()
 			if LOCAL_PLAYER:GetAttribute("Sprinting") then self:endAiming() end
 		end)
 	end
-	
+
 	if not self.vaultConnection then
 		self._vaultConnection = LOCAL_PLAYER:GetAttributeChangedSignal("Vaulting"):Connect(function()
 			if LOCAL_PLAYER:GetAttribute("Vaulting") then self:endAiming() end
@@ -1089,61 +1120,75 @@ function BaseTool:_resetBodyTransparency()
 end
 
 -- // Input
-
-function BaseTool:_getKeyBindings(): { [string]: Enum.KeyCode | Enum.UserInputType }
-	return {
-		Aim    = Enum.UserInputType.MouseButton2,
-		Reload = Enum.KeyCode.R,
-		Check  = Enum.KeyCode.T,
-		["Emergency Drop"] = Enum.KeyCode.T,
-	}
-end
-
 function BaseTool:_connectInput()
-	local bindings = self:_getKeyBindings()
+	if self._inputConnected then return end
+	self._inputConnected = true
 
-	self._inputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
-		if processed then return end
+	self._inputBeganConn = UserInputService.InputBegan:Connect(function(input, gps)
+		if gps then return end
 
-		for action, bind in pairs(bindings) do
-			local matched = (typeof(bind) == "EnumItem" and bind.EnumType == Enum.UserInputType)
-				and input.UserInputType == bind
-				or (typeof(bind) == "EnumItem" and bind.EnumType == Enum.KeyCode)
-				and input.KeyCode == bind
-
-			if matched then
-				if action == "Aim" then
-					self.holding_aim_button = true
-					self:aim()
-				elseif action == "Reload" then
-					self:reload()
-				elseif action == "Check" then
-					if self.Can_Drop and self.Reloading and self.Equipped then
-						self:drop()
-						return
-					else
-						self:ammo_check()
-					end
-				elseif self[action] and type(self[action]) == "function" then
-					self[action](self)
-				end
-			end
+		-- // right click
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			self.holding_aim_button = true
+			self:aim()
 		end
 	end)
 
-	self._inputEndedConn = UserInputService.InputEnded:Connect(function(input, processed)
-		if processed then return end
-		local aimBind = bindings.Aim
-		local matched = aimBind
-			and ((typeof(aimBind) == "EnumItem" and aimBind.EnumType == Enum.UserInputType and input.UserInputType == aimBind)
-				or (typeof(aimBind) == "EnumItem" and aimBind.EnumType == Enum.KeyCode and input.KeyCode == aimBind))
-		if matched then self:endAiming() self.holding_aim_button = false end
+	self._inputEndedConn = UserInputService.InputEnded:Connect(function(input, gps)
+		if gps then return end
+
+		-- // right click
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			self:endAiming()
+			self.holding_aim_button = false
+		end
 	end)
+
+	self._reloadHook = function(_, pressed)
+		if pressed then
+			self:reload()
+		end
+	end
+	SettingsManager.HookInput("Reload", self._reloadHook)
+
+	self._checkAmmoHook = function(_, pressed)
+		if pressed then
+			if self.Can_Drop and self.Reloading and self.Equipped then
+				self:drop()
+				return
+			else
+				self:ammo_check()
+			end
+		end
+	end
+	SettingsManager.HookInput("Check Ammo", self._checkAmmoHook)
+
+	self._altHook = function(_, pressed)
+		if pressed then
+			self:setAltMode()
+		end
+	end
+	SettingsManager.HookInput("Alternate Action", self._altHook)
 end
 
 function BaseTool:_disconnectInput()
-	if self._inputBeganConn  then self._inputBeganConn:Disconnect();  self._inputBeganConn  = nil end
-	if self._inputEndedConn  then self._inputEndedConn:Disconnect();  self._inputEndedConn  = nil end
+	if self._inputBeganConn then self._inputBeganConn:Disconnect(); self._inputBeganConn = nil end
+	if self._inputEndedConn then self._inputEndedConn:Disconnect(); self._inputEndedConn = nil end
+
+	if self._reloadHook then
+		SettingsManager.UnhookInput("Reload", self._reloadHook)
+		self._reloadHook = nil
+	end
+	if self._checkAmmoHook then
+		SettingsManager.UnhookInput("Check Ammo", self._checkAmmoHook)
+		self._checkAmmoHook = nil
+	end
+	if self._altHook then
+		SettingsManager.UnhookInput("Alternate Action", self._altHook)
+		self._altHook = nil
+	end
+
+	self._inputConnected = false
 end
 
 -- // Shoulder tracking
@@ -1372,12 +1417,14 @@ function BaseTool:_onBulletHit(cast, result, velocity, muzzle, penetrationLevel,
 		return
 	end
 
-	-- Non-character solid surface: place a bullet hole decal.
-	-- (If the surface was penetrable, CanPierceFunction already placed
-	--  entry/exit holes and continued the cast; we only reach here when
-	--  the bullet actually stops.)
-	self:bullet_hole(result.Position, result.Normal)
 	self:_applyHit(result, damage, direction, knockback_force)
+
+	-- // if roblox terrain return
+	if instance:IsDescendantOf(workspace.Terrain) then
+		return
+	else	
+	--	self:bullet_hole(result.Position, result.Normal)
+	end
 end
 
 function BaseTool:_applyHit(result: RaycastResult, damage: number, direction: Vector3, knockback_force: number)
@@ -1431,6 +1478,7 @@ function BaseTool:_fireProjectile(bulletSpeed, penetrationLevel, damage, knockba
 	activeCast.UserData.Direction  = shootDir
 	activeCast.UserData.Penetrated = false
 	activeCast.UserData.Origin     = muzzle.Position
+	activeCast.UserData.Shooter    = LOCAL_PLAYER
 
 	self:_connect_FastCast(muzzle.Position, shootDir, bulletSpeed)
 	return true
@@ -1546,7 +1594,7 @@ function BaseTool:_connect_FastCast(...)
 end
 
 function BaseTool:_play_sfx(...)
-	replicant_service.connect_sfx(LOCAL_PLAYER, ...)
+	replicant_service.ConnectSfx(LOCAL_PLAYER, ...)
 end
 
 function BaseTool:_fire_ammo(count)
@@ -1666,6 +1714,30 @@ function BaseTool:ammo_check()
 	if not self.RegisteredAnimations or not self.RegisteredAnimations.Check then return end
 	if self:_isBusy() or self.Checking or self.Check_Delayed then return end
 	if self.Equipping then return end
+	if not self.Equipped then return end
+
+	local reserveAmmo = self.tool:FindFirstChild("Reserve_Ammo")
+	if not reserveAmmo then
+		warn("BaseTool: Cannot check ammo because Reserve_Ammo is missing from", self.tool:GetFullName())
+		return
+	end
+
+	local actualModel = self.actual_model
+	if not actualModel then
+		warn("BaseTool: Cannot check ammo because the equipped model is missing for", self.className)
+		return
+	end
+
+	local middle = actualModel:FindFirstChild(self.className .. "_Middle", true)
+	local muzzle = actualModel:FindFirstChild(self.MuzzlePartName, true)
+	if not middle or not middle:IsA("BasePart") then
+		warn("BaseTool: Cannot check ammo because the middle part is missing for", self.className)
+		return
+	end
+	if not muzzle or not muzzle:IsA("BasePart") then
+		warn("BaseTool: Cannot check ammo because the muzzle part is missing for", self.className)
+		return
+	end
 
 	self:_set_sprint_arms(true)
 	self.Checking     = true
@@ -1674,7 +1746,7 @@ function BaseTool:ammo_check()
 	local ammo_check_part, ammo_check_utils
 	local cam = workspace.CurrentCamera
 	if not cam:FindFirstChild("Ammo_Check") then
-		ammo_check_part  = game.ReplicatedStorage.Shared.Assets.Guns.Effects.AmmoUI.Ammo_Check:Clone()
+		ammo_check_part  = game.ReplicatedStorage.Shared.Assets.Guns.Effects.Ammo_Check:Clone()
 		ammo_check_part.Parent = cam
 		ammo_check_utils = require(ammo_check_part.Utils)
 	else
@@ -1691,18 +1763,18 @@ function BaseTool:ammo_check()
 	self.RegisteredAnimations.Check:AdjustWeight(1)
 	self:_playAnim("Check")
 
-	local middle = self.actual_model:FindFirstChild(self.className .. "_Middle")
 	ammo_check_part.CFrame = middle.CFrame + middle.CFrame.rightVector * -0.5 + middle.CFrame.upVector * 1
+
 
 	if not ammo_check_part:FindFirstChild("WeldConstraint") then
 		local weld   = Instance.new("WeldConstraint")
 		weld.Part0   = ammo_check_part
-		weld.Part1   = self.actual_model:FindFirstChild(self.MuzzlePartName)
+		weld.Part1   = muzzle
 		weld.Parent  = ammo_check_part
 	end
 
 	ammo_check_utils.utils(self.Ammo_Type, math.clamp(self.Capacity / self.Max_Capacity, 0, 1),
-		false, self.tool:FindFirstChild("Reserve_Ammo").Value / (self.Max_Capacity * 3))
+		false, reserveAmmo.Value / (self.Max_Capacity * 3))
 
 	self.RegisteredAnimations.Check.Stopped:Wait()
 
@@ -1717,11 +1789,22 @@ end
 
 function BaseTool:drop()
 	if not self.Equipped then return end
-	
+
 	self.Equipped = false
 	self._reloadCancelled = true
 	self.Emergency_Drop = true
-	
+
+	-- Emergency drop bypasses unequip(), so clear every character attribute
+	-- that would otherwise keep the dropped weapon's animation overlays active.
+	local character = LOCAL_PLAYER.Character
+	if character then
+		character:SetAttribute("Sprint_Animation", nil)
+		character:SetAttribute("No_Sprint_Animation", nil)
+		character:SetAttribute("Aiming", nil)
+		character:SetAttribute("CompassRight", nil)
+		character:SetAttribute("CompassDenied", nil)
+	end
+	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 
 	if self.RegisteredAnimations then
 		for _, anim in pairs(self.RegisteredAnimations) do
@@ -1766,7 +1849,7 @@ function BaseTool:_fireMuzzleFlash()
 	end
 
 	self:emit_effect(
-		ReplicatedStorage.Shared.Assets.Guns.Effects.Shooting.Muzzle_Flash,
+		ReplicatedStorage.Shared.Assets.Guns.Effects.Muzzle_Flash,
 		muzzle.CFrame * CFrame.new(-0.1, 0, -2),
 		emissions,
 		muzzle,
@@ -1784,7 +1867,7 @@ end
 
 function BaseTool:emit_casing(casing: Part, origin: CFrame, direction: Vector3)
 	print("Fired casing event with:", casing.Name, origin, direction)
-	replicant_service.handle_casing_replication(LOCAL_PLAYER, casing, origin, direction)
+	replicant_service.HandleCasingReplication(LOCAL_PLAYER, casing, origin, direction)
 	casing_event:FireServer(casing, origin, direction)
 end
 
@@ -1796,6 +1879,7 @@ function BaseTool:reload() end
 -- // Cleanup
 
 function BaseTool:destroy()
+	-- Disconnect everything created by this tool before removing it.
 	if self._activationConnection then
 		self._activationConnection:Disconnect()
 		self._activationConnection = nil
@@ -1807,11 +1891,28 @@ function BaseTool:destroy()
 	self:_stopAimTracking()
 	self:_resetMotor6D()
 
+	if self._drawStoppedConnection then
+		self._drawStoppedConnection:Disconnect()
+		self._drawStoppedConnection = nil
+	end
+	if self.sprint_connection then
+		self.sprint_connection:Disconnect()
+		self.sprint_connection = nil
+	end
+	if self.Moving_Connection then
+		self.Moving_Connection:Disconnect()
+		self.Moving_Connection = nil
+	end
+	for _, connection in pairs(self.keyframe_connections) do
+		connection:Disconnect()
+	end
+	self.keyframe_connections = {}
+
 	if self.actual_model then
 		self.actual_model:Destroy()
 		self.actual_model = nil
 	end
-	
+
 	self.Equipped = false
 end
 

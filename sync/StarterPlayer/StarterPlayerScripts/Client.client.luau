@@ -12,6 +12,7 @@ local function start_modules()
 	for _, child in ipairs(modules_folder:GetChildren()) do
 		if child:IsA("ModuleScript") then
 			task.spawn(function()
+				print("Starting module:", child.Name)
 				local ok, mod = pcall(require, child)
 
 				if not ok then
@@ -30,6 +31,8 @@ local function start_modules()
 
 					if not success then
 						error(string.format("Failed to start module %s: %s", child.Name, tostring(err)))
+					else
+						print("Started module:", child.Name)
 					end
 				end
 			end)

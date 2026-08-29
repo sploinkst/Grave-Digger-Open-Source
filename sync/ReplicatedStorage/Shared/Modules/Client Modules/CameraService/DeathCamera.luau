@@ -57,7 +57,7 @@ local function HandleRegularDeath()
 
 		bodiesFolder.ChildAdded:Wait()
 
-		CameraService.switch_camera("SpectateCamera", true)
+		CameraService.SwitchCamera("SpectateCamera", true)
 		print("SpectateCamera")
 	end
 end
@@ -115,7 +115,7 @@ local function HandleKillDeath(playerName)
 		currentHighlight = nil
 		
 		RunService:UnbindFromRenderStep("KillCamera")
-		CameraService.switch_camera("SpectateCamera", true)
+		CameraService.SwitchCamera("SpectateCamera", true)
 		print("SpectateCamera")
 	end)
 end
@@ -140,7 +140,7 @@ function DeathCamera:Start()
 
 	LocalPlayer.CharacterAdded:Connect(function()
 		local cameraService = require(script.Parent)
-		cameraService.end_camera_by_name("DeathCamera", true)
+		cameraService.EndCameraByName("DeathCamera", true)
 	end)
 end
 

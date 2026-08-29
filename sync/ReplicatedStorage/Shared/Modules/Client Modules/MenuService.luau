@@ -44,13 +44,34 @@ local function disable_all_scenes_ui()
 end
 
 local function start_sub_modules()
-	for _, child in pairs(script:GetChildren()) do
-		if not child:IsA("ModuleScript") then continue end
+	print("[MENUSERVICE] Starting sub modules")
 
-		local module_required = require(child)
-		if module_required.start_module then
-			module_required.start_module()
+	for _, child in ipairs(script:GetChildren()) do
+		print("[MENUSERVICE] Checking:", child.Name, "is ModuleScript")
+		if not child:IsA("ModuleScript") then
+			continue
 		end
+
+		print("[MENUSERVE] Requiring:", child.Name)
+		
+		task.spawn(function()
+			local success, module = pcall(require, child)
+			if not success then
+				warn("[MENUSERVICE] Failed to require", child.Name, module)
+				return
+			end
+			
+			if typeof(module.start_module) == "function" then
+				local ok, err = pcall(module.start_module)
+				if ok then
+					print("[MENUSERVICE] Started:", child.Name)
+				else
+					warn("[MENUSERVICE] Error starting", child.Name, err)
+				end
+			else
+				warn("[MENUSERVICE]", child.Name, "has no start_module function")
+			end
+		end)
 	end
 end
 
@@ -63,11 +84,11 @@ function module.start_module()
 		if input.KeyCode == menu_button then
 			if menu_boolean then
 				menu_boolean = false
-				camera_service.end_camera_by_name("MenuCamera", true)
+				camera_service.EndCameraByName("MenuCamera", true)
 				disable_all_scenes_ui()
 			else
 				menu_boolean = true
-				camera_service.switch_camera("MenuCamera", true)
+				camera_service.SwitchCamera("MenuCamera", true)
 
 				if current_ui then
 					current_ui.Enabled = true

@@ -1,9 +1,7 @@
-----------------------
--- @Praxitos
--- Animation Handler
-----------------------
+-- // (Praxitos)
+-- // (Animation Handler)
 
--- // Services
+-- // (Services)
 local input_service             = game:GetService("UserInputService")
 local replicatedstorage_service = game:GetService("ReplicatedStorage")
 local run_service               = game:GetService("RunService")
@@ -11,7 +9,7 @@ local player_service            = game:GetService("Players")
 
 local sound_module = require(script.Sound)
 
--- // Variables
+-- // (Variables)
 local local_player = player_service.LocalPlayer
 local character    = script.Parent
 local humanoid: Humanoid = character:WaitForChild("Humanoid")
@@ -52,13 +50,13 @@ local animations_table = {
 	animations_folder.Walking.Crouch.CrouchWalk_Right,
 	animations_folder.Idles.Crouch_Idle,
 	animations_folder.Walking.Crouch.Crouch_Arms,
-	
+
 	animations_folder.Flinches.Flinch1,
 	animations_folder.Flinches.Flinch2,
 	animations_folder.Flinches.Flinch3,
 	animations_folder.Flinches.Flinch4,
 	animations_folder.Flinches.Flinch5,
-	
+
 	animations_folder.Flinches.Miss_Flinch1,
 	animations_folder.Flinches.Miss_Flinch2,
 	animations_folder.Flinches.Miss_Flinch3,
@@ -100,9 +98,7 @@ local SPRINT_OVERLAY_NAMES = {
 	"GraceRevolver_Sprint",
 }
 
---------------------------------------------------
--- Utils
---------------------------------------------------
+-- // (Utils)
 local function load_animations()
 	for _, animation in pairs(animations_table) do
 		if not animation then
@@ -134,7 +130,7 @@ local function load_animations()
 		end
 
 		loaded_animations[animation.Name] = track
-		
+
 		loaded_animations[animation.Name]:GetMarkerReachedSignal("Footstep"):Connect(function()
 			sound_module.Play_WalkSFX()
 		end)
@@ -239,9 +235,8 @@ local function get_crouch_animation()
 
 	return "CrouchWalk_Forward"
 end
---------------------------------------------------
--- BASE / OVERLAY
---------------------------------------------------
+
+-- // (Base / Overlay)
 local function play_base(name: string, fade: number?, reversed: boolean?, speed: number?)
 	local track = loaded_animations[name]
 	if not track then return end
@@ -292,8 +287,6 @@ local function play_overlay(name: string, fade: number?, speed: number?, weight:
 end
 
 local function stop_overlay(name: string, fade: number?)
-	-- FIX: also stop the loaded animation directly in case it wasn't
-	-- registered in active_overlays (e.g. played before climbing started)
 	local track = active_overlays[name] or loaded_animations[name]
 	if not track then return end
 
@@ -322,9 +315,7 @@ local function clear_sprint_overlays(fade: number?)
 	end
 end
 
---------------------------------------------------
--- MOVEMENT 
---------------------------------------------------
+-- // (Movement)
 local function update_movement(speed: number)
 	-- HARD BLOCKS
 	if is_airborne then
@@ -342,14 +333,14 @@ local function update_movement(speed: number)
 
 		if set_state(target) then
 			if crouching then
-				play_base("Crouch_Idle", nil, nil, 0.1)
+				play_base("Crouch_Idle", nil, nil, 1)
 				set_target_hip_offset(-0.85)
 
 				clear_overlays()
 				play_overlay("Crouch_Arms")
 
 			else
-				play_base("Stand_Idle", nil, nil, 0.1)
+				play_base("Stand_Idle", nil, nil, 1)
 				set_target_hip_offset(0)
 
 				clear_overlays()
@@ -411,6 +402,13 @@ local function update_movement(speed: number)
 
 			clear_overlays()
 
+			-- FIX: explicitly stop the Walk_Forward base track here, since
+			-- the transition zone (speed 14-17) leaves it as active_base and
+			-- it was otherwise continuing to play underneath Sprinting_Full
+			if loaded_animations["Walk_Forward"] and loaded_animations["Walk_Forward"].IsPlaying then
+				loaded_animations["Walk_Forward"]:Stop(0.1)
+			end
+
 			play_base("Sprinting_Full", 0.15)
 
 			if not character:GetAttribute("No_Sprint_Animation") then
@@ -420,7 +418,7 @@ local function update_movement(speed: number)
 			play_overlay("Sprint_Lean", 0.15)
 
 			playing_sprint_arms = true
-			
+
 			character:GetAttributeChangedSignal("Sprint_Animation"):Connect(function()
 				clear_sprint_overlays()
 
@@ -435,9 +433,7 @@ local function update_movement(speed: number)
 	end
 end
 
---------------------------------------------------
--- INPUT
---------------------------------------------------
+-- // (Input)
 input_service.InputBegan:Connect(function(io, gp)
 	if gp then return end
 
@@ -481,7 +477,7 @@ local_player:GetAttributeChangedSignal("Flinch"):Connect(function()
 	if local_player:GetAttribute("Flinch") then
 		local_player:SetAttribute("Flinch", nil)
 		print("FLINCHING")
-		
+
 		play_overlay("Miss_Flinch" .. math.random(1, 4), 0, 2, 0.05)
 		print("FLINCHING")
 	end	
@@ -620,12 +616,12 @@ humanoid.StateChanged:Connect(function(_, new_state)
 	end
 end)
 
--- // Died
+-- // (Died)
 humanoid.Died:Connect(function()
 	if active_base then active_base:Stop(0) end
 	clear_overlays()
 end)
 
---// Init
+-- // (Init)
 load_animations()
 initialize_hips()

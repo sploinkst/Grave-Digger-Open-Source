@@ -20,7 +20,8 @@ function module.give_item(player: Player, item: string, given_ammo: number)
         return "ItemService: Item Class not found.", item
     end
 
-    -- require class
+	-- require class
+	print("ItemsService: Requiring item class", item)
     local class = require(item_module)
 
     -- create instance of the class
@@ -28,10 +29,10 @@ function module.give_item(player: Player, item: string, given_ammo: number)
         name = item
     })
 
+	print("ItemService: Object is", object)
     -- create roblox tool
     local tool = Instance.new("Tool")
     tool.Name = object.name
-    tool.Parent = player:WaitForChild("Backpack")
 
 	tool.RequiresHandle = false
 	tool.CanBeDropped = false
@@ -67,12 +68,15 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 		string_value.Value = true		
 				
 		tool.Equipped:Connect(function()
+			print("Equipped")
 			string_value.Value = false
 
 			if object.model_reference then
+				print("[MODEL REFERENCE]", object.Name, "has an actual model!")
 				local clone = object.model_reference:Clone()
 				clone.Parent = player.Character.CharacterData.Equipment
 				object.actual_model = clone
+				print("[MODEL REFERENCE] cloned!")
 
 
 				local character = player.Character
@@ -81,8 +85,9 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 				-- Resolve Part0 safely (supports fallback)
 				local part0 = character:FindFirstChild(object.motor_6d_data.Part0)
 					or character:FindFirstChild(object.motor_6d_data.Parent)
-
+				print("Found Part0")
 				if not part0 then
+					print("No Part0 found")
 					return
 				end
 
@@ -90,6 +95,7 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 				local part1 = clone:FindFirstChild(object.motor_6d_data.Part1.Name, true)
 
 				if not part1 then
+					print("No Part1 found")
 					return
 				end
 
@@ -100,6 +106,7 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 				motor6d.Part0 = part0
 				motor6d.Part1 = part1
 				motor6d.C0 = object.motor_6d_data.C0
+				print("Set Motor6D")
 			end
 			
 			-- // has a round it wants to be weld too
@@ -163,9 +170,10 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 			end
 		end)
 	end
-	
-	if object.model_reference then
-	end
+
+	-- Parent the tool only after all of its values and connections are ready so
+	-- clients cannot equip a partially replicated tool.
+	tool.Parent = player:WaitForChild("Backpack")
 
     return "Successfully gave item."
 end

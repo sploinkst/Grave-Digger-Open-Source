@@ -239,6 +239,9 @@ end
 		onHit             : (cast, result: RaycastResult, velocity: Vector3) -> ()?
 	}
 
+	The caller should set `activeCast.UserData.Shooter` when firing the cast.
+	If it is missing, the friendly-fire check will not block the hit.
+
 	Returns: caster, behavior
 ]]
 function Util.setupFastCast(config: {
@@ -270,18 +273,71 @@ function Util.setupFastCast(config: {
 
 	local pierceSnapData: { [any]: Vector3 } = {}
 
+	-- // Resolved once per caster instead of once per hit
+	local profile = Penetration_Profiles[config.penetrationLevel or 1]
+
+	local materialSet = {}
+	if profile then
+		for _, mat in ipairs(profile.Materials) do
+			materialSet[mat] = true
+		end
+	end
+
+	-- // Reused RaycastParams instead of allocating new ones on every pierce
+	local thicknessParams = RaycastParams.new()
+	thicknessParams.FilterType = Enum.RaycastFilterType.Include
+
+	local exitParams = RaycastParams.new()
+	exitParams.FilterType = Enum.RaycastFilterType.Include
+
+	-- // FX references hoisted out of the hot path (indexed once, not per-hit)
+	local FxFolder       = ReplicatedStorage.Shared.Assets.Guns.Effects
+	local FX_BULLET_HOLE = FxFolder.BulletHole
+	local FX_WOOD_CHIPS  = FxFolder.Wood_Chips
+	local holesFolder    = workspace.Game_Details.Effects.BulletHoles
+
+	local WOOD_CHIP_NAMES = {
+		woodchip1 = true,
+		woodchip2 = true,
+		woodchip3 = true,
+	}
+
+	local woodChipTemplates = {}
+	for _, child in FX_WOOD_CHIPS:GetDescendants() do
+		if WOOD_CHIP_NAMES[child.Name] then
+			table.insert(woodChipTemplates, child)
+		end
+	end
+
 	behavior.CanPierceFunction = function(cast, result, segmentVelocity)
 		if not cast.UserData then
 			cast.UserData = {}
 		end
+		
+		local shooter    = cast.UserData and cast.UserData.Shooter
+		print("UserData is:", table.concat(cast.UserData, ","))
 
 		local hit = result.Instance
 		if not hit then return false end
 
+		if hit.Name == "innerprotection" then
+			print("innerprotection hit")
+			local faction = hit.Parent.Parent.Name
+			local team = shooter.Team.Name
+
+			if (faction == "Empire" and team == "Golden Empire")
+				or (faction == "Nation" and team == "Royal Nation") then
+				print("friendly fire guard passed", faction.Name, team.Name, shooter.Name)
+				return true
+			end
+			
+			print("friendly fire guard failed", faction.Name, team.Name, shooter.Name)
+			return false
+		end
 		if hit.Transparency >= 1 then
 			return not hit:GetAttribute("Unpiercable")
 		end
-		
+
 		if not hit.CanCollide then
 			return not hit:GetAttribute("Unpiercable")
 		end
@@ -290,7 +346,6 @@ function Util.setupFastCast(config: {
 			return true
 		end
 
-		local profile = Penetration_Profiles[config.penetrationLevel or 1]
 		if not profile then return false end
 
 		local origin = cast.UserData.Origin
@@ -298,22 +353,13 @@ function Util.setupFastCast(config: {
 			return false
 		end
 
-		local material = result.Material
-		local canPierce = false
-
-		for _, mat in ipairs(profile.Materials) do
-			if mat == material then
-				canPierce = true
-				break
-			end
+		if not materialSet[result.Material] then
+			return false
 		end
 
-		if not canPierce then return false end
-
+		-- // Only compute direction once we know we might actually pierce
 		local direction = segmentVelocity.Unit
 
-		local thicknessParams = RaycastParams.new()
-		thicknessParams.FilterType = Enum.RaycastFilterType.Include
 		thicknessParams.FilterDescendantsInstances = { hit }
 
 		local tooThick = workspace:Raycast(
@@ -324,53 +370,48 @@ function Util.setupFastCast(config: {
 
 		if tooThick then return false end
 
+		local ancestorModel = hit:FindFirstAncestorWhichIsA("Model")
+		if ancestorModel and ancestorModel:FindFirstChild("Humanoid") then
+			local hitPlayer = Players:GetPlayerFromCharacter(ancestorModel)
 
-		if hit:FindFirstAncestorWhichIsA("Model"):FindFirstChild("Humanoid") then
-			local player = Players:GetPlayerFromCharacter(hit:FindFirstAncestorWhichIsA("Model")) 
-			
-			if player then if player.Team.Name ~= game.Players.LocalPlayer.Team.Name then return false end end
+			if hitPlayer and shooter and hitPlayer ~= shooter
+				and hitPlayer.Team and shooter.Team
+				and hitPlayer.Team.Name ~= shooter.Team.Name then
+				return false
+			end
 		end
-		-- // FX
 
-		local FxFolder       = ReplicatedStorage.Shared.Assets.Guns.Effects.Shooting
-		local FX_BULLET_HOLE = FxFolder.BulletHole
-		local FX_WOOD_CHIPS  = FxFolder.Parent.Environment.Wood_Chips
-		local holesFolder    = workspace.Game_Details.Effects.BulletHoles
+		-- // FX
 
 		local entryClone = FX_BULLET_HOLE:Clone()
 		entryClone.CFrame = CFrame.new(result.Position, result.Position + result.Normal)
 		entryClone.Parent = holesFolder
 
-		if material == Enum.Material.Wood or material == Enum.Material.WoodPlanks then
-			for _, child in pairs(FX_WOOD_CHIPS:GetDescendants()) do
-				if table.find({ "woodchip1", "woodchip2", "woodchip3" }, child.Name) then
-					local clone = child:Clone()
-					local part = Instance.new("Part")
+		if result.Material == Enum.Material.Wood or result.Material == Enum.Material.WoodPlanks then
+			for _, template in woodChipTemplates do
+				local clone = template:Clone()
+				local part = Instance.new("Part")
 
-					part.Size = Vector3.new(0.05, 0.05, 0.05)
-					part.Anchored = true
-					part.CanCollide = false
-					part.Transparency = 1
-					part.CFrame = CFrame.new(result.Position, result.Position + result.Normal)
-					part.Parent = workspace
+				part.Size = Vector3.new(0.05, 0.05, 0.05)
+				part.Anchored = true
+				part.CanCollide = false
+				part.Transparency = 1
+				part.CFrame = CFrame.new(result.Position, result.Position + result.Normal)
+				part.Parent = workspace
 
-					clone.Parent = part
+				clone.Parent = part
 
-					if clone:IsA("ParticleEmitter") then
-						clone:Emit(20)
-						task.delay(clone.Lifetime.Max + 0.1, function()
-							part:Destroy()
-						end)
-					end
+				if clone:IsA("ParticleEmitter") then
+					clone:Emit(20)
+					task.delay(clone.Lifetime.Max + 0.1, function()
+						part:Destroy()
+					end)
 				end
 			end
 		end
 
-
 		-- // EXIT LOGIC
 
-		local exitParams = RaycastParams.new()
-		exitParams.FilterType = Enum.RaycastFilterType.Include
 		exitParams.FilterDescendantsInstances = { hit }
 
 		local exitOrigin = result.Position + direction * 0.01
@@ -387,11 +428,9 @@ function Util.setupFastCast(config: {
 			exitClone.Parent = holesFolder
 		end
 
-		-- Store in both places: UserData for legacy reads, pierceSnapData
-		-- for the deferred-clear snap override in LengthChanged
 		cast.UserData.LastPiercePosition = result.Position
 		pierceSnapData[cast] = result.Position
-		
+
 		return true
 	end
 
@@ -451,8 +490,8 @@ function Util.setupFastCast(config: {
 			castTrails[cast] = nil
 			fadeAndDestroy(trail)
 		end
-		
-		
+
+
 		if result.Instance and result.Instance.Parent:FindFirstChild("Humanoid") then
 			print("HIT")
 			local Clone = HitMarker:Clone()
@@ -487,18 +526,77 @@ function Util.applyRecoil(
 	doRoll: boolean?,
 	scale: number
 )
-	local vertical = math.rad(recoil / 10)
-	local horizontal = math.rad(
-		math.random(-spread * 10, spread * 10) / 100
-	)
+	-- Keep most shots close to the weapon's normal recoil while allowing
+	-- occasional stronger or weaker kicks.
+	local function gaussian(): number
+		local u1 = math.max(math.random(), 1e-6)
+		local u2 = math.random()
+		return math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
+	end
 
-	Camera_Service.apply_recoil(
+	-- Guns predominantly climb, but every shot can also pull left or right.
+	local verticalScale = math.clamp(0.055 + gaussian() * 0.008, 0.035, 0.075)
+	local horizontalScale = math.clamp(gaussian() * 0.018, -0.04, 0.04)
+	local verticalDegrees = recoil * verticalScale
+	local horizontalDegrees = recoil * horizontalScale
+	local vertical = math.rad(verticalDegrees)
+	local horizontal = math.rad(horizontalDegrees)
+
+	Camera_Service.ApplyRecoil(
 		vertical,
 		horizontal,
 		recoilCount,
 		doRoll,
 		scale
 	)
+end
+
+function Util.check_for_helmet(character)
+	local character_head = character:FindFirstChild("Head")
+	if not character_head then return nil, false end
+
+	-- Search head children for AccessoryWeld
+	for _, weld in character_head:GetChildren() do
+		if (not weld:IsA("Weld") and not weld:IsA("Motor6D")) then continue end
+		if weld.Name ~= "AccessoryWeld" then continue end
+
+		local part1 = weld.Part1
+		if not part1 then continue end
+
+		local accessoryModel = part1.Parent
+		if not accessoryModel then continue end
+
+		if accessoryModel:FindFirstChild("Helmet") then
+			local unknockable = accessoryModel:GetAttribute("Unknockable")
+			return accessoryModel, not unknockable
+		end
+	end
+
+	-- Also search via character accessories in case weld is parented differently
+	for _, child in character:GetChildren() do
+		if not child:IsA("Accessory") and not child:IsA("Model") then continue end
+		if not child:FindFirstChild("Helmet") then continue end
+
+		-- Verify it's on the head via attachment or weld
+		local handle = child:FindFirstChildWhichIsA("BasePart")
+		if not handle then continue end
+
+		local hasHeadConnection = false
+		for _, weld in handle:GetChildren() do
+			if (weld:IsA("Weld") or weld:IsA("Motor6D")) and
+				(weld.Part0 == character_head or weld.Part1 == character_head) then
+				hasHeadConnection = true
+				break
+			end
+		end
+
+		if hasHeadConnection then
+			local unknockable = child:GetAttribute("Unknockable")
+			return child, not unknockable
+		end
+	end
+
+	return nil, false
 end
 
 function Util.fetch_accessory(accessory_name)
@@ -581,7 +679,7 @@ end
 
 function Util.hasfullammo(player)
 	local full = true
-	
+
 	for _, tool in player.Backpack:GetChildren() do
 		if tool:FindFirstChild("Reserve_Ammo") then
 			if tool.Max_Ammo.Value ~= tool.Reserve_Ammo.Value then
@@ -589,7 +687,7 @@ function Util.hasfullammo(player)
 			end
 		end
 	end
-	
+
 	for _, tool in player.Character:GetChildren() do
 		if tool:FindFirstChild("Reserve_Ammo") then
 			if tool.Max_Ammo.Value ~= tool.Reserve_Ammo.Value then
@@ -597,7 +695,7 @@ function Util.hasfullammo(player)
 			end
 		end
 	end
-	
+
 	return full
 end
 function Util.setammo(player)
@@ -608,7 +706,7 @@ function Util.setammo(player)
 			print("[INTERACTIONMANAGER] Added ammo to " .. tool.Name)
 		end
 	end
-	
+
 	for _, tool in player.Character:GetChildren() do
 		if tool:FindFirstChild("Reserve_Ammo") then
 			tool.Reserve_Ammo.Value = tool.Max_Ammo.Value

@@ -1,40 +1,35 @@
-local module = {}
+local Module = {}
 
--- // Variables
--- Services
+-- // Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Constants
-local Accessories_Folder = ReplicatedStorage.Shared.Assets.Accessories
-local Utils_Module 		 = require(ReplicatedStorage.Shared.Library.Util)
-
+-- // Constants
+local AccessoriesFolder = ReplicatedStorage.Shared.Assets.Accessories
+local UtilsModule = require(ReplicatedStorage.Shared.Library.Util)
 
 -- // Functions
 
-function module.give_accessory(player: Player, accessory_name: string, server_handled: boolean?, create_string: boolean, give_accessory: boolean)
-	server_handled = server_handled or false
-	print("Received with:", player.Name, accessory_name, server_handled)
-	
-	
-	local Accessory:Instance = Utils_Module.fetch_accessory(accessory_name)
-	
-	if not Accessory then return end	
-	
-	
-	if server_handled then
-		local accessory_clone = Accessory:Clone()
-		
-		return Utils_Module.quick_give_accessory(player, accessory_clone, give_accessory, server_handled, create_string)
-	else	
-		return Utils_Module.quick_give_accessory(player, Accessory, false, false, true)
+function Module.GiveAccessory(player: Player, accessoryName: string, serverHandled: boolean?, createString: boolean, giveAccessory: boolean)
+	serverHandled = serverHandled or false
+	print("Received with:", player.Name, accessoryName, serverHandled)
+
+	local accessory: Instance = UtilsModule.fetch_accessory(accessoryName)
+
+	if not accessory then
+		return
 	end
-	
+
+	if serverHandled then
+		local accessoryClone = accessory:Clone()
+
+		return UtilsModule.quick_give_accessory(player, accessoryClone, giveAccessory, serverHandled, createString)
+	else
+		return UtilsModule.quick_give_accessory(player, accessory, false, false, true)
+	end
 end
 
-
-
-
-function module.start_module()
+function Module.start_module()
 	-- // skip, does nothing
 end
-return module
+
+return Module

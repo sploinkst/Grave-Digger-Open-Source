@@ -6,11 +6,32 @@ local MarketPlaceService = game:GetService("MarketplaceService")
 local modules_folder = ReplicatedStorage.Shared.Modules["Server Modules"]
 
 for _, child in ipairs(modules_folder:GetChildren()) do
-	if child:IsA("ModuleScript") then
-		local ok, mod = pcall(require, child)
-		if ok and mod.start_module then
-			mod:start_module()
-		end
+	if not child:IsA("ModuleScript") then
+		continue
+	end
+
+	print(("Loading module: %s"):format(child.Name))
+
+	local success, module = pcall(require, child)
+
+	if not success then
+		warn(("Failed to require '%s':\n%s"):format(child.Name, tostring(module)))
+		continue
+	end
+
+	if type(module.start_module) ~= "function" then
+		warn(("Module '%s' does not have a start_module() function."):format(child.Name))
+		continue
+	end
+
+	local started, err = pcall(function()
+		module:start_module()
+	end)
+
+	if started then
+		print(("Loaded module: %s"):format(child.Name))
+	else
+		warn(("Error while starting '%s':\n%s"):format(child.Name, tostring(err)))
 	end
 end
 

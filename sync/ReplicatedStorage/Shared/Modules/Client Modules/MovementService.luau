@@ -5,6 +5,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local SettingsManager = require(ReplicatedStorage.Shared.Modules["Client Modules"].SettingsManager)
 
 -- // Player
 local LocalPlayer = Players.LocalPlayer
@@ -15,12 +16,6 @@ local Humanoid: Humanoid = nil
 local RootPart = nil
 local Animator = nil
 
--- // Data
-local PlayerData = LocalPlayer:WaitForChild("PlayerData")
-local SettingsData = PlayerData:WaitForChild("Settings Data")
-local InputOptions = SettingsData:WaitForChild("Input Options")
-local SprintKey = InputOptions:WaitForChild("Sprint")
-local CrouchKey = InputOptions:WaitForChild("Crouch")
 
 -- // Config
 local BaseSpeed          = 10
@@ -64,6 +59,8 @@ local fall_duration_threshold = 0.3
 local LastSprintCancelTime = 0
 local AimSprintCooldown = 0.35
 
+local InputsBinded = false
+
 local W_Locked = true
 
 -- // VAULT STATE
@@ -71,6 +68,7 @@ local VaultActive = false
 local VaultCooldown = false
 local VaultAnimPlaying = false
 local mantleAnim = game:GetService("ReplicatedStorage"):WaitForChild("Shared").Assets.Animations.Character.Jumping.Mantle
+
 
 -- // Velocity tracking
 local VelocityHistory = {}
@@ -90,17 +88,6 @@ local characterConnections = {}
 local tryStartSprint
 
 -- // Helpers
-local function getKeyName(value: string): string
-	return value:gsub("Enum.KeyCode.", "")
-end
-
-local function getSprintKey()
-	return Enum.KeyCode[getKeyName(SprintKey.Value)]
-end
-
-local function getCrouchKey()
-	return Enum.KeyCode[getKeyName(CrouchKey.Value)]
-end
 
 local function lerp(a, b, t)
 	return a + (b - a) * t
@@ -588,6 +575,8 @@ function module.start_module()
 
 	setupVaultInput()
 
+	if InputsBinded then return end
+	InputsBinded = true
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 
@@ -605,7 +594,7 @@ function module.start_module()
 			if SprintKeyHeld then tryStartSprint() end
 		end
 
-		if input.KeyCode == getSprintKey() then
+		--[[if input.KeyCode == getSprintKey() then
 			SprintKeyHeld = true
 			tryStartSprint()
 
@@ -624,16 +613,16 @@ function module.start_module()
 				Character:SetAttribute("Crouching", true)
 				resetSpeed()
 			end
-		end
+		end]]
 	end)
 
 	UserInputService.InputEnded:Connect(function(input)
-		if input.KeyCode == getSprintKey() then
+		--[[if input.KeyCode == getSprintKey() then
 			SprintKeyHeld = false
 			Sprinting = false
 			resetSpeed()
 			setHoldBreathe(false)
-		end
+		end]]
 
 		if input.KeyCode == Enum.KeyCode.W then
 			KeyStates.Forward = false
@@ -655,6 +644,37 @@ function module.start_module()
 			print("[Module] W_Locked set to false")
 		end
 		if SprintKeyHeld then tryStartSprint() end
+	end)
+	
+	SettingsManager.HookInput("Sprint", function(Key, IsPressed)
+		print("Sprint input triggered:", Key, IsPressed)
+		if IsPressed then
+			SprintKeyHeld = true
+			tryStartSprint()
+
+			if Character and Character:GetAttribute("Aiming") and Character.Humanoid.MoveDirection.Magnitude <= 0 then
+				setHoldBreathe(true)
+			else
+				setHoldBreathe(false)
+			end
+		else
+			SprintKeyHeld = false
+			Sprinting = false
+			resetSpeed()
+			setHoldBreathe(false)
+		end
+	end)
+	
+	SettingsManager.HookInput("Crouch", function(Key, IsPressed)
+		if IsPressed then
+			if Character:GetAttribute("Crouching") then
+				Character:SetAttribute("Crouching", nil)
+				if SprintKeyHeld then tryStartSprint() end
+			else
+				Character:SetAttribute("Crouching", true)
+				resetSpeed()
+			end
+		end
 	end)
 end
 

@@ -17,10 +17,10 @@ local Util     = require(script.Parent.Parent.Parent.Util)
 -- // Assets
 
 local Assets         = ReplicatedStorage.Shared.Assets
-local Holster_Folder = Assets.Guns.Holsters:FindFirstChild("Gun Holsters")
+local Holster_Folder = Assets.Guns.Holsters
 local Tool_Folder    = Assets.Guns.ToolModels
 local Anim_Folder    = Assets.Animations.Tools.Guns.GraceRevolver
-local FxFolder       = Assets.Guns.Effects.Shooting
+local FxFolder       = Assets.Guns.Effects
 
 local SoundFolder = Assets.Guns:WaitForChild("Sounds"):WaitForChild("GraceRevolver")
 local fire_sound  = SoundFolder.fire
@@ -175,14 +175,14 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Max_Capacity            = 6
 	self.Capacity                = 6
 	self.Ammo_Type               = ".45 Lead"
-	self.recoil                  = 30
-	self.recoil_count            = 6
-	self.do_roll 				 = false
+	self.recoil                  = 50
+	self.recoil_count            = 10
+	self.do_roll 				 = true
 	self.Penetration_Level       = 1
 	self.Armor_Penetration_Level = 2
 	self.KnockBack_Force         = 8
 	self.Aiming_Number           = 80
-	self.Short_Distance          = 4
+	self.Short_Distance          = 3.5
 	self.MuzzlePartName          = "GraceRevolver_Muzzle"
 	self.Can_Drop                = true
 	self.Melee_Distance          = 5
@@ -238,7 +238,7 @@ function GraceRevolver:_getKeyBindings()
 	return base
 end
 
-function GraceRevolver:Spin()
+function GraceRevolver:setAltMode()
 	task.spawn(function() self:spin() end)
 end
 
@@ -318,6 +318,7 @@ function GraceRevolver:fire()
 	activeCast.UserData.Direction  = shootDir
 	activeCast.UserData.Penetrated = false
 	activeCast.UserData.Origin     = muzzle.Position
+	activeCast.UserData.Shooter    = game.Players.LocalPlayer
 
 	self:_connect_FastCast(muzzle.Position, shootDir, BULLET_SPEED, {
 		bulletTemplate   = FxFolder.Bullet,
@@ -329,7 +330,7 @@ function GraceRevolver:fire()
 	})
 
 	self.Capacity -= 1
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1.8)
+	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
 
 	local fireAnim  = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 	local fireTrack = self:_playAnim(fireAnim)
@@ -350,6 +351,7 @@ end
 
 function GraceRevolver:reload()
 	if self.Reloading or self.Capacity >= self.Max_Capacity or self.Equipping then return end
+
 	if self.Spinning then self:_cancelSpin() end
 	if self.Aiming   then self:endAiming()   end
 

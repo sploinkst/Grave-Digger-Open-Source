@@ -2,11 +2,18 @@ local TextService = game:GetService("TextService")
 local Players = game:GetService("Players")
 
 return function (context, text)
-	local filterResult = TextService:FilterStringAsync(text, context.Executor.UserId, Enum.TextFilterContext.PublicChat)
-
 	for _, player in ipairs(Players:GetPlayers()) do
-		context:SendEvent(player, "Message", filterResult:GetChatForUserAsync(player.UserId), context.Executor)
+		local Clone = player.PlayerGui.Announcements.Holder.Example:Clone()
+		Clone.Parent = player.PlayerGui.Announcements.Holder
+		Clone.Name = "Announcement"
+		Clone.Visible = true
+		
+		Clone.Text = text .. " - " .. context.Executor.Name
+		
+		task.delay(3, function()
+			Clone:Destroy()
+		end)
 	end
-
+	
 	return "Created announcement."
 end

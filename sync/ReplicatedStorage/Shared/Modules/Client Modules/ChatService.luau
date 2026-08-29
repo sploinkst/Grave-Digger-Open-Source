@@ -18,12 +18,9 @@ local chat_communication =
 	:WaitForChild("Shared")
 	:WaitForChild("Library")
 	:WaitForChild("Events")
-	:WaitForChild("Chat_Communication")
 
 local sfx_communication =
-	chat_communication.Parent
-	.Replicant_Communication
-	.SFX_Connection
+	chat_communication.Sounds
 
 local dialogue_folder =
 	ReplicatedStorage
@@ -32,8 +29,7 @@ local dialogue_folder =
 	:WaitForChild("Sounds")
 	:WaitForChild("Dialogue")
 
-local chat_remote =
-	chat_communication:WaitForChild("Chat_Event")
+local chat_remote = chat_communication.Chat
 
 local local_player = Players.LocalPlayer
 

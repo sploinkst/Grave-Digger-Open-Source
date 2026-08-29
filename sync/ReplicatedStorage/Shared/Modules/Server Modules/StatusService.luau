@@ -1,79 +1,76 @@
 local StatusService = {}
 
-local Status_Folder = game.ReplicatedStorage.Shared.Library.Classes.StatusClasses
+local StatusFolder = game.ReplicatedStorage.Shared.Library.Classes.StatusClasses
 
--- [player] = { [statusName] = status_instance }
-local Status_Table = {}
+-- // [player] = { [statusName] = statusInstance }
+local StatusTable = {}
 
-function StatusService.give_status(player, status, ...)
-	local args = {...}
+function StatusService.GiveStatus(player, status, ...)
+	local args = { ... }
 	print("Giving status:", player.Name, status, args)
 
-	local status_module_script = Status_Folder:FindFirstChild(status)
-	if not status_module_script then
+	local statusModuleScript = StatusFolder:FindFirstChild(status)
+	if not statusModuleScript then
 		warn("StatusService: Status not found:", status)
 		return
 	end
 
-	local status_module = require(status_module_script)
+	local statusModule = require(statusModuleScript)
+	local statusInstance = statusModule.new()
+	statusInstance:apply(player, ...)
 
-	local status_instance = status_module.new()
-	status_instance:apply(player, ...)
-
-	-- Initialize player table if needed
-	Status_Table[player] = Status_Table[player] or {}
-
-	-- Store by status name
-	Status_Table[player][status] = status_instance
-
+	-- // Initialize player table if needed
+	StatusTable[player] = StatusTable[player] or {}
+	-- // Store by status name
+	StatusTable[player][status] = statusInstance
 	print("StatusService: Status applied:", status)
 end
 
-function StatusService.remove_status(player, status)
+function StatusService.RemoveStatus(player, status)
 	print("Removing status:", player.Name, status)
 
-	local status_module_script = Status_Folder:FindFirstChild(status)
-	if not status_module_script then
+	local statusModuleScript = StatusFolder:FindFirstChild(status)
+	if not statusModuleScript then
 		warn("StatusService: Status not found:", status)
 		return
 	end
 
-	local player_statuses = Status_Table[player]
-	if not player_statuses then
+	local playerStatuses = StatusTable[player]
+	if not playerStatuses then
 		warn("No statuses found for player:", player.Name)
 		return
 	end
 
-	local status_instance = player_statuses[status]
-	if not status_instance then
+	local statusInstance = playerStatuses[status]
+	if not statusInstance then
 		warn("Status not applied to player:", status)
 		return
 	end
 
-	status_instance:un_apply(player)
+	statusInstance:un_apply(player)
 
-	-- Only remove if fully unapplied
-	if not status_instance:is_applied(player) then
-		player_statuses[status] = nil
-
-		-- Cleanup empty table
-		if next(player_statuses) == nil then
-			Status_Table[player] = nil
+	-- // Only remove if fully unapplied
+	if not statusInstance:is_applied(player) then
+		playerStatuses[status] = nil
+		-- // Cleanup empty table
+		if next(playerStatuses) == nil then
+			StatusTable[player] = nil
 		end
-
 		print("StatusService: Status removed:", status)
 	end
 end
 
-
-function StatusService.remove_all_statuses(player)
+function StatusService.RemoveAllStatuses(player)
 	print("Removing all statuses for player:", player.Name)
-	
-	for _, status in pairs(Status_Table[player] or {}) do
+
+	for _, status in pairs(StatusTable[player] or {}) do
 		if status:is_applied(player) then
 			status:un_apply(player)
 		end
 	end
 end
 
+function StatusService.start_module()
+	
+end
 return StatusService

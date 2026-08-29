@@ -5,28 +5,29 @@ local Debris = game:GetService("Debris")
 local player_service = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local replicant_folder = ReplicatedStorage.Shared.Library.Events.Replicant_Communication
+local replicant_folder = ReplicatedStorage.Shared.Library.Events
 
-local fastcast_replicant = replicant_folder.FastCast_Connection
-local vfx_replicant = replicant_folder.VFX_Connection
-local sfx_replicant = replicant_folder.SFX_Connection
-local texture_replicant = replicant_folder.Texture_Connection
-local hit_connection = replicant_folder.Hit_Connection
-local heal_connection = replicant_folder.Heal_Connection
-local healnotify_connection = replicant_folder.HealNotify_Connection
+local fastcast_replicant = replicant_folder.FastCast
+local vfx_replicant = replicant_folder.VFX
+local sfx_replicant = replicant_folder.Sounds
+local texture_replicant = replicant_folder.Texture
+local hit_connection = replicant_folder.Hit
+local heal_connection = replicant_folder.Heal
+local healnotify_connection = replicant_folder.HealNotify
 
-local status_connection = replicant_folder.Parent.Status_Communication.Status_Connection
+local status_connection = replicant_folder.Status
 
-local gun_communication = replicant_folder.Parent.Gun_Communication
-local ammo_connection = gun_communication.Ammo_Connection
-local drop_connection = gun_communication.Drop_Connection
+local ammo_connection = replicant_folder.Ammo
+local drop_connection = replicant_folder.DropWeapon
 
-local melee_events = replicant_folder.Parent.Melee_Communication
-local melee_connection = melee_events.Melee_Connection
-local casing_connection = replicant_folder.Casing_Connection
+local melee_connection = replicant_folder.Melee
+local casing_connection = replicant_folder.Casing
 
-local GiveCompassEvent:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Equipment_Communication"):WaitForChild("GiveCompass")
-local RemoveCompass:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Equipment_Communication"):WaitForChild("RemoveCompass")
+local InputChange = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("InputChange")
+local SettingChange = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("SettingChange")
+
+local GiveCompassEvent:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("GiveCompass")
+local RemoveCompass:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("RemoveCompass")
 
 local status_service = require(script.Parent.StatusService)
 
@@ -34,9 +35,9 @@ local item_service = require(script.Parent.ItemsService)
 
 local stumble_animation = ReplicatedStorage:WaitForChild("Shared").Assets.Animations.Character.Miscellanous.Stumble
 
-local AmmoPackEvent = replicant_folder.Parent.Equipment_Communication.AmmoPack
+local AmmoPackEvent = replicant_folder.Ammo
 local AmmoPack = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Equipment"):WaitForChild("AmmoPack")
-
+local Helmet_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Helmet
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 
 -- // funcs
@@ -85,53 +86,7 @@ local function getDistanceScaledForce(baseForce: number, distance: number)
 	return math.max(scaled, MIN_FORCE)
 end
 
-function module.check_for_helmet(character)
-	local character_head = character:FindFirstChild("Head")
-	if not character_head then return nil, false end
 
-	-- Search head children for AccessoryWeld
-	for _, weld in character_head:GetChildren() do
-		if (not weld:IsA("Weld") and not weld:IsA("Motor6D")) then continue end
-		if weld.Name ~= "AccessoryWeld" then continue end
-
-		local part1 = weld.Part1
-		if not part1 then continue end
-
-		local accessoryModel = part1.Parent
-		if not accessoryModel then continue end
-
-		if accessoryModel:FindFirstChild("Helmet") then
-			local unknockable = accessoryModel:GetAttribute("Unknockable")
-			return accessoryModel, not unknockable
-		end
-	end
-
-	-- Also search via character accessories in case weld is parented differently
-	for _, child in character:GetChildren() do
-		if not child:IsA("Accessory") and not child:IsA("Model") then continue end
-		if not child:FindFirstChild("Helmet") then continue end
-
-		-- Verify it's on the head via attachment or weld
-		local handle = child:FindFirstChildWhichIsA("BasePart")
-		if not handle then continue end
-
-		local hasHeadConnection = false
-		for _, weld in handle:GetChildren() do
-			if (weld:IsA("Weld") or weld:IsA("Motor6D")) and
-				(weld.Part0 == character_head or weld.Part1 == character_head) then
-				hasHeadConnection = true
-				break
-			end
-		end
-
-		if hasHeadConnection then
-			local unknockable = child:GetAttribute("Unknockable")
-			return child, not unknockable
-		end
-	end
-
-	return nil, false
-end
 
 function module.stumble_player(character)
 	character.Humanoid.WalkSpeed = 0
@@ -253,8 +208,8 @@ local function getCompassData(player, arm)
 	end
 
 	local compass = if player.Team and player.Team.Name == "Golden Empire"
-		then ReplicatedStorage.Shared.Assets.Items.Compass.empirecompass
-		else ReplicatedStorage.Shared.Assets.Items.Compass.nationcompass
+		then ReplicatedStorage.Shared.Assets.Items.empirecompass
+		else ReplicatedStorage.Shared.Assets.Items.nationcompass
 
 	return armPart, compass
 end
@@ -319,12 +274,12 @@ function module.start_module()
 		
 
 
+		
 		-- Prevent self-damage
 		if player.Team.Name == hitPlayer.Team.Name then return end
 		if hitPlayer and hitPlayer == player then return end
 		
 		hitPlayer:SetAttribute("LastTagged", player.Name)
-		print(hitPlayer.Name, "IS TAGGED")
 		
 		-- Knockback
 		local forceDirection = (direction.Unit + Vector3.new(0, 0.1, 0)).Unit
@@ -345,7 +300,7 @@ function module.start_module()
 			(instance.Parent and instance.Parent.Name == "Hitboxes" and instance.Name == "Head")
 
 		if isHeadshot then
-			local helmet, knockable = module.check_for_helmet(hitCharacter)
+			local helmet, knockable = Util.check_for_helmet(hitCharacter)
 
 			if helmet then
 				-- Only pop if not already knocked
@@ -365,8 +320,8 @@ function module.start_module()
 				end
 				return
 			else
-				-- No helmet, headshot kills
 				humanoid.Health = 0
+				player:SetAttribute("RoundKills", player:GetAttribute("RoundKills") + 1)
 				return
 			end
 		end
@@ -377,6 +332,10 @@ function module.start_module()
 		if humanoid.Health < 100 and hitPlayer then
 			status_service.give_status(hitPlayer, "WoundStatus", nil, instance.Name)
 			status_service.give_status(hitPlayer, "ConcussionStatus")
+		end
+		
+		if humanoid.Health <= 0 then
+			player:SetAttribute("RoundKills", player:GetAttribute("RoundKills") + 1)
 		end
 	end)
 	
@@ -467,7 +426,6 @@ function module.start_module()
 	
 	ammo_connection.OnServerEvent:Connect(function(player, tool, count)
 		print("Received ammo_connection from", tool.Name, "count:", count)
-		
 		tool.Reserve_Ammo.Value -= count
 	end)
 	
@@ -528,7 +486,7 @@ function module.start_module()
 			local connection
 
 			connection = RunService.Heartbeat:Connect(function()
-				if not target.Torso then
+				if not target:FindFirstChild("Torso") then
 					connection:Disconnect()
 					clone:Destroy()
 					return
@@ -619,6 +577,37 @@ function module.start_module()
 		end
 
 		existingCompass:Destroy()
+	end)
+	
+	Helmet_RemoteEvent.OnServerEvent:Connect(function(player, lift: boolean)
+		local character = player.Character
+		local helmet, _ = Util.check_for_helmet(character)
+		
+		if helmet then
+			print("Removing Helmet")
+			
+			if lift then
+				local HelmetWeld = helmet.Head:FindFirstChild("Helmet")
+				local tween = TweenService:Create(HelmetWeld, TweenInfo.new(0.5), {C0 = helmet.Offsets.lifted.Value})
+				tween:Play()
+				print("Lifting Helmet")
+			else
+				local HelmetWeld = helmet.Head:FindFirstChild("Helmet")
+				local tween = TweenService:Create(HelmetWeld, TweenInfo.new(0.5), {C0 = helmet.Offsets.lowered.Value})
+				tween:Play()
+				print("Wearing Helmet")
+			end
+		end
+	end)
+	
+	InputChange.OnServerEvent:Connect(function(player,inputName, Key)
+		player.PlayerData['Settings Data'].Inputs.Binds:FindFirstChild(inputName).Current.Value = Key
+		print("Updated Input")
+	end)
+	
+	SettingChange.OnServerEvent:Connect(function(player, Category, Setting, value)
+		player.PlayerData['Settings Data'][Category][Setting].Current.Value = value
+		print("Updated Setting")
 	end)
 end
 

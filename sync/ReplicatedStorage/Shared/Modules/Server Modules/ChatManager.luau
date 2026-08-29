@@ -5,11 +5,8 @@ local TextService = game:GetService("TextService")
 local TextChatService = game:GetService("TextChatService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local chat_communication =
-	ReplicatedStorage.Shared.Library.Events.Chat_Communication
 
-local chat_remote =
-	chat_communication.Chat_Event
+local chat_remote = ReplicatedStorage.Shared.Library.Events.Chat
 
 local function filterText(player: Player, message: string)
 	local success, result = pcall(function()

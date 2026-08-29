@@ -1,5 +1,13 @@
 local RunService = game:GetService("RunService")
 
+local GameVariables = game:GetService("ReplicatedStorage")
+	:WaitForChild("Shared")
+	:WaitForChild("Library")
+	:WaitForChild("Configuration")
+	:WaitForChild("Game_Variables")
+
+local DebugAccess = GameVariables:WaitForChild("DebugAccess")
+
 return function(registry)
 	registry:RegisterHook("BeforeRun", function(context)
 		local playerData = context.Executor:WaitForChild("PlayerData"):WaitForChild("PlayerData")
@@ -19,14 +27,7 @@ return function(registry)
 			return
 		end
 
-		local testingBoolean = game:GetService("ReplicatedStorage")
-			:WaitForChild("Shared")
-			:WaitForChild("Library")
-			:WaitForChild("Configuration")
-			:WaitForChild("Game_Variables")
-			:WaitForChild("Testing_Boolean")
-
-		if testingBoolean.Value then
+		if DebugAccess.Value == false then
 			if context.Executor.UserId ~= 2756349779 and context.Executor.UserId ~= 1953037778 then
 				return "Lack permission to run this command currently."
 			end

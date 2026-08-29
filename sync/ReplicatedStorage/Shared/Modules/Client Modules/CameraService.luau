@@ -1,65 +1,66 @@
 --!strict
-local module = {}
 
--------------------
--- @Praxitos
--- Primary Camera Service Handler
--------------------
+-- // @Praxitos
+-- // Primary Camera Service Handler
+
+local Module = {}
 
 -- // Services
-local replicatedstorage_service = game:GetService("ReplicatedStorage")
-local player_service            = game:GetService("Players")
-local workspace_service         = game:GetService("Workspace")
+local ReplicatedStorageService = game:GetService("ReplicatedStorage")
+local PlayerService = game:GetService("Players")
+local WorkspaceService = game:GetService("Workspace")
 
 -- // Constants
-local library_folder     = replicatedstorage_service.Shared.Library
-local externals_folder   = library_folder.Externals
-local typechecker_module = require(externals_folder.TypeChecker)
-local camera_class       = require(library_folder.Classes.Miscellanous.CameraClass)
+local LibraryFolder = ReplicatedStorageService.Shared.Library
+local ExternalsFolder = LibraryFolder.Externals
+local TypeCheckerModule = require(ExternalsFolder.TypeChecker)
+local CameraClass = require(LibraryFolder.Classes.Miscellanous.CameraClass)
 
 -- // Stack (LIFO)
-local Cameras_Stack = {}
+local CamerasStack = {}
 
 -- // Internal Helpers
 
-local function get_top_camera()
-	return Cameras_Stack[#Cameras_Stack]
+local function GetTopCamera()
+	return CamerasStack[#CamerasStack]
 end
 
-local function push_camera(camera_instance)
-	table.insert(Cameras_Stack, camera_instance)
+local function PushCamera(cameraInstance)
+	table.insert(CamerasStack, cameraInstance)
 end
 
-local function pop_camera()
-	return table.remove(Cameras_Stack)
+local function PopCamera()
+	return table.remove(CamerasStack)
 end
 
-local function find_camera_index(name: string)
-	for i = #Cameras_Stack, 1, -1 do
-		if Cameras_Stack[i].name == name then
+local function FindCameraIndex(name: string)
+	for i = #CamerasStack, 1, -1 do
+		if CamerasStack[i].name == name then
 			return i
 		end
 	end
 	return nil
 end
 
-local function remove_camera_by_name(name: string)
-	local index = find_camera_index(name)
-	if not index then return nil, nil end
-	local cam = table.remove(Cameras_Stack, index)
-	return cam, index
+local function RemoveCameraByName(name: string)
+	local index = FindCameraIndex(name)
+	if not index then
+		return nil, nil
+	end
+	local camera = table.remove(CamerasStack, index)
+	return camera, index
 end
 
-local function check_cameras()
-	for childname, child in pairs(script:GetChildren()) do
-		if not typechecker_module.new(camera_class.Camera_Type)(child) then
-			warn("[CAMERASERVICE::] CameraModule: ", childname, " fails the type check!")
+local function CheckCameras()
+	for childName, child in pairs(script:GetChildren()) do
+		if not TypeCheckerModule.new(CameraClass.Camera_Type)(child) then
+			warn("[CAMERASERVICE::] CameraModule: ", childName, " fails the type check!")
 		end
 	end
 end
 
-local function resume_camera(camera)
-	workspace_service.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+local function ResumeCamera(camera)
+	WorkspaceService.CurrentCamera.CameraType = Enum.CameraType.Scriptable
 	if camera.Resume then
 		camera:Resume()
 	else
@@ -69,123 +70,130 @@ end
 
 local function HandleDeath(character)
 	local humanoid = character:WaitForChild("Humanoid")
-	module.end_camera_by_name("SpectateCamera", true)
-	
+	Module.EndCameraByName("SpectateCamera", true)
+
 	humanoid.Died:Connect(function()
 		print("[DEATHCAMERA] Died Fired!")
-		module.switch_camera("DeathCamera", true)
+		Module.SwitchCamera("DeathCamera", true)
 	end)
 end
+
 -- // Core
 
-function module.start_module()
-	check_cameras()
-	workspace_service.CurrentCamera.CameraType = Enum.CameraType.Scriptable
-	module.switch_camera("SpectateCamera", true)
-	
+function Module.start_module()
+	CheckCameras()
+	WorkspaceService.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+	Module.SwitchCamera("SpectateCamera", true)
+
 	local function OnCharacterAdded(character)
-		module.end_camera_by_name("DeathCamera", true)
-		module.end_camera_by_name("SpectateCamera", true)
-		module.switch_camera("BaseCamera", true)
+		Module.EndCameraByName("DeathCamera", true)
+		Module.EndCameraByName("SpectateCamera", true)
+		Module.SwitchCamera("BaseCamera", true)
 		HandleDeath(character)
 	end
 
-	if player_service.LocalPlayer.Character then
-		module.end_camera_by_name("SpectateCamera", true)
-		OnCharacterAdded(player_service.LocalPlayer.Character)	
+	if PlayerService.LocalPlayer.Character then
+		Module.EndCameraByName("SpectateCamera", true)
+		OnCharacterAdded(PlayerService.LocalPlayer.Character)
 	end
 
-	player_service.LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
+	PlayerService.LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
 end
 
-function module.switch_camera(target_camera_name: string, abrupt_change: boolean)
-	local target_camera_module = script:FindFirstChild(target_camera_name)
+function Module.SwitchCamera(targetCameraName: string, abruptChange: boolean)
+	local targetCameraModule = script:FindFirstChild(targetCameraName)
 
-	if not target_camera_module then
-		warn("[CAMERASERVICE::] No Camera Module Found with the name: ", target_camera_name)
+	if not targetCameraModule then
+		warn("[CAMERASERVICE::] No Camera Module Found with the name: ", targetCameraName)
 		return
 	end
 
-	local target_camera_class = require(target_camera_module)
-	local current_camera      = get_top_camera()
+	local targetCameraClass = require(targetCameraModule)
+	local currentCamera = GetTopCamera()
 
-	if current_camera and current_camera.name == target_camera_name then
-		warn("[CAMERASERVICE::] Already using camera: ", target_camera_name)
+	if currentCamera and currentCamera.name == targetCameraName then
+		warn("[CAMERASERVICE::] Already using camera: ", targetCameraName)
 		return
 	end
 
-	if current_camera and target_camera_class.priority < current_camera.priority then
-		warn("[CAMERASERVICE::] Target Camera Module:", target_camera_name, "has lower priority than current: ", current_camera.name)
+	if currentCamera and targetCameraClass.priority < currentCamera.priority then
+		warn("[CAMERASERVICE::] Target Camera Module:", targetCameraName, "has lower priority than current: ", currentCamera.name)
 		return
 	end
 
-	if current_camera then
-		if abrupt_change then
-			current_camera:Cut()
+	if currentCamera then
+		if abruptChange then
+			currentCamera:Cut()
 		else
-			current_camera:End()
+			currentCamera:End()
 		end
 	end
 
-	local new_camera = target_camera_class.new({
-		name     = target_camera_name,
-		priority = target_camera_class.priority or 0,
+	local newCamera = targetCameraClass.new({
+		name = targetCameraName,
+		priority = targetCameraClass.priority or 0,
 	})
 
-	push_camera(new_camera)
+	PushCamera(newCamera)
 
-	workspace_service.CurrentCamera.CameraType = Enum.CameraType.Scriptable
-	new_camera:Start()
+	WorkspaceService.CurrentCamera.CameraType = Enum.CameraType.Scriptable
+	newCamera:Start()
 end
 
-function module.end_current_camera(abrupt: boolean)
-	local current_camera = pop_camera()
-	if not current_camera then return end
+function Module.EndCurrentCamera(abrupt: boolean)
+	local currentCamera = PopCamera()
+	if not currentCamera then
+		return
+	end
 
 	if abrupt then
-		current_camera:Cut()
+		currentCamera:Cut()
 	else
-		current_camera:End()
+		currentCamera:End()
 	end
 
-	local previous_camera = get_top_camera()
+	local previousCamera = GetTopCamera()
 
-	if previous_camera then
-		resume_camera(previous_camera)
+	if previousCamera then
+		ResumeCamera(previousCamera)
 	else
-		workspace_service.CurrentCamera.CameraType = Enum.CameraType.Custom
+		WorkspaceService.CurrentCamera.CameraType = Enum.CameraType.Custom
 	end
 end
 
-function module.end_camera_by_name(camera_name: string, abrupt: boolean)
-	local index = find_camera_index(camera_name)
+function Module.EndCameraByName(cameraName: string, abrupt: boolean)
+	local index = FindCameraIndex(cameraName)
 
 	if not index then
 		return
 	end
 
-	local removed_camera = table.remove(Cameras_Stack, index)
+	local removedCamera = table.remove(CamerasStack, index)
 
 	if abrupt then
-		removed_camera:Cut()
+		removedCamera:Cut()
 	else
-		removed_camera:End()
+		removedCamera:End()
 	end
 
+	local currentCamera = GetTopCamera()
 
-	local current_camera = get_top_camera()
-
-	if current_camera then
-		resume_camera(current_camera)
+	if currentCamera then
+		ResumeCamera(currentCamera)
 	else
-		workspace_service.CurrentCamera.CameraType = Enum.CameraType.Custom
+		WorkspaceService.CurrentCamera.CameraType = Enum.CameraType.Custom
 	end
 end
 
-function module.apply_recoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?, scale: number?)
-	local current_camera = get_top_camera()
-	if current_camera and current_camera.ApplyRecoil then
-		current_camera:ApplyRecoil(vertical, horizontal, steps, doRoll, scale)
+function Module.ApplyRecoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?, scale: number?)
+	local currentCamera = GetTopCamera()
+	if currentCamera and currentCamera.ApplyRecoil then
+		currentCamera:ApplyRecoil(vertical, horizontal, steps, doRoll, scale)
 	end
 end
-return module
+
+function Module.GetCurrentCamera()
+	return GetTopCamera().name
+end
+
+return Module

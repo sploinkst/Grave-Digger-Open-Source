@@ -18,16 +18,16 @@ local Util     = require(script.Parent.Parent.Parent.Util)
 
 local Assets        = ReplicatedStorage.Shared.Assets
 local SoundFolder   = Assets.Guns:WaitForChild("Sounds"):WaitForChild("PrinceRifle")
-local HolsterFolder = Assets.Guns.Holsters:FindFirstChild("Gun Holsters")
+local HolsterFolder = Assets.Guns.Holsters
 local ToolFolder    = Assets.Guns.ToolModels
 local AnimFolder    = Assets.Animations.Tools.Guns.PrinceRifle
-local FxFolder      = Assets.Guns.Effects.Shooting
+local FxFolder      = Assets.Guns.Effects
 
 local fire_sound = SoundFolder.fire
 
 -- // Tuning
 
-local CYCLE_REST_TIME = 0.15
+local CYCLE_REST_TIME = 0.25
 local FIRE_RATE       = 0.3
 local BULLET_SPEED    = 1000
 
@@ -189,7 +189,7 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.MuzzlePartName          = "PrinceRifle_Muzzle"
 	self.Can_Drop                = true
 	self.SoundFolder             = SoundFolder
-	self.Short_Distance          = 4
+	self.Short_Distance          = 3.5
 	self.Melee_Distance          = 5
 	self.Melee_Damage            = 80
 	self.Accuracy                = 8
@@ -224,22 +224,10 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	return self
 end
 
--- // Key bindings
-
-function PrinceRifle:_getKeyBindings()
-	local base = BaseTool._getKeyBindings(self)
-	base.AltMode = Enum.KeyCode.Q
-	return base
-end
-
-function PrinceRifle:AltMode()
-	self:setAltMode()
-end
-
 -- // Actions
-
 function PrinceRifle:setAltMode()
-	if self:_isBusy() then return end
+	print("PrinceRifle:setAltMode() called")
+	if self:_isBusy() then print("Busy, cannot change alt mode") return end
 	self.Alting = true
 	self:_stopAllExcept()
 
@@ -247,15 +235,18 @@ function PrinceRifle:setAltMode()
 		self:_playAnim("Alt_Mode_Off").Stopped:Wait()
 		self.Alt_Mode = false
 		self:notify("Firemode: Single Fire")
+		print("Firemode: Single Fire")
 	else
 		self:_playAnim("Alt_Mode_On").Stopped:Wait()
 		self.Alt_Mode = true
 		self:notify("Firemode: Repeating Fire")
 		if not self.Cycled then self:cycle() end
+		print("Firemode: Repeating Fire")
 	end
 
 	self.Alting = false
 	self:_restoreBase()
+	print("Alt mode set to:", self.Alt_Mode)
 end
 
 function PrinceRifle:cycle()
@@ -268,7 +259,7 @@ function PrinceRifle:cycle()
 		return
 	end
 
-	task.delay(CYCLE_REST_TIME, function()
+	task.delay(FIRE_RATE + CYCLE_REST_TIME, function()
 		self:_stopAllExcept()
 		local cycleTrack = self:_playAnim("Cycle")
 
@@ -282,9 +273,10 @@ end
 
 function PrinceRifle:fire()
 	if self.Checking then return end
-	if self.Capacity <= 0 then self:reload() return end
+	if self.Capacity <= 0 then return end
 	if self.Firing then return end
 	if not self.Aiming then return end
+	if self.CantFire then return end
 	
 	self.Firing = true
 
@@ -323,8 +315,6 @@ function PrinceRifle:fire()
 	self:_play_sfx(fire_sound, muzzle, nil, self.Alt_Mode and 0.5 or nil)
 	self:_bounce_scoped_ui()
 
-	-- Fire the cast and immediately set UserData as a complete table
-	-- so CanPierceFunction always finds it populated
 	local activeCast = self.Caster:Fire(
 		muzzle.Position,
 		shootDir,
@@ -336,7 +326,10 @@ function PrinceRifle:fire()
 		Direction  = shootDir,
 		Penetrated = false,
 		Origin     = muzzle.Position,
+		Shooter    = game.Players.LocalPlayer
 	}
+	
+	print("Sent:", table.concat(activeCast.UserData, ","))
 
 	self.Cycled   = false
 	self.Capacity -= 1
@@ -352,7 +345,7 @@ function PrinceRifle:fire()
 		self.recoil_count,
 		10,
 		false,
-		1.8
+		1
 	)
 
 	if self.Alt_Mode then
@@ -366,9 +359,13 @@ function PrinceRifle:fire()
 			self:_restoreBase()
 		end
 	end)
-
-	task.wait(FIRE_RATE)
+	
 	self.Firing = false
+	
+	self.CantFire = true
+	task.delay(CYCLE_REST_TIME, function()
+		self.CantFire = false
+	end)
 end
 
 function PrinceRifle:_autoCycle()
@@ -383,7 +380,8 @@ function PrinceRifle:_autoCycle()
 	self:_stopAllExcept()
 	self:_playAnim("Reload_Alt").Stopped:Wait()
 
-	if self.tool:FindFirstChild("Reserve_Ammo").Value > 0 then
+	local reserveAmmo = self.tool:FindFirstChild("Reserve_Ammo")
+	if reserveAmmo and reserveAmmo.Value > 0 then
 		self:_fire_ammo(1)
 		self.Capacity += 1
 	end
@@ -391,16 +389,29 @@ function PrinceRifle:_autoCycle()
 	self.Cycling = false
 	self.Cycled  = true
 	self:_restoreBase()
+	game.Players.LocalPlayer:SetAttribute("CantUnequip", nil)
 end
 
 function PrinceRifle:reload()
-	if self.Reloading or self.Equipping then return end
-	if self.Capacity >= self.Max_Capacity then return end
+	game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
 
-	if self.tool:FindFirstChild("Reserve_Ammo").Value <= 0 then
+	
+	if not self.Equipped then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
+	if self.Reloading or self.Equipping then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
+	if self.Capacity >= self.Max_Capacity then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
+
+	local reserveAmmo = self.tool:FindFirstChild("Reserve_Ammo")
+	if not reserveAmmo then
+		warn("PrinceRifle: Cannot reload because Reserve_Ammo is missing from", self.tool:GetFullName())
+		game.Players.LocalPlayer:SetAttribute("CantUnequip", nil)
+		return
+	end
+
+	if reserveAmmo.Value <= 0 then
 		self:notify("I don't have any more ammo...")
 		self.Cycling = false
 		self:_restoreBase()
+		game.Players.LocalPlayer:SetAttribute("CantUnequip", nil)
 		return
 	end
 
@@ -449,7 +460,7 @@ function PrinceRifle:reload()
 		self.Reloading        = false
 		self._reloadCancelled = false
 		self:_restoreBase()
-		game.Players.LocalPlayer:SetAttribute("CantUnequip", false)
+		game.Players.LocalPlayer:SetAttribute("CantUnequip", nil)
 	else
 		self:_autoCycle()
 	end

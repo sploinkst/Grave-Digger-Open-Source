@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- // Modules
 local CameraClass = require(script.Parent.Parent.Parent.Parent.Library.Classes.Miscellanous.CameraClass)
+local SettingsModule = require(ReplicatedStorage.Shared.Modules["Client Modules"].SettingsManager)
 
 -- // Base Object
 local BaseCamera = setmetatable({}, { __index = CameraClass })
@@ -22,11 +23,12 @@ local Camera      = Workspace.CurrentCamera
 local aiming_ui = LocalPlayer.PlayerGui:WaitForChild("Aiming"):WaitForChild("Scoped_In")
 local cursor_ui = LocalPlayer.PlayerGui.Aiming.Regular_Crosshair
 
+local Values = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Configuration"):WaitForChild("Character_Variables"):WaitForChild("Camera"):WaitForChild("BaseCamera")
 local CameraOffsets = {
-	Third_Person_Right = { X = 1.5,  Y = 3, Z = 3 },
-	Third_Person_Left  = { X = -1.5, Y = 3, Z = 3 },
-	First_Person       = { X = 0,    Y = 1.5, Z = 0 },
-	Turret             = { Y = 2, Z = -4 },
+	Third_Person_Right = Values:WaitForChild("Third_Person_Right").Value,
+	Third_Person_Left  = Values:WaitForChild("Third_Person_Left").Value,
+	First_Person       = Values:WaitForChild("First_Person").Value,
+	Turret             = Values:WaitForChild("Turret").Value,
 }
 
 local FOV_Config = {
@@ -48,8 +50,8 @@ local ARM_ROTATION_LERP       = 0.1
 local NECK_PITCH_CLAMP        = math.rad(75)
 
 local MouseSensitivity = 0.004
-local PITCH_MIN        = math.rad(-85)
-local PITCH_MAX        = math.rad(85)
+local PITCH_MIN        = math.rad(-89)
+local PITCH_MAX        = math.rad(89)
 
 local COLLISION_MARGIN        = 0.25
 local MIN_ZOOM                = 1.8
@@ -71,12 +73,6 @@ local hold_breath = LocalPlayer.PlayerGui:WaitForChild("Aiming"):WaitForChild("h
 
 local first_person_transparency_tween = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
-local PlayerData      = LocalPlayer:WaitForChild("PlayerData")
-local SettingsData    = PlayerData:WaitForChild("Settings Data")
-local InputData       = SettingsData:WaitForChild("Input Options")
-local Shoulder_Switch = InputData:WaitForChild("Shoulder Switch")
-local First_Person    = InputData:WaitForChild("First Person")
-local Free_Look       = InputData:WaitForChild("Free Look")
 local isRightMouseDown = false
 
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
@@ -129,6 +125,7 @@ function BaseCamera.new(cameraInfo)
 	self.RecoilTargetPitch = 0
 	self.RecoilTargetYaw   = 0
 	self.RecoilSnappiness  = RECOIL_SNAPPINESS
+	self.RecoilImpulses    = {}
 
 	self.ShoulderAlpha       = 1
 	self.ShoulderTarget      = 1
@@ -174,6 +171,8 @@ function BaseCamera.new(cameraInfo)
 	self.KeybindConnections       = {}
 	self._mouseDelta              = Vector2.zero
 	self._inputConn               = nil
+	self._rightMouseBeganConn     = nil
+	self._rightMouseEndedConn     = nil
 	self.aim_check                = nil
 	self.HoldBreathConnection     = nil
 	self.sprint_check             = nil
@@ -187,10 +186,10 @@ function BaseCamera.new(cameraInfo)
 
 	self.transparency_connection = nil
 	self._shiftLockProcessed     = false
-	
-	self.TransitionOffset = nil
-	self.TransitionRotation = nil
-	
+
+	self.TransitionStartCFrame       = nil
+	self.TransitionStartRootPosition = nil
+
 	return self
 end
 
@@ -221,9 +220,7 @@ function BaseCamera:_decayCameraOffsetZ(dt: number)
 end
 
 function BaseCamera:_applyTransition(root: BasePart, targetCFrame: CFrame, dt)
-
 	if self.IsTransitioning then
-
 		self.TransitionElapsed += dt
 
 		local alpha = math.clamp(
@@ -232,51 +229,76 @@ function BaseCamera:_applyTransition(root: BasePart, targetCFrame: CFrame, dt)
 			1
 		)
 
-		local movingStart = targetCFrame
-
-		if self.TransitionOffset then
-			movingStart =
-				root.CFrame * self.TransitionOffset
-		end
-
-
-		Camera.CFrame = movingStart:Lerp(
-			targetCFrame,
-			TweenService:GetValue(
-				alpha,
-				Enum.EasingStyle.Quad,
-				Enum.EasingDirection.Out
-			)
+		local eased = TweenService:GetValue(
+			alpha,
+			Enum.EasingStyle.Quad,
+			Enum.EasingDirection.Out
 		)
 
+		local startCFrame = targetCFrame
+
+		if self.TransitionStartCFrame then
+			-- Translate the saved start CFrame by how far the root has moved
+			-- (position only) since the switch began. We deliberately do NOT
+			-- re-derive the start point from the root's *current* rotation —
+			-- modes like OverTheShoulder actively spin the root toward the
+			-- new camera yaw at MaxTurnRate_Transitioning while this
+			-- transition is playing (see _updateCharacterRotation). Baking
+			-- that live rotation into the offset each frame made the start
+			-- position swing/orbit around the root instead of interpolating
+			-- smoothly, which is what caused the yank when re-entering
+			-- OverTheShoulder while facing toward the camera.
+			local rootDelta = root and (root.Position - self.TransitionStartRootPosition) or Vector3.zero
+			startCFrame = self.TransitionStartCFrame + rootDelta
+		end
+
+		local position = startCFrame.Position:Lerp(
+			targetCFrame.Position,
+			eased
+		)
+
+		-- Always use the live target rotation.
+		Camera.CFrame = CFrame.new(position) * targetCFrame.Rotation
 
 		if alpha >= 1 then
 			self.IsTransitioning = false
-			self.TransitionOffset = nil
+			self.TransitionStartCFrame = nil
+			self.TransitionStartRootPosition = nil
 			self.TransitionElapsed = 0
 		end
-
 	else
 		Camera.CFrame = targetCFrame
 	end
 end
 
 function BaseCamera:_updateRecoil(dt: number)
-	local alpha = math.clamp(self.RecoilSnappiness * dt, 0, 1)
+	-- Apply each shot over a few frames so the kick feels quick but smooth.
+	-- The camera stays at the new angle until the player moves it back.
+	self.RecoilPitch = 0
+	self.RecoilYaw = 0
 
-	local oldPitch = self.RecoilPitch
-	local oldYaw   = self.RecoilYaw
+	for index = #self.RecoilImpulses, 1, -1 do
+		local impulse = self.RecoilImpulses[index]
+		impulse.elapsed = math.min(impulse.elapsed + dt, impulse.duration)
 
-	self.RecoilPitch += (self.RecoilTargetPitch - self.RecoilPitch) * alpha
-	self.RecoilYaw   += (self.RecoilTargetYaw   - self.RecoilYaw)   * alpha
+		local alpha = impulse.elapsed / impulse.duration
+		local eased = TweenService:GetValue(alpha, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		local pitch = impulse.pitch * eased
+		local yaw = impulse.yaw * eased
 
-	self.CameraPitch += self.RecoilPitch - oldPitch
-	self.CameraYaw   += self.RecoilYaw   - oldYaw
+		self.CameraPitch = math.clamp(
+			self.CameraPitch + pitch - impulse.appliedPitch,
+			PITCH_MIN,
+			PITCH_MAX
+		)
+		self.CameraYaw += yaw - impulse.appliedYaw
+		impulse.appliedPitch = pitch
+		impulse.appliedYaw = yaw
 
-	self.RecoilPitch       = 0
-	self.RecoilYaw         = 0
-	self.RecoilTargetPitch = 0
-	self.RecoilTargetYaw   = 0
+		if impulse.elapsed >= impulse.duration then
+			table.remove(self.RecoilImpulses, index)
+		end
+	end
 end
 
 function BaseCamera:_updateHoldBreath()
@@ -312,35 +334,60 @@ local function resolveKeyFromString(value: string): Enum.KeyCode?
 end
 
 function BaseCamera:_setupInput()
-	if self.InputBeganConnection then return end
+	if self._inputHooksSetup then
+		return
+	end
+	self._inputHooksSetup = true
 
-	self.InputBeganConnection = InputService.InputBegan:Connect(function(input, gp)
-		if gp then return end
+	self:_setupRightMouseInput()
 
-		if input.KeyCode == self.shoulder_switch_key then
-			self:_switch_shoulder(
-				LocalPlayer:GetAttribute("Current_Shoulder") == "Left" and "Right" or "Left"
-			)
-		elseif input.KeyCode == self.first_person_key then
-			self:Switch_Camera(self.CurrentMode == "FirstPerson" and "OverTheShoulder" or "FirstPerson")
-		elseif input.KeyCode == self.free_look_key then
-			self:Switch_Camera(self.CurrentMode == "CustomCamera" and "OverTheShoulder" or "CustomCamera")
-		end
-	end)
+	local flipCameraCallback = function(_, pressed)
+		if not pressed then return end
 
-	InputService.InputBegan:Connect(function(input, gp)
-		if gp then return end
+		self:_switch_shoulder(
+			LocalPlayer:GetAttribute("Current_Shoulder") == "Left" and "Right" or "Left"
+		)
+	end
+
+	local firstPersonCallback = function(_, pressed)
+		if not pressed then return end
+		self:Switch_Camera(self.CurrentMode == "FirstPerson" and "OverTheShoulder" or "FirstPerson")
+	end
+
+	local shiftLockCallback = function(_, pressed)
+		if not pressed then return end
+		self:Switch_Camera(self.CurrentMode == "CustomCamera" and "OverTheShoulder" or "CustomCamera")
+	end
+
+	SettingsModule.HookInput("Flip Camera", flipCameraCallback)
+	SettingsModule.HookInput("First Person", firstPersonCallback)
+	SettingsModule.HookInput("Shift Lock", shiftLockCallback)
+
+	self.KeybindConnections = {
+		{ inputName = "Flip Camera",  callback = flipCameraCallback  },
+		{ inputName = "First Person", callback = firstPersonCallback },
+		{ inputName = "Shift Lock",   callback = shiftLockCallback   },
+	}
+end
+
+-- // Tracks whether the right mouse button is currently held down.
+-- Ignores input that was already consumed by the game's UI (gameProcessed == true)
+-- so clicking on GUI elements doesn't trigger camera rotation.
+function BaseCamera:_setupRightMouseInput()
+	if self._rightMouseBeganConn then return end
+
+	self._rightMouseBeganConn = InputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
 		if input.UserInputType == Enum.UserInputType.MouseButton2 then
 			isRightMouseDown = true
-			InputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
 		end
 	end)
 
-	InputService.InputEnded:Connect(function(input, gp)
-		if gp then return end
+	self._rightMouseEndedConn = InputService.InputEnded:Connect(function(input)
+		-- Intentionally not checking gameProcessed here: if the button was
+		-- released over a UI element we still want to clear the held state.
 		if input.UserInputType == Enum.UserInputType.MouseButton2 then
 			isRightMouseDown = false
-			InputService.MouseBehavior = Enum.MouseBehavior.Default
 		end
 	end)
 end
@@ -362,11 +409,6 @@ function BaseCamera:_setupMouseInput()
 	end)
 end
 
-function BaseCamera:_refreshKeybinds()
-	self.shoulder_switch_key = resolveKeyFromString(Shoulder_Switch.Value)
-	self.first_person_key    = resolveKeyFromString(First_Person.Value)
-	self.free_look_key       = resolveKeyFromString(Free_Look.Value)
-end
 
 function BaseCamera:_getCharacterParts()
 	local character = LocalPlayer.Character
@@ -881,7 +923,7 @@ function BaseCamera:CustomCamera()
 
 		local rotation    = CFrame.Angles(0, self.CameraYaw, 0) * CFrame.Angles(self.CameraPitch, 0, 0)
 		local cameraDir   = rotation.LookVector
-		local cameraFocus = root.Position + Vector3.new(0, 1.5, 0)
+		local cameraFocus = root.Position + CameraOffsets.First_Person
 
 		local rayParams = RaycastParams.new()
 		rayParams.FilterDescendantsInstances = { character }
@@ -963,11 +1005,10 @@ function BaseCamera:FirstPerson()
 		)
 
 		if humanoid and humanoid.Health > 0 then
-			self.CharacterYaw = self.CameraYaw
-			root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, self.CharacterYaw, 0)
+			self:_updateCharacterRotation(root, dt)
 		end
 
-		local cameraPosition = root.Position + Vector3.new(0, 1.5, 0)
+		local cameraPosition = root.Position + CameraOffsets.First_Person
 
 		local rotation =
 			CFrame.Angles(0, self.CameraYaw, 0)
@@ -1070,7 +1111,7 @@ function BaseCamera:OverTheShoulder()
 
 		local cameraOffset =
 			(rotation.RightVector * shoulderX)
-			+ (rotation.UpVector * 0.5)
+			+ (rotation.UpVector * CameraOffsets.Third_Person_Right.Y)
 		- (rotation.LookVector * self.ShoulderZoom)
 
 		local idealPosition = focusPoint + cameraOffset
@@ -1119,9 +1160,8 @@ function BaseCamera:Switch_Camera(target: string)
 	local character = LocalPlayer.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 
-	if root then
-		self.TransitionOffset = root.CFrame:ToObjectSpace(Camera.CFrame)
-	end
+	self.TransitionStartCFrame       = Camera.CFrame
+	self.TransitionStartRootPosition = root and root.Position or Camera.CFrame.Position
 
 	self.IsTransitioning = true
 	self.TransitionElapsed = 0
@@ -1190,7 +1230,6 @@ function BaseCamera:Start()
 	self.TransitionElapsed = 0
 
 	local function onCharacterAdded(character)
-		self:_refreshKeybinds()
 		self:_setupInput()
 		self:_setupMouseInput()
 
@@ -1224,17 +1263,6 @@ function BaseCamera:Start()
 
 	self.CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
 
-	local function updateKeys()
-		self.shoulder_switch_key = resolveKeyFromString(Shoulder_Switch.Value)
-		self.first_person_key    = resolveKeyFromString(First_Person.Value)
-		self.free_look_key       = resolveKeyFromString(Free_Look.Value)
-	end
-
-	updateKeys()
-	table.insert(self.KeybindConnections, Shoulder_Switch:GetPropertyChangedSignal("Value"):Connect(updateKeys))
-	table.insert(self.KeybindConnections, First_Person:GetPropertyChangedSignal("Value"):Connect(updateKeys))
-	table.insert(self.KeybindConnections, Free_Look:GetPropertyChangedSignal("Value"):Connect(updateKeys))
-
 	self:_setupInput()
 end
 
@@ -1260,9 +1288,6 @@ function BaseCamera:Resume()
 
 	-- restore FOV in case MenuCamera changed it
 	Camera.FieldOfView = self.TargetFOV or FOV_Config.BASE
-
-	-- re-wire connections that End() tore down
-	self:_refreshKeybinds()
 	self:_setupInput()
 	self:_setupMouseInput()
 
@@ -1308,11 +1333,16 @@ function BaseCamera:End()
 	if self._alignAttachment then self._alignAttachment:Destroy(); self._alignAttachment = nil end
 	if self.InputBeganConnection then self.InputBeganConnection:Disconnect(); self.InputBeganConnection = nil end
 	if self._inputConn       then self._inputConn:Disconnect();       self._inputConn       = nil end
+	if self._rightMouseBeganConn then self._rightMouseBeganConn:Disconnect(); self._rightMouseBeganConn = nil end
+	if self._rightMouseEndedConn then self._rightMouseEndedConn:Disconnect(); self._rightMouseEndedConn = nil end
 
 	if self.KeybindConnections then
-		for _, c in ipairs(self.KeybindConnections) do c:Disconnect() end
+		for _, bind in ipairs(self.KeybindConnections) do
+			SettingsModule.UnhookInput(bind.inputName, bind.callback)
+		end
 		self.KeybindConnections = {}
 	end
+	self._inputHooksSetup = false
 
 	for part, connection in pairs(transparency_connections) do
 		connection:Disconnect()
@@ -1324,107 +1354,29 @@ function BaseCamera:Cut()
 	self:End()
 end
 
--- Modified ApplyRecoil in BaseCamera
 function BaseCamera:ApplyRecoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?, scale: number?)
+	-- Add a short upward kick with movement to either side.
 	scale = scale or 1
-	steps = steps or 6
-
-	-- 1. Permanent weapon kick
-	local targetPitch = vertical * scale
-	local targetYaw = horizontal * scale
-
-	local appliedPitch = 0
-	local appliedYaw = 0
-
-	local duration = 0.05 -- 50ms
-	local elapsed = 0
-
-	local conn
-	conn = RunService.RenderStepped:Connect(function(dt)
-		elapsed += dt
-
-		local alpha = math.clamp(elapsed / duration, 0, 1)
-		alpha = TweenService:GetValue(alpha, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-
-		local pitch = targetPitch * alpha
-		local yaw = targetYaw * alpha
-
-		self.CameraPitch += pitch - appliedPitch
-		self.CameraYaw += yaw - appliedYaw
-
-		appliedPitch = pitch
-		appliedYaw = yaw
-
-		if alpha >= 1 then
-			conn:Disconnect()
-		end
-	end)
-
-	-- 2. Temporary Camera Shake (Procedural)
-	local elapsed = 0
-	local appliedSteps = 0
-	local stepInterval = 0.015
-
-	local conn
-	conn = RunService.RenderStepped:Connect(function(dt)
-		if appliedSteps >= steps then
-			conn:Disconnect()
-			return
-		end
-
-		elapsed += dt
-		local due = math.floor(elapsed / stepInterval)
-
-		for _ = 1, math.min(due - appliedSteps, steps - appliedSteps) do
-			-- Note: vertical/horizontal are already in radians from Util
-			local shakePitch = vertical * 0.25 * scale
-			local shakeYaw   = horizontal * 0.25 * scale
-
-			Camera.CFrame *= CFrame.Angles(shakePitch, shakeYaw, 0)
-			appliedSteps += 1
-		end
-	end)
-
-	-- 3. Roll shake
-	if doRoll then
-		local rollSteps = 0
-		local rollElapsed = 0
-		local rollConn
-
-		rollConn = RunService.RenderStepped:Connect(function(dt)
-			if rollSteps >= 4 then rollConn:Disconnect(); return end
-
-			rollElapsed += dt
-			local due = math.floor(rollElapsed / stepInterval)
-
-			for _ = 1, math.min(due - rollSteps, 4 - rollSteps) do
-				-- Roll is usually a fixed small kick; 
-				-- math.rad is appropriate here because 2 is a degrees value.
-				Camera.CFrame *= CFrame.Angles(0, 0, math.rad(2 * scale))
-				rollSteps += 1
-			end
-		end)
-	else
-		local rollSteps = 0
-		local rollElapsed = 0
-		local rollConn
-		
-		rollConn = RunService.RenderStepped:Connect(function(dt)
-			if rollSteps >= 2 then rollConn:Disconnect(); return end
-
-			rollElapsed += dt
-			local due = math.floor(rollElapsed / stepInterval)
-
-			for _ = 1, math.min(due - rollSteps, 4 - rollSteps) do
-				-- Roll is usually a fixed small kick; 
-				-- math.rad is appropriate here because 2 is a degrees value.
-				Camera.CFrame *= CFrame.Angles(0, 0, math.rad(0.25 * scale))
-				rollSteps += 1
-			end
-		end)
+	if self.holding_breath then
+		scale *= 0.45
 	end
+
+	table.insert(self.RecoilImpulses, {
+		pitch = vertical * scale,
+		yaw = horizontal * scale,
+		duration = 0.075,
+		elapsed = 0,
+		appliedPitch = 0,
+		appliedYaw = 0,
+	})
 end
 
+for _, child in pairs(Values:GetChildren()) do
+	child:GetPropertyChangedSignal("Value"):Connect(function()
+		-- Update the camera's properties when the values change
+		CameraOffsets[child.Name] = child.Value
+	end)
+end
 local myCamera = BaseCamera.new({
 	name     = "BaseCamera",
 	priority = 1,
