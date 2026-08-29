@@ -288,7 +288,7 @@ function BaseTool:init_short_mechanic()
 			return
 		end
 
-		local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName)
+		local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName, true)
 
 		if not muzzle then
 			self:clearMuzzleFX()
@@ -1157,8 +1157,14 @@ function BaseTool:_connectInput()
 				self:drop()
 				return
 			else
-				self:ammo_check()
+				self._ammoCheckHeld = true
+				task.spawn(function()
+					self:ammo_check()
+				end)
 			end
+		else
+			self._ammoCheckHeld = false
+			self:end_ammo_check()
 		end
 	end
 	SettingsManager.HookInput("Check Ammo", self._checkAmmoHook)
@@ -1172,6 +1178,9 @@ function BaseTool:_connectInput()
 end
 
 function BaseTool:_disconnectInput()
+	self._ammoCheckHeld = false
+	self:end_ammo_check()
+
 	if self._inputBeganConn then self._inputBeganConn:Disconnect(); self._inputBeganConn = nil end
 	if self._inputEndedConn then self._inputEndedConn:Disconnect(); self._inputEndedConn = nil end
 
@@ -1455,7 +1464,7 @@ end
 function BaseTool:_fireProjectile(bulletSpeed, penetrationLevel, damage, knockbackForce): boolean
 	if self:_if_sprinting() or self:_if_jumping() then return false end
 
-	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName or "Muzzle")
+	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName or "Muzzle", true)
 	if not muzzle then warn(self.className .. ": Muzzle not found") return false end
 
 	local camera = workspace.CurrentCamera
@@ -1613,14 +1622,18 @@ function BaseTool:_enable_aiming_ui(max_aiming: number)
 	local down, left, right, up = scoped.down, scoped.left, scoped.right, scoped.up
 
 	local character = game.Players.LocalPlayer.Character or game.Players.LocalPlayer.CharacterAdded:Wait()
-	local root      = character:WaitForChild("HumanoidRootPart")
-	local humanoid  = character:WaitForChild("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 5)
+	local humanoid = character:FindFirstChild("Humanoid") or character:WaitForChild("Humanoid", 5)
+	if not root or not humanoid or character ~= game.Players.LocalPlayer.Character then
+		return
+	end
 
 	if self.character_connection then
 		self.character_connection:Disconnect()
 	end
 
-	local currentSpread = 0
+	local fixedSpread = self.FixedAimingSpread
+	local currentSpread = fixedSpread or 0
 
 	self.character_connection = RunService.RenderStepped:Connect(function()
 		if not root or not humanoid then
@@ -1630,7 +1643,9 @@ function BaseTool:_enable_aiming_ui(max_aiming: number)
 		local holdingBreath = character:GetAttribute("HoldBreathe") == true
 		local targetSpread
 
-		if holdingBreath then
+		if fixedSpread then
+			targetSpread = fixedSpread
+		elseif holdingBreath then
 			if not self._breathStartTime then
 				self._breathStartTime = tick()
 				self._spreadAtBreath = currentSpread
@@ -1710,6 +1725,18 @@ end
 
 -- // Ammo check
 
+function BaseTool:end_ammo_check()
+	local checkTrack = self.RegisteredAnimations and self.RegisteredAnimations.Check
+	if self._ammoCheckPaused and checkTrack and checkTrack.IsPlaying then
+		self._ammoCheckPaused = false
+		checkTrack:AdjustSpeed(self.animation_speeds and self.animation_speeds.Check or 1)
+	end
+
+	if self._ammoCheckUtils and type(self._ammoCheckUtils.hide) == "function" then
+		task.spawn(self._ammoCheckUtils.hide)
+	end
+end
+
 function BaseTool:ammo_check()
 	if not self.RegisteredAnimations or not self.RegisteredAnimations.Check then return end
 	if self:_isBusy() or self.Checking or self.Check_Delayed then return end
@@ -1728,10 +1755,11 @@ function BaseTool:ammo_check()
 		return
 	end
 
-	local middle = actualModel:FindFirstChild(self.className .. "_Middle", true)
+	local ammoCheckPartName = self.AmmoCheckPartName or self.className .. "_Middle"
+	local middle = actualModel:FindFirstChild(ammoCheckPartName, true)
 	local muzzle = actualModel:FindFirstChild(self.MuzzlePartName, true)
 	if not middle or not middle:IsA("BasePart") then
-		warn("BaseTool: Cannot check ammo because the middle part is missing for", self.className)
+		warn("BaseTool: Cannot check ammo because", ammoCheckPartName, "is missing for", self.className)
 		return
 	end
 	if not muzzle or not muzzle:IsA("BasePart") then
@@ -1753,6 +1781,7 @@ function BaseTool:ammo_check()
 		ammo_check_part  = cam.Ammo_Check
 		ammo_check_utils = require(cam.Ammo_Check.Utils)
 	end
+	self._ammoCheckUtils = ammo_check_utils
 
 	self:_stopLayer(1)
 	self:_killAimTracks()
@@ -1760,8 +1789,19 @@ function BaseTool:ammo_check()
 		self.RegisteredAnimations.Hold:Stop(CUT)
 	end
 
-	self.RegisteredAnimations.Check:AdjustWeight(1)
+	local checkTrack = self.RegisteredAnimations.Check
+	self._ammoCheckPaused = false
+	checkTrack:AdjustWeight(1)
 	self:_playAnim("Check")
+
+	-- Leave enough of the animation after this point to close and recock the gun.
+	-- Releasing the ammo-check key before this point simply lets it finish normally.
+	task.delay(self.AmmoCheckHoldTime or 0.65, function()
+		if self.Checking and self._ammoCheckHeld and checkTrack.IsPlaying then
+			self._ammoCheckPaused = true
+			checkTrack:AdjustSpeed(0)
+		end
+	end)
 
 	ammo_check_part.CFrame = middle.CFrame + middle.CFrame.rightVector * -0.5 + middle.CFrame.upVector * 1
 
@@ -1775,9 +1815,13 @@ function BaseTool:ammo_check()
 
 	ammo_check_utils.utils(self.Ammo_Type, math.clamp(self.Capacity / self.Max_Capacity, 0, 1),
 		false, reserveAmmo.Value / (self.Max_Capacity * 3))
+	if not self._ammoCheckHeld then
+		self:end_ammo_check()
+	end
 
-	self.RegisteredAnimations.Check.Stopped:Wait()
+	checkTrack.Stopped:Wait()
 
+	self._ammoCheckPaused = false
 	self.Checking = false
 	self:_restoreBase()
 	self:_set_sprint_arms(false)
@@ -1824,7 +1868,7 @@ function BaseTool:_fireMuzzleFlash()
 	if not self.FireEmissions then return end
 	if not self.actual_model then return end
 
-	local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName or "Muzzle")
+	local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName or "Muzzle", true)
 	if not muzzle then return end
 
 	local emissions = {}

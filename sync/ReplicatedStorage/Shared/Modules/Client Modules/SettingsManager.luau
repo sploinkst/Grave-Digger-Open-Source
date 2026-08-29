@@ -140,10 +140,7 @@ InputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 InputService.InputEnded:Connect(function(input, gameProcessed)
-	if gameProcessed then
-		return
-	end
-
+	-- Releases must always clear held states, even if a menu consumed the input.
 	FireHooks(input.KeyCode, false)
 end)
 

@@ -9,6 +9,11 @@ local local_player = player_service.LocalPlayer
 local loadout_ui = local_player.PlayerGui:WaitForChild("Menu_Scenes"):WaitForChild("Loadout").Main_Frame
 
 local gun_classes = replicatedstorage_service.Shared.Library.Classes.GunClasses
+local datapush_event = replicatedstorage_service
+	:WaitForChild("Shared")
+	:WaitForChild("Library")
+	:WaitForChild("Events")
+	:WaitForChild("Datapush")
 local character_spot = workspace_service
 	:WaitForChild("Game_Details")
 	:WaitForChild("Menus")
@@ -22,6 +27,11 @@ local scrolling_list_example = scrolling_list.Example
 local options_frame = loadout_ui.Weapon_Options
 local primary_button = options_frame["Primary Sling"]
 local secondary_button = options_frame["Secondary Holster"]
+local MAX_LOADOUT_WEIGHT = 3
+local slot_buttons = {
+	Primary = primary_button,
+	Secondary = secondary_button,
+}
 
 -- // funcs
 local function is_locked(name: string)
@@ -47,26 +57,37 @@ local function clean_up_scrolling_list()
 	end
 end
 
+local function get_weapon_weight(weapon_name: string): number
+	local weapon_script = gun_classes:FindFirstChild(weapon_name)
+	if not weapon_script or not weapon_script:IsA("ModuleScript") then return 0 end
+	local weapon_module = require(weapon_script)
+	return weapon_module.Weight or 0
+end
+
+local function update_selected_weapon(slot_name: string, weapon_name: string, weapon_module)
+	local button = slot_buttons[slot_name]
+	if not button then return end
+	button.wepname.Text = weapon_name
+	button.wepicon.Image = weapon_module.Tool_Image
+end
 
 
-local function create_weapon_options()
+
+local function create_weapon_options(slot_name: string)
 	print("creating weapon options")
 	clean_up_scrolling_list()
-	
-	-- // also create an empty variant
-	local scrolling_clone = scrolling_list_example:Clone()
-	scrolling_clone.Visible = true
-	scrolling_clone.Parent = scrolling_list
-	scrolling_clone.Name = "Empty"
-	
-	
+
 	for _, child in pairs(gun_classes:GetChildren()) do
 		if not child:IsA("ModuleScript") then continue end
+		local weapon_module = require(child)
+
+		local equipment = local_player.PlayerData.PlayerData.Equipment
+		local other_slot_name = slot_name == "Primary" and "Secondary" or "Primary"
+		local other_weight = get_weapon_weight(equipment[other_slot_name].Value)
+		local too_heavy = weapon_module.Weight + other_weight > MAX_LOADOUT_WEIGHT
 
 		local scrolling_clone = scrolling_list_example:Clone()
 		scrolling_clone.Parent = scrolling_list
-
-		local weapon_module = require(child)
 
 		scrolling_clone.wepicon.Image = weapon_module.Tool_Image
 
@@ -77,14 +98,20 @@ local function create_weapon_options()
 			weight_example.Visible = true
 		end
 		
-		if is_locked(child.Name) then
+		if is_locked(child.Name) or too_heavy then
 			scrolling_clone.weaponlocked.Visible = true
 		end
 		
 		scrolling_clone.Name = child.Name
 		scrolling_clone.Visible = true
-
-	
+		if not too_heavy then
+			scrolling_clone.Activated:Connect(function()
+				print("selected", child.Name, "for", slot_name)
+				datapush_event:FireServer("Loadout" .. slot_name, child.Name)
+				update_selected_weapon(slot_name, child.Name, weapon_module)
+				clean_up_scrolling_list()
+			end)
+		end
 
 		print("created weapon option:", child.Name)
 	end
@@ -114,30 +141,24 @@ local function setup_character()
 end
 
 function module.start_module()
+	local equipment = local_player:WaitForChild("PlayerData")
+		:WaitForChild("PlayerData")
+		:WaitForChild("Equipment")
+	for slot_name, button in pairs(slot_buttons) do
+		local selected = equipment:WaitForChild(slot_name).Value
+		local weapon_script = gun_classes:FindFirstChild(selected)
+		if weapon_script and weapon_script:IsA("ModuleScript") then
+			update_selected_weapon(slot_name, selected, require(weapon_script))
+		end
+	end
 	
 	primary_button.Activated:Connect(function()
-		create_weapon_options()
-		
-		for _, child in pairs(scrolling_list:GetChildren()) do
-			if child.Name == "Example" or child:IsA("UIListLayout") then continue end
-			
-			child.Activated:Connect(function()
-				print("activated", child.Name)
-			end)
-		end
+		create_weapon_options("Primary")
 	end)
 	
 	
 	secondary_button.Activated:Connect(function()
-		create_weapon_options()
-		
-		for _, child in pairs(scrolling_list:GetChildren()) do
-			if child.Name == "Example" or child:IsA("UIListLayout") then continue end
-			
-			child.Activated:Connect(function()
-				print("activated", child.Name)
-			end)
-		end
+		create_weapon_options("Secondary")
 	end)
 	
 	setup_character()

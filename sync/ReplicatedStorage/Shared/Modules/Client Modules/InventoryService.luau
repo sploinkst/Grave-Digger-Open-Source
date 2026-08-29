@@ -13,7 +13,7 @@ local LocalPlayer = game.Players.LocalPlayer
 -- // Constants
 local EmptyIcon = "rbxassetid://112388032303745"
 local TweenInfoDefault = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
-local FadeDelay = 3
+local FadeDelay = 5
 
 local EquipmentBB = ReplicatedStorageService:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("UI"):WaitForChild("Equipment_BB")
 local Utils = require(ReplicatedStorageService:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
@@ -44,10 +44,16 @@ local equipmentBBClone = nil
 
 -- // Helpers
 
+local function GetSlotParts(ui)
+	if not ui or not ui.Parent then return nil, nil, nil end
+	local frame = ui:FindFirstChild("Frame", true)
+	local image = ui:FindFirstChild("ImageLabel", true)
+	local text = ui:FindFirstChild("Hotkey", true)
+	return frame, image, text
+end
+
 local function TweenSlot(ui, props)
-	local frame = ui.Frame
-	local image = ui.ImageLabel
-	local text = ui.Hotkey
+	local frame, image, text = GetSlotParts(ui)
 	if not frame or not image or not text then
 		return
 	end
@@ -73,23 +79,30 @@ local function TweenSlot(ui, props)
 end
 
 local function CreateSlotUI(slotNumber, slot)
-	if slot.UI then
+	if slot.UI and slot.UI.Parent then
 		-- // Already has a UI instance (e.g. AssignTool created it before
 		-- // this loop ran) — don't spawn a duplicate.
 		return
 	end
+	slot.UI = nil
 
 	local ui = LocalPlayer.PlayerGui:WaitForChild("Inventory"):WaitForChild("Main").Example:Clone()
 	ui.Name = "Slot_" .. slotNumber
 	ui.Parent = LocalPlayer.PlayerGui.Inventory:WaitForChild("Main")
 	ui.Visible = true
 
-	ui.Hotkey.Text = slotNumber
-	ui.ImageLabel.Image = EmptyIcon
+	local frame, image, text = GetSlotParts(ui)
+	if not frame or not image or not text then
+		warn("[Inventory] Slot template is missing Frame, ImageLabel, or Hotkey")
+		ui:Destroy()
+		return
+	end
 
-	ui.Frame.BackgroundTransparency = 1
-	ui.ImageLabel.ImageTransparency = 1
-	ui.Hotkey.TextTransparency = 1
+	text.Text = slotNumber
+	image.Image = EmptyIcon
+	frame.BackgroundTransparency = 1
+	image.ImageTransparency = 1
+	text.TextTransparency = 1
 
 	slot.UI = ui
 end
@@ -98,8 +111,10 @@ local function UpdateSlotUI(slot)
 	if not slot or not slot.UI then
 		return
 	end
+	local _, image = GetSlotParts(slot.UI)
+	if not image then return end
 	local img = (slot.Tool and slot.Tool.item_image) or EmptyIcon
-	slot.UI.ImageLabel.Image = img
+	image.Image = img
 end
 
 -- // Slot Colors
@@ -130,7 +145,17 @@ end
 
 -- // Slot Visibilities
 
+local function CanShowSlots(): boolean
+	if LocalPlayer:GetAttribute("MenuOpen") == true then return false end
+	local character = LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	return humanoid ~= nil and humanoid.Health > 0
+end
+
 local function RevealSlots()
+	if not CanShowSlots() then
+		return
+	end
 	slotsVisible = true
 	for _, key in ipairs(SlotOrder) do
 		local ui = InventorySlots[key].UI
@@ -150,9 +175,9 @@ local function FadeSlots()
 		local ui = InventorySlots[key].UI
 		if ui then
 			TweenSlot(ui, {
-				BackgroundTransparency = 0.8,
-				ImageTransparency = 0.8,
-				TextTransparency = 0.8,
+				BackgroundTransparency = 1,
+				ImageTransparency = 1,
+				TextTransparency = 1,
 			})
 		end
 	end
@@ -374,6 +399,15 @@ local function OnCharacterAdded(character)
 	end
 
 	AddEquipmentBB(character)
+	FadeSlots()
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
+	if humanoid then
+		humanoid.Died:Once(function()
+			fadeToken += 1
+			FadeSlots()
+		end)
+	end
 
 	-- // Signal that slots have been fully reset and rebuilt for this
 	-- // character. ToolService waits on this before scanning the backpack
@@ -397,6 +431,12 @@ function Module.start_module()
 	end
 
 	LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
+	LocalPlayer:GetAttributeChangedSignal("MenuOpen"):Connect(function()
+		if LocalPlayer:GetAttribute("MenuOpen") == true then
+			fadeToken += 1
+			FadeSlots()
+		end
+	end)
 
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then

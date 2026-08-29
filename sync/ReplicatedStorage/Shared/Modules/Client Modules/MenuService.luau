@@ -25,6 +25,7 @@ local current_ui = scenes_folder.Loadout
 -- // functions
 local function set_ui()
 	menu_ui.Enabled = menu_boolean
+	local_player:SetAttribute("MenuOpen", menu_boolean)
 end
 
 local function color_all_grey()
@@ -76,6 +77,7 @@ local function start_sub_modules()
 end
 
 function module.start_module()
+	local_player:SetAttribute("MenuOpen", false)
 	start_sub_modules()
 
 	input_service.InputBegan:Connect(function(input, gps)

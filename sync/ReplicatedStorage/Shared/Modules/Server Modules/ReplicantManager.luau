@@ -368,14 +368,14 @@ function module.start_module()
 	end)
 
 	drop_connection.OnServerEvent:Connect(function(player, tool, model, remove_tool: boolean)
+		if not player or type(tool) ~= "string" or not model or not model:IsA("Model") then
+			warn("[ReplicantManager::] Invalid player or model in drop_connection")
+			return
+		end
 		print("Received drop_connection from", player.Name, "for tool:", tool, "model:", model.Name, "remove_tool:", remove_tool)
 		
-		if not player or not model then 
-			warn("[ReplicantManager::] Invalid player or model in drop_connection")
-		end
-		
 		if remove_tool == true then
-			item_service.remove_item(player, model.Name)
+			item_service.remove_item(player, tool, model.Name)
 			print("Removed tool from player:", player.Name)
 		end
 		

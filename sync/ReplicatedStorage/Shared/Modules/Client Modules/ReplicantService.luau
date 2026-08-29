@@ -372,7 +372,11 @@ local function SetupHolster(player: Player, child: BoolValue)
 	end
 
 	local clone = reference:Clone()
-	Utilities.quick_weld(clone.PrimaryPart, char[bodyPartName], clone, child.Name .. "_Weld")
+	local weld = Utilities.quick_weld(clone.PrimaryPart, char[bodyPartName], clone, child.Name .. "_Weld")
+	local holsterC0 = reference:GetAttribute("HolsterC0")
+	if typeof(holsterC0) == "CFrame" then
+		weld.C0 = holsterC0
+	end
 	clone.Parent = char.CharacterData.Rendered_Holsters
 
 	child:GetPropertyChangedSignal("Value"):Connect(function()

@@ -1355,16 +1355,20 @@ function BaseCamera:Cut()
 end
 
 function BaseCamera:ApplyRecoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?, scale: number?)
-	-- Add a short upward kick with movement to either side.
-	scale = scale or 1
-	if self.holding_breath then
+	-- Push the camera over a longer impulse so each shot feels heavier.
+	scale = (scale or 1) * 1.4
+	local character = LocalPlayer.Character
+	local steadyAiming = character
+		and character:GetAttribute("Aiming") == true
+		and character:GetAttribute("HoldBreathe") == true
+	if steadyAiming then
 		scale *= 0.45
 	end
 
 	table.insert(self.RecoilImpulses, {
 		pitch = vertical * scale,
 		yaw = horizontal * scale,
-		duration = 0.075,
+		duration = 0.13,
 		elapsed = 0,
 		appliedPitch = 0,
 		appliedYaw = 0,

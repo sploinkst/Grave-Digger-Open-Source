@@ -517,6 +517,8 @@ function Util.setupFastCast(config: {
 end
 
 local Camera_Service = require(game.ReplicatedStorage.Shared.Modules["Client Modules"].CameraService)
+local recoilRandom = Random.new()
+local nextHorizontalDirection = recoilRandom:NextNumber() < 0.5 and -1 or 1
 
 -- Recoil
 function Util.applyRecoil(
@@ -529,16 +531,19 @@ function Util.applyRecoil(
 	-- Keep most shots close to the weapon's normal recoil while allowing
 	-- occasional stronger or weaker kicks.
 	local function gaussian(): number
-		local u1 = math.max(math.random(), 1e-6)
-		local u2 = math.random()
+		local u1 = math.max(recoilRandom:NextNumber(), 1e-6)
+		local u2 = recoilRandom:NextNumber()
 		return math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
 	end
 
 	-- Guns predominantly climb, but every shot can also pull left or right.
 	local verticalScale = math.clamp(0.055 + gaussian() * 0.008, 0.035, 0.075)
-	local horizontalScale = math.clamp(gaussian() * 0.018, -0.04, 0.04)
-	local verticalDegrees = recoil * verticalScale
-	local horizontalDegrees = recoil * horizontalScale
+	local horizontalRoll = gaussian()
+	local horizontalDirection = nextHorizontalDirection
+	nextHorizontalDirection *= -1
+	local horizontalVariation = math.clamp(math.abs(horizontalRoll) * 0.018, 0, 0.04)
+	local verticalDegrees = math.max(recoil * verticalScale, 1.5)
+	local horizontalDegrees = horizontalDirection * (0.55 + recoil * horizontalVariation)
 	local vertical = math.rad(verticalDegrees)
 	local horizontal = math.rad(horizontalDegrees)
 

@@ -19,6 +19,9 @@ local delete_terrain: RemoteEvent = ReplicatedStorage.Shared.Library.Events.Dele
 
 local LOCAL_PLAYER = Players.LocalPlayer
 
+local TUNNEL_SIZE = Vector3.new(16, 14, 14)
+local TUNNEL_SURFACE_OVERLAP = 2
+
 local Pickaxe = {}
 Pickaxe.__index = Pickaxe
 setmetatable(Pickaxe, { __index = BaseTool })
@@ -208,8 +211,11 @@ function Pickaxe:activate()
 	if raycast.Instance == workspace.Terrain and raycast.Material == Enum.Material.Rock then
 		print("Hit rock")
 
-		local targetPosition = raycast.Position + direction.Unit * 6
-		delete_terrain:FireServer(targetPosition, self.mining_power)
+		local tunnelDirection = direction.Unit
+		local tunnelCenter = raycast.Position
+			+ tunnelDirection * ((TUNNEL_SIZE.Z / 2) - TUNNEL_SURFACE_OVERLAP)
+		local tunnelCFrame = CFrame.lookAt(tunnelCenter, tunnelCenter + tunnelDirection)
+		delete_terrain:FireServer(tunnelCFrame, TUNNEL_SIZE)
 
 		local small_rocks_clone = small_rocks:Clone()
 		small_rocks_clone.Position = raycast.Position

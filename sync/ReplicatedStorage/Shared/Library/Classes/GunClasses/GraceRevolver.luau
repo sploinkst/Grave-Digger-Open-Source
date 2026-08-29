@@ -457,5 +457,6 @@ end
 GraceRevolver.Tool_Image = "rbxassetid://17601078078"
 GraceRevolver.Medal_Cost = 1
 GraceRevolver.Weight     = 1
+GraceRevolver.Designation = "Secondary"
 
 return GraceRevolver

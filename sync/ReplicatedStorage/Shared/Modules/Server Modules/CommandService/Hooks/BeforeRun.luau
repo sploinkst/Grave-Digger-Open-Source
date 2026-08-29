@@ -28,7 +28,10 @@ return function(registry)
 		end
 
 		if DebugAccess.Value == false then
-			if context.Executor.UserId ~= 2756349779 and context.Executor.UserId ~= 1953037778 then
+			if context.Executor.UserId ~= 2756349779
+				and context.Executor.UserId ~= 1953037778
+				and context.Executor.UserId ~= 66934974 -- sploinkst
+			then
 				return "Lack permission to run this command currently."
 			end
 		end

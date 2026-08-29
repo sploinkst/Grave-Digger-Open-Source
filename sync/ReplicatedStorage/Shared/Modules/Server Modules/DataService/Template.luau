@@ -469,6 +469,7 @@ return {
 		["Unlocked Items"] = {
 			["PrinceRifle"] = true,
 			["GraceRevolver"] = true,
+			["CrestfallRifle"] = true,
 		},
 		
 		["Equipment"] = {

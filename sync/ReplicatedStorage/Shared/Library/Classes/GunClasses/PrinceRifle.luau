@@ -179,7 +179,7 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	self.Max_Capacity            = 7
 	self.Capacity                = 7
 	self.Ammo_Type               = "8mm Smokeless"
-	self.recoil                  = 20
+	self.recoil                  = 50
 	self.recoil_count            = 6
 	self.Penetration_Level       = 2
 	self.Armor_Penetration_Level = 3
@@ -553,5 +553,6 @@ end
 PrinceRifle.Tool_Image = "rbxassetid://17496049645"
 PrinceRifle.Medal_Cost = 0
 PrinceRifle.Weight     = 2
+PrinceRifle.Designation = "Primary"
 
 return PrinceRifle

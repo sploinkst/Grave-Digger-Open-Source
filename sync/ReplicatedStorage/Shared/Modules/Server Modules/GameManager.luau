@@ -77,8 +77,8 @@ local hiatusPeriod = false
 local hiatusTick = 180
 
 -- // Constants
-local ServerReadyTimeout = 15
-local ItemGiveDelay = 1.5
+local ServerReadyTimeout = 5
+local ItemGiveDelay = 0.5
 local FinalStandGraceSeconds = 15
 
 local EmpireCharGroup = "EmpireChar"
@@ -549,6 +549,9 @@ local function GiveStartingEquipment(player: Player, character: Model)
 end
 
 local function EquipWhenReady(player: Player, character: Model)
+	if character:GetAttribute("StartingEquipmentScheduled") then return end
+	character:SetAttribute("StartingEquipmentScheduled", true)
+
 	task.spawn(function()
 		local deadline = tick() + ServerReadyTimeout
 
@@ -1287,6 +1290,20 @@ end
 
 function Module.start_module()
 	TerrainService.start_module()
+
+	local function track_player(player: Player)
+		player.CharacterAdded:Connect(function(character)
+			EquipWhenReady(player, character)
+		end)
+		if player.Character then
+			EquipWhenReady(player, player.Character)
+		end
+	end
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		track_player(player)
+	end
+	Players.PlayerAdded:Connect(track_player)
 
 	empireSpawn = MainGame:WaitForChild("Empire")
 	nationSpawn = MainGame:WaitForChild("Nation")

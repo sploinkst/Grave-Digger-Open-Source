@@ -12,10 +12,7 @@ local Revolver_TextLabel = billboard_main.Revolver_Text
 local TweenService = game:GetService("TweenService")
 local FADE_INFO = TweenInfo.new(0.15, Enum.EasingStyle.Linear)
 local FADE_OUT_INFO = TweenInfo.new(0.3, Enum.EasingStyle.Linear)
-local DISPLAY_TIME = 1.5
-
-local hideThread = nil
-
+local displayVersion = 0
 local function fadeIn(obj, property)
 	TweenService:Create(obj, FADE_INFO, { [property] = 0 }):Play()
 end
@@ -25,22 +22,23 @@ local function fadeOut(obj, property)
 end
 
 local function hide()
+	displayVersion += 1
+	local hideVersion = displayVersion
 	fadeOut(Ammo_TextLabel, "TextTransparency")
 	fadeOut(Count_TextLabel, "TextTransparency")
 	fadeOut(background, "ImageTransparency")
 	fadeOut(ammo_bar, "BackgroundTransparency")
 	fadeOut(Revolver_TextLabel, "TextTransparency")
 	task.wait(FADE_OUT_INFO.Time)
-	billboard_main.Enabled = false
+	if displayVersion == hideVersion then
+		billboard_main.Enabled = false
+	end
 end
 
 function module.utils(Ammo_Type: string, Ammo_Percentage: number, Revolver: boolean, bar_size: UDim2?)
+	displayVersion += 1
 	print("Ammo Check: ", Ammo_Type, Ammo_Percentage, Revolver, bar_size)
 	bar_size = UDim2.new(1, 0, bar_size, 0)
-	if hideThread then
-		task.cancel(hideThread)
-		hideThread = nil
-	end
 
 	billboard_main.Enabled = true
 	max_ammo.Visible = true
@@ -83,8 +81,8 @@ function module.utils(Ammo_Type: string, Ammo_Percentage: number, Revolver: bool
 		fadeIn(Revolver_TextLabel, "TextTransparency")
 	end
 
-	-- schedule hide after display time
-	hideThread = task.delay(DISPLAY_TIME, hide)
 end
+
+module.hide = hide
 
 return module

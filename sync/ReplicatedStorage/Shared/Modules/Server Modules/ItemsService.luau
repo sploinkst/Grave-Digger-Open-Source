@@ -31,21 +31,24 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 
 	print("ItemService: Object is", object)
     -- create roblox tool
-    local tool = Instance.new("Tool")
-    tool.Name = object.name
+	local tool = Instance.new("Tool")
+	tool.Name = object.name
+	tool.TextureId = object.item_image or ""
 
 	tool.RequiresHandle = false
 	tool.CanBeDropped = false
     print("ItemsService: Gave item", item, "to", player.Name)
 
 	local clip_size
+	local max_ammo
 
 	if object.Max_Capacity then
 		if not given_ammo then
-			clip_size = object.Max_Capacity * 3
+			clip_size = object.Starting_Reserve_Ammo or object.Max_Capacity * 3
 		else
-			clip_size = math.clamp(given_ammo, 0, object.Max_Capacity * 3)
+			clip_size = math.clamp(given_ammo, 0, object.Max_Reserve_Ammo or object.Max_Capacity * 3)
 		end
+		max_ammo = object.Max_Reserve_Ammo or object.Max_Capacity * 3
 	end
 
 	local number_value = Instance.new("NumberValue")
@@ -56,20 +59,25 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 	local number_value = Instance.new("NumberValue")
 	number_value.Name = "Max_Ammo"
 	number_value.Parent = tool
-	number_value.Value = clip_size or 0  -- default to 0 for tools with no ammo
+	number_value.Value = max_ammo or 0  -- default to 0 for tools with no ammo
 
     -- check instance property (not class property)
-    if object.holster_reference then
-        print("Has Holster", object)
-
-        local string_value = Instance.new("BoolValue")
-        string_value.Name = object.holster_reference.Name
-		string_value.Parent = player.GameData.Accessorys.Holsters
-		string_value.Value = true		
+	-- Models can be equipped even when a weapon does not have a separate holster model.
+	if object.holster_reference or object.model_reference then
+		local string_value
+		if object.holster_reference then
+			print("Has Holster", object)
+			string_value = Instance.new("BoolValue")
+			string_value.Name = object.holster_reference.Name
+			string_value.Parent = player.GameData.Accessorys.Holsters
+			string_value.Value = true
+		end
 				
 		tool.Equipped:Connect(function()
 			print("Equipped")
-			string_value.Value = false
+			if string_value then
+				string_value.Value = false
+			end
 
 			if object.model_reference then
 				print("[MODEL REFERENCE]", object.Name, "has an actual model!")
@@ -146,7 +154,9 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 		end)
 		
 		tool.Unequipped:Connect(function()
-			string_value.Value = true
+			if string_value then
+				string_value.Value = true
+			end
 			
 			if player.Character.CharacterData.Equipment:FindFirstChild(object.model_reference.Name) then
 				player.Character.CharacterData.Equipment:FindFirstChild(object.model_reference.Name):Destroy()
@@ -178,7 +188,7 @@ function module.give_item(player: Player, item: string, given_ammo: number)
     return "Successfully gave item."
 end
 
-function module.remove_item(player: Player, item: string)
+function module.remove_item(player: Player, item: string, model_name: string?)
 
 	local backpack = player:FindFirstChild("Backpack")
 	local character = player.Character
@@ -217,7 +227,7 @@ function module.remove_item(player: Player, item: string)
 			and character.CharacterData:FindFirstChild("Equipment")
 
 		if equipmentFolder then
-			local model = equipmentFolder:FindFirstChild(item)
+			local model = equipmentFolder:FindFirstChild(model_name or item)
 			if model then
 				model:Destroy()
 			end

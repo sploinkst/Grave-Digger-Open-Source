@@ -145,11 +145,16 @@ end
 local function HandleDeleteTerrain(...)
 	local args = { ... }
 
+	local carveCFrame
 	local position
 	local size
 
+	if typeof(args[2]) == "CFrame" then
+		carveCFrame = args[2]
+		size = args[3]
+
 	-- // Vector3 position supplied
-	if typeof(args[2]) == "Vector3" then
+	elseif typeof(args[2]) == "Vector3" then
 		position = args[2]
 		size = args[3]
 
@@ -167,7 +172,11 @@ local function HandleDeleteTerrain(...)
 		size = args[5]
 	end
 
-	if not position or not size then
+	if not carveCFrame and position then
+		carveCFrame = CFrame.new(position)
+	end
+
+	if not carveCFrame or not size then
 		warn("Delete terrain called with invalid arguments")
 		return
 	end
@@ -177,7 +186,7 @@ local function HandleDeleteTerrain(...)
 	end
 
 	TerrainService:FillBlock(
-		CFrame.new(position),
+		carveCFrame,
 		size,
 		Enum.Material.Air
 	)

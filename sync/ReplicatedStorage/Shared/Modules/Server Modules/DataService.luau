@@ -12,6 +12,7 @@ local TemplateModule = require(script.Template)
 local UtilitiesModule = require(script.Utilities)
 
 local DatastoreModule = require(script.Datastores)
+local DatapushModule = require(script.Datapushes)
 
 -- // profile store
 local PlayerStoreKey = ProfileServiceModule.GetProfileStore(
@@ -218,6 +219,8 @@ end
 -- // api
 
 function Module.start_module()
+	DatapushModule.start_module()
+
 	-- // Existing players
 	for _, player in pairs(PlayersService:GetPlayers()) do
 		task.spawn(LoadProfile, player)
