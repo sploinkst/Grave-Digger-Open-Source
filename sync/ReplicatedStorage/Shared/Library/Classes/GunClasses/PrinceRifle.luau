@@ -345,7 +345,7 @@ function PrinceRifle:fire()
 		self.recoil_count,
 		10,
 		false,
-		1
+		1.8
 	)
 
 	if self.Alt_Mode then
@@ -380,8 +380,7 @@ function PrinceRifle:_autoCycle()
 	self:_stopAllExcept()
 	self:_playAnim("Reload_Alt").Stopped:Wait()
 
-	local reserveAmmo = self.tool:FindFirstChild("Reserve_Ammo")
-	if reserveAmmo and reserveAmmo.Value > 0 then
+	if self.tool:FindFirstChild("Reserve_Ammo").Value > 0 then
 		self:_fire_ammo(1)
 		self.Capacity += 1
 	end
@@ -399,15 +398,7 @@ function PrinceRifle:reload()
 	if not self.Equipped then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
 	if self.Reloading or self.Equipping then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
 	if self.Capacity >= self.Max_Capacity then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
-
-	local reserveAmmo = self.tool:FindFirstChild("Reserve_Ammo")
-	if not reserveAmmo then
-		warn("PrinceRifle: Cannot reload because Reserve_Ammo is missing from", self.tool:GetFullName())
-		game.Players.LocalPlayer:SetAttribute("CantUnequip", nil)
-		return
-	end
-
-	if reserveAmmo.Value <= 0 then
+	if self.tool:WaitForChild("Reserve_Ammo").Value <= 0 then
 		self:notify("I don't have any more ammo...")
 		self.Cycling = false
 		self:_restoreBase()
@@ -553,6 +544,6 @@ end
 PrinceRifle.Tool_Image = "rbxassetid://17496049645"
 PrinceRifle.Medal_Cost = 0
 PrinceRifle.Weight     = 2
-PrinceRifle.Designation = "Primary"
 
+return PrinceRifle
 return PrinceRifle
