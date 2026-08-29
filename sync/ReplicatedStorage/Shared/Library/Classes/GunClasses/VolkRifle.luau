@@ -214,7 +214,17 @@ function VolkRifle:get_spread(muzzle: BasePart, shootDirection: Vector3): Vector
 end
 
 function VolkRifle:aim()
+	warn("[VolkRifle Debug] Aim requested", {
+		Equipped = self.Equipped,
+		Equipping = self.Equipping,
+		Aiming = self.Aiming,
+		Busy = self:_isBusy(),
+		Jumping = self:_if_jumping(),
+		FreeLook = LOCAL_PLAYER:GetAttribute("FreeLook"),
+		IsShorted = self.IsShorted,
+	})
 	BaseRifle.aim(self)
+	warn("[VolkRifle Debug] Aim finished; Aiming =", self.Aiming)
 	if not self.Aiming then return end
 	self:_setScopeFov()
 	local humanoid = LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:FindFirstChildOfClass("Humanoid")
@@ -258,14 +268,107 @@ function VolkRifle:_damageAtDistance(distance: number): number
 	return 140
 end
 
-function VolkRifle:fire()
-	if self.Firing or self.Reloading or self.Cycling or self.Checking or self.Alting or self.Meleeing then return end
-	if not self.Aiming then return end
-	if self.Capacity <= 0 or self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
-
+function VolkRifle:_getMuzzlePart(): BasePart?
 	local muzzle = self:_findModelPart(self.MuzzlePartName)
+	if muzzle then return muzzle end
+
+	local model = self.actual_model
+	if not model then return nil end
+
+	-- The Mosin keeps its muzzle inside special. The model can replicate before
+	-- all of its descendants, so give that exact path a moment to arrive.
+	local special = model:FindFirstChild("special") or model:WaitForChild("special", 1)
+	if special then
+		local nestedMuzzle = special:FindFirstChild("muzzle") or special:WaitForChild("muzzle", 1)
+		if nestedMuzzle and nestedMuzzle:IsA("BasePart") then
+			warn("[VolkRifle Debug] Found muzzle at", nestedMuzzle:GetFullName())
+			return nestedMuzzle
+		end
+	end
+
+	local marker = model:FindFirstChild(self.MuzzlePartName, true)
+	if marker and marker:IsA("Model") then
+		local markerPart = marker:FindFirstChildWhichIsA("BasePart", true)
+		if markerPart then return markerPart end
+	end
+
+	local hitbox = model:FindFirstChild("hitbox", true)
+	if not hitbox or not hitbox:IsA("BasePart") then return nil end
+
+	local runtimeMuzzle = Instance.new("Part")
+	runtimeMuzzle.Name = self.MuzzlePartName
+	runtimeMuzzle.Size = Vector3.new(0.1, 0.1, 0.1)
+	runtimeMuzzle.Transparency = 1
+	runtimeMuzzle.CanCollide = false
+	runtimeMuzzle.CanQuery = false
+	runtimeMuzzle.CanTouch = false
+	runtimeMuzzle.Massless = true
+	runtimeMuzzle.CFrame = marker and marker:IsA("Model") and marker:GetPivot() or hitbox.CFrame
+	runtimeMuzzle.Parent = model
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = runtimeMuzzle
+	weld.Part1 = hitbox
+	weld.Parent = runtimeMuzzle
+
+	warn("[VolkRifle Debug] Created a runtime muzzle from", marker and marker:GetFullName() or hitbox:GetFullName())
+	return runtimeMuzzle
+end
+
+function VolkRifle:fire()
+	warn("[VolkRifle Debug] Fire requested", {
+		Firing = self.Firing,
+		Reloading = self.Reloading,
+		Cycling = self.Cycling,
+		Checking = self.Checking,
+		Alting = self.Alting,
+		Meleeing = self.Meleeing,
+		Aiming = self.Aiming,
+		Capacity = self.Capacity,
+		Sprinting = self:_if_sprinting(),
+		Jumping = self:_if_jumping(),
+		ForceBlockFire = self.ForceBlockFire,
+	})
+	if self.Firing or self.Reloading or self.Cycling or self.Checking or self.Alting or self.Meleeing then
+		warn("[VolkRifle Debug] Fire blocked by an active weapon action")
+		return
+	end
+	if not self.Aiming then
+		warn("[VolkRifle Debug] Fire blocked because Aiming is false")
+		return
+	end
+	if self.Capacity <= 0 then
+		warn("[VolkRifle Debug] Fire blocked because the rifle is empty")
+		return
+	end
+	if self:_if_sprinting() then
+		warn("[VolkRifle Debug] Fire blocked because Sprinting is true")
+		return
+	end
+	if self:_if_jumping() then
+		warn("[VolkRifle Debug] Fire blocked because Jumping is true")
+		return
+	end
+	if self.ForceBlockFire then
+		warn("[VolkRifle Debug] Fire blocked because ForceBlockFire is true; IsShorted =", self.IsShorted)
+		return
+	end
+
+	local muzzle = self:_getMuzzlePart()
 	local camera = workspace.CurrentCamera
-	if not muzzle or not muzzle:IsA("BasePart") or not camera then return end
+	if not muzzle or not muzzle:IsA("BasePart") then
+		warn("[VolkRifle Debug] Fire blocked because muzzle was not found as a BasePart:", self.MuzzlePartName, muzzle)
+		return
+	end
+	if not camera then
+		warn("[VolkRifle Debug] Fire blocked because CurrentCamera is missing")
+		return
+	end
+	if not self.Caster or not self.CasterBehavior then
+		warn("[VolkRifle Debug] Fire blocked because FastCast was not initialized", self.Caster, self.CasterBehavior)
+		return
+	end
+	warn("[VolkRifle Debug] All fire checks passed; firing from", muzzle:GetFullName())
 
 	self.Firing = true
 	local mousePosition = UserInputService:GetMouseLocation()
@@ -354,15 +457,28 @@ function VolkRifle:reload()
 end
 
 function VolkRifle:activate()
+	warn("[VolkRifle Debug] Tool activated", {
+		ActualModel = self.actual_model and self.actual_model:GetFullName() or "missing",
+		Aiming = self.Aiming,
+		Busy = self:_isBusy(),
+		Equipping = self.Equipping,
+	})
 	if self.Reloading then
+		warn("[VolkRifle Debug] Activation cancelled the active reload")
 		self._reloadCancelled = true
 		return
 	end
-	if not self.actual_model then return end
+	if not self.actual_model then
+		warn("[VolkRifle Debug] Activation blocked because actual_model is missing")
+		return
+	end
 	if self.Aiming then
 		self:fire()
 	elseif not self:_isBusy() then
+		warn("[VolkRifle Debug] Not aiming, using melee instead of firing")
 		self:melee()
+	else
+		warn("[VolkRifle Debug] Activation blocked while not aiming; busy state is true")
 	end
 end
 
@@ -378,6 +494,13 @@ function VolkRifle:_on_equip()
 		local muzzle = self:_findModelPart(self.MuzzlePartName)
 		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, damage, self.KnockBack_Force)
 	end)
+	warn("[VolkRifle Debug] Equipped", {
+		ActualModel = self.actual_model and self.actual_model:GetFullName() or "not assigned yet",
+		ModelReference = self.model_reference and self.model_reference:GetFullName() or "missing",
+		MuzzleName = self.MuzzlePartName,
+		CasterReady = self.Caster ~= nil and self.CasterBehavior ~= nil,
+		AnimationsReady = self.RegisteredAnimations ~= nil,
+	})
 end
 
 function VolkRifle:_on_unequip()

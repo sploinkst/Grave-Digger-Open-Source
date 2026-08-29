@@ -57,7 +57,7 @@ end
 
 userinputservice.InputBegan:Connect(function(input, gps)
 	if gps then return end
-	
+
 	if input.KeyCode == Enum.KeyCode.E then
 		set_invsible()
 	end
