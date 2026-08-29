@@ -8,7 +8,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
-local BaseTool = require(script.Parent.Parent.BaseTool)
+local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local Util = require(script.Parent.Parent.Parent.Util)
 
 local LOCAL_PLAYER = Players.LocalPlayer
@@ -52,7 +52,7 @@ local ANIM_LAYERS: { [string]: number } = {
 
 local Crestfall = {}
 Crestfall.__index = Crestfall
-setmetatable(Crestfall, { __index = BaseTool })
+setmetatable(Crestfall, { __index = BaseRifle })
 
 export type Crestfall = typeof(setmetatable({} :: any, Crestfall))
 
@@ -91,7 +91,7 @@ local function get_holster_reference(model_reference: Model?): Model?
 end
 
 function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
-	local self = setmetatable(BaseTool.new(info), Crestfall)
+	local self = setmetatable(BaseRifle.new(info), Crestfall)
 
 	self.className = "CrestfallRifle"
 	self.item_image = "rbxthumb://type=Asset&id=14103121270&w=420&h=420"
@@ -180,7 +180,7 @@ end
 
 function Crestfall:get_spread(muzzle: BasePart, shootDirection: Vector3): Vector3
 	if not self.HipBraced then
-		return BaseTool.get_spread(self, muzzle, shootDirection)
+		return BaseRifle.get_spread(self, muzzle, shootDirection)
 	end
 
 	local spread = self.HipBraceAccuracy
@@ -196,14 +196,14 @@ function Crestfall:aim()
 	if humanoid then self._walkSpeedBeforeAim = humanoid.WalkSpeed end
 	self.FixedAimingSpread = self.HipBraced and HIP_BRACE_CROSSHAIR_SPREAD or nil
 
-	BaseTool.aim(self)
+	BaseRifle.aim(self)
 	if humanoid and self.Aiming and not self.HipBraced then
 		humanoid.WalkSpeed = self._walkSpeedBeforeAim * 0.7
 	end
 end
 
 function Crestfall:endAiming()
-	BaseTool.endAiming(self)
+	BaseRifle.endAiming(self)
 	local character = LOCAL_PLAYER.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid and self._walkSpeedBeforeAim then
@@ -371,7 +371,7 @@ end
 
 function Crestfall:Destroy()
 	self:_disconnectInput()
-	BaseTool.destroy(self)
+	BaseRifle.destroy(self)
 end
 
 Crestfall.Tool_Image = "rbxthumb://type=Asset&id=14103121270&w=420&h=420"

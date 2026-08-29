@@ -11,7 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService  = game:GetService("UserInputService")
 
 local Types    = require(script.Parent.Parent.Parent.Types)
-local BaseTool = require(script.Parent.Parent.BaseTool)
+local BasePistol = require(script.Parent.Parent.BasePistol)
 local Util     = require(script.Parent.Parent.Parent.Util)
 
 -- // Assets
@@ -60,7 +60,7 @@ local ANIM_LAYERS: { [string]: number } = {
 
 local GraceRevolver = {}
 GraceRevolver.__index = GraceRevolver
-setmetatable(GraceRevolver, { __index = BaseTool })
+setmetatable(GraceRevolver, { __index = BasePistol })
 
 export type GraceRevolver = typeof(setmetatable({} :: {
 	className:   "GraceRevolver",
@@ -107,7 +107,7 @@ export type GraceRevolver = typeof(setmetatable({} :: {
 -- // Constructor
 
 function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
-	local self = setmetatable(BaseTool.new(info), GraceRevolver)
+	local self = setmetatable(BasePistol.new(info), GraceRevolver)
 
 	self.className   = "GraceRevolver"
 	self.item_image  = "rbxassetid://17601078078"
@@ -233,7 +233,7 @@ end
 -- // Key bindings
 
 function GraceRevolver:_getKeyBindings()
-	local base = BaseTool._getKeyBindings(self)
+	local base = BasePistol._getKeyBindings(self)
 	base.Spin = Enum.KeyCode.Q
 	return base
 end
@@ -451,7 +451,7 @@ end
 
 function GraceRevolver:Destroy()
 	self:_disconnectInput()
-	BaseTool.destroy(self)
+	BasePistol.destroy(self)
 end
 
 GraceRevolver.Tool_Image = "rbxassetid://17601078078"

@@ -11,7 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService  = game:GetService("UserInputService")
 
 local Types    = require(script.Parent.Parent.Parent.Types)
-local BaseTool = require(script.Parent.Parent.BaseTool)
+local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local Util     = require(script.Parent.Parent.Parent.Util)
 
 -- // Assets
@@ -60,7 +60,7 @@ local ANIM_LAYERS: { [string]: number } = {
 
 local PrinceRifle = {}
 PrinceRifle.__index = PrinceRifle
-setmetatable(PrinceRifle, { __index = BaseTool })
+setmetatable(PrinceRifle, { __index = BaseRifle })
 
 export type PrinceRifle = typeof(setmetatable({} :: {
 	className:   "PrinceRifle",
@@ -110,7 +110,7 @@ export type PrinceRifle = typeof(setmetatable({} :: {
 -- // Constructor
 
 function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
-	local self = setmetatable(BaseTool.new(info), PrinceRifle)
+	local self = setmetatable(BaseRifle.new(info), PrinceRifle)
 
 	self.className   = "PrinceRifle"
 	self.item_image  = "rbxassetid://17496049645"
@@ -345,7 +345,7 @@ function PrinceRifle:fire()
 		self.recoil_count,
 		10,
 		false,
-		1.8
+		1
 	)
 
 	if self.Alt_Mode then
@@ -380,7 +380,8 @@ function PrinceRifle:_autoCycle()
 	self:_stopAllExcept()
 	self:_playAnim("Reload_Alt").Stopped:Wait()
 
-	if self.tool:FindFirstChild("Reserve_Ammo").Value > 0 then
+	local reserveAmmo = self.tool:FindFirstChild("Reserve_Ammo")
+	if reserveAmmo and reserveAmmo.Value > 0 then
 		self:_fire_ammo(1)
 		self.Capacity += 1
 	end
@@ -398,7 +399,15 @@ function PrinceRifle:reload()
 	if not self.Equipped then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
 	if self.Reloading or self.Equipping then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
 	if self.Capacity >= self.Max_Capacity then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
-	if self.tool:WaitForChild("Reserve_Ammo").Value <= 0 then
+
+	local reserveAmmo = self.tool:FindFirstChild("Reserve_Ammo")
+	if not reserveAmmo then
+		warn("PrinceRifle: Cannot reload because Reserve_Ammo is missing from", self.tool:GetFullName())
+		game.Players.LocalPlayer:SetAttribute("CantUnequip", nil)
+		return
+	end
+
+	if reserveAmmo.Value <= 0 then
 		self:notify("I don't have any more ammo...")
 		self.Cycling = false
 		self:_restoreBase()
@@ -544,6 +553,6 @@ end
 PrinceRifle.Tool_Image = "rbxassetid://17496049645"
 PrinceRifle.Medal_Cost = 0
 PrinceRifle.Weight     = 2
+PrinceRifle.Designation = "Primary"
 
-return PrinceRifle
 return PrinceRifle

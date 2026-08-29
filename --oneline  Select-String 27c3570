@@ -1,0 +1,19 @@
+* [33m8eb5bac[m[33m ([m[1;32msploinkst-changes[m[33m, [m[1;32mcurrent-files[m[33m)[m prince push
+[31m|[m * [33m647cf0e[m[33m ([m[1;31mtarget/sploinkst-changes[m[33m, [m[1;31morigin/sploinkst-changes[m[33m)[m large patch push, finalized
+[31m|[m * [33m30695f9[m prince push
+[31m|[m *   [33mb2783a1[m merged commits, crestfall + large patch, respawn fix, hotbar changes + armory saves
+[31m|[m [33m|[m[31m\[m  
+[31m|[m [33m|[m[31m/[m  
+[31m|[m[31m/[m[33m|[m   
+* [33m|[m [33md6f432a[m crestfall + large patch, respawn fix, hotbar changes + armory saves
+* [33m|[m [33m1ef7610[m general bugfix
+[34m|[m * [33m06363dc[m mass fixes, recoil change
+[34m|[m * [33m27c3570[m mass fixes, recoil change
+[34m|[m[34m/[m  
+* [33maff78d8[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31mupstream/main[m[33m, [m[1;31mupstream/HEAD[m[33m, [m[1;31morigin/update[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32magents/roblox-game-initialization-fix[m[33m, [m[1;32magents/fix-settingmanager-gun-void-issue[m[33m)[m Mass Commit
+* [33mda6cf3d[m Revert "Fix:: <CameraService> Recoil more accurate..?"
+* [33m2c7e455[m Fix: <EquipmentService> Inital Spawn now gets equipment
+* [33m568ac39[m Fix: <PrinceRifle> No longer can Aim midair.
+* [33m4179d65[m Feat: <CMDR> SetTeam Command
+* [33m56ef8d2[m Fix: <Sound> Footsteps no longer flood DebugMenu
+* [33mdb0befa[m Fix: <Pickaxe> Raycast now dependent on the Head.
