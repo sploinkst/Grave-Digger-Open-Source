@@ -1,9 +1,35 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local replicatedfirst = script.Parent
-
 
 replicatedfirst:RemoveDefaultLoadingScreen()
 
-local intro_frame = game.Players.LocalPlayer.PlayerGui:WaitForChild("Intro")
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+local intro_frame = playerGui:FindFirstChild("Intro")
+
+-- ReplicatedFirst runs before PlayerService has copied the shared UI. Create
+-- Intro locally instead of yielding forever and blocking the intro sequence.
+if not intro_frame then
+	local uiFolder = ReplicatedStorage
+		:WaitForChild("Shared")
+		:WaitForChild("Library")
+		:WaitForChild("UI")
+	local introTemplate = uiFolder:WaitForChild("Intro")
+	intro_frame = introTemplate:Clone()
+	intro_frame.Parent = playerGui
+end
+
+intro_frame.ResetOnSpawn = false
+
+-- PlayerService may also replicate its copy after this local one is created.
+-- Keep a single persistent Intro rather than accumulating duplicate GUIs.
+playerGui.ChildAdded:Connect(function(child)
+	if child.Name == "Intro" and child ~= intro_frame then
+		child:Destroy()
+	end
+end)
+
 local userinputservice = game:GetService("UserInputService")
 local tween_service = game:GetService("TweenService")
 
@@ -42,12 +68,12 @@ task.delay(20, function()
 	set_invsible()
 end)
 
-if game.Players.LocalPlayer:GetAttribute("Whitelisted") then
+if localPlayer:GetAttribute("Whitelisted") then
 	intro_frame.Enabled = true
 end
 
-game.Players.LocalPlayer:GetAttributeChangedSignal("Whitelisted"):Connect(function()
-	if game.Players.LocalPlayer:GetAttribute("Whitelisted") then
+localPlayer:GetAttributeChangedSignal("Whitelisted"):Connect(function()
+	if localPlayer:GetAttribute("Whitelisted") then
 		intro_frame.Enabled = true
 	end
 end)

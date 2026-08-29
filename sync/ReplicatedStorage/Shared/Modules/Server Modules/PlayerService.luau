@@ -123,13 +123,58 @@ end
 
 local accessoryConnections = {}
 
+local function ApplyUniform(character: Model, player: Player)
+	-- A character can load before GameManager assigns its team. Wait for a
+	-- playable team so the uniform selection cannot fail and leave it naked.
+	local shirtTemplate: Shirt?
+	local pantsTemplate: Pants?
+
+	repeat
+		local team = player.Team
+		if team and team.Name == "Golden Empire" then
+			shirtTemplate = script:FindFirstChild("EmpireShirt") :: Shirt?
+			pantsTemplate = script:FindFirstChild("EmpirePants") :: Pants?
+		elseif team and team.Name == "Royal Nation" then
+			shirtTemplate = script:FindFirstChild("NationShirt") :: Shirt?
+			pantsTemplate = script:FindFirstChild("NationPants") :: Pants?
+		end
+
+		if not shirtTemplate or not pantsTemplate then
+			player:GetPropertyChangedSignal("Team"):Wait()
+		end
+	until (shirtTemplate and pantsTemplate) or not player.Parent or player.Character ~= character
+
+	if not shirtTemplate or not pantsTemplate or player.Character ~= character then
+		return
+	end
+
+	-- ApplyDescription may leave more than one classic-clothing instance behind.
+	-- Remove all competing clothes so Roblox renders only the team uniform.
+	for _, child in ipairs(character:GetChildren()) do
+		if child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then
+			child:Destroy()
+		end
+	end
+
+	local shirt = shirtTemplate:Clone()
+	shirt.Parent = character
+	local pants = pantsTemplate:Clone()
+	pants.Parent = character
+end
+
 local function ApplyFullAppearance(character: Model, player: Player)
 	local humanoid: Humanoid = character:WaitForChild("Humanoid")
+
+	-- Uniforms do not depend on Roblox's avatar API. Apply them first so a
+	-- failed or throttled avatar lookup cannot leave the character undressed.
+	ApplyUniform(character, player)
+	if player.Character ~= character then return end
 
 	local success, avatarDescription = pcall(function()
 		return Players:GetHumanoidDescriptionFromUserIdAsync(player.UserId)
 	end)
 	if not success or not avatarDescription then
+		warn("[PLAYERSERVICE] Could not load avatar description for", player.Name, avatarDescription)
 		return
 	end
 
@@ -146,6 +191,10 @@ local function ApplyFullAppearance(character: Model, player: Player)
 	currentDescription.TorsoColor = avatarDescription.TorsoColor
 
 	currentDescription.Head = avatarDescription.Head
+	-- Player avatar clothing must not compete with the faction uniform.
+	currentDescription.Shirt = 0
+	currentDescription.Pants = 0
+	currentDescription.GraphicTShirt = 0
 
 	local hairsFolder = player:FindFirstChild("GameData")
 		and player.GameData:FindFirstChild("Accessorys")
@@ -180,19 +229,10 @@ local function ApplyFullAppearance(character: Model, player: Player)
 
 	humanoid:ApplyDescription(currentDescription)
 
-	local shirt
-	local pants
-
-	if player.Team.Name == "Golden Empire" then
-		shirt = script.EmpireShirt:Clone()
-		pants = script.EmpirePants:Clone()
-	elseif player.Team.Name == "Royal Nation" then
-		shirt = script.NationShirt:Clone()
-		pants = script.NationPants:Clone()
-	end
-
-	shirt.Parent = character
-	pants.Parent = character
+	-- ApplyDescription can finish reconciling character children on the next
+	-- scheduler step, so restore the uniform once that work has settled.
+	task.wait()
+	ApplyUniform(character, player)
 
 	local hair = character:WaitForChild("Hair", 10)
 	if hair then
@@ -343,7 +383,10 @@ end
 local function SetupPlayer(player: Player)
 	CopyUI(player)
 	SetupGameData(player)
-	FetchHairAccessories(player)
+	local hairSuccess, hairError = pcall(FetchHairAccessories, player)
+	if not hairSuccess then
+		warn("[PLAYERSERVICE] Could not load hair accessories for", player.Name, hairError)
+	end
 
 	local ragdollObject = RagdollStatus.new()
 

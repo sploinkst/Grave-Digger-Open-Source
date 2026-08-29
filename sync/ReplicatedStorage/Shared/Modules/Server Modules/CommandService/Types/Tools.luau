@@ -9,6 +9,9 @@ local CLASS_ALIASES = {
 	judgementrifle = "JudgementRifle",
 	judgment = "JudgementRifle",
 	judgmentrifle = "JudgementRifle",
+	mosin = "VolkRifle",
+	volk = "VolkRifle",
+	volkrifle = "VolkRifle",
 }
 
 -- collect all class modules
