@@ -225,6 +225,28 @@ function BaseTool:clearMuzzleFX()
 	self.muzzleAttach.Parent = nil
 end
 
+-- Resolve only physical parts. Some models contain Welds or attachments with
+-- the same name as their muzzle part.
+function BaseTool:_findModelPart(partName: string?): BasePart?
+	local model = self.actual_model
+	if not model or not partName then return nil end
+
+	for _, descendant in ipairs(model:GetDescendants()) do
+		if descendant:IsA("BasePart") and descendant.Name == partName then
+			return descendant
+		end
+	end
+
+	local lowerName = string.lower(partName)
+	for _, descendant in ipairs(model:GetDescendants()) do
+		if descendant:IsA("BasePart") and string.lower(descendant.Name) == lowerName then
+			return descendant
+		end
+	end
+
+	return nil
+end
+
 function BaseTool:init_short_mechanic()
 	if not self.RegisteredAnimations.Short then
 		return
@@ -277,7 +299,7 @@ function BaseTool:init_short_mechanic()
 			return
 		end
 
-		local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName, true)
+		local muzzle = self:_findModelPart(self.MuzzlePartName)
 
 		if not muzzle then
 			self:clearMuzzleFX()
@@ -556,7 +578,8 @@ function BaseTool:equip()
 				if not self.SFXFolder then return end
 				local sound = self.SoundFolder:FindFirstChild(keyframe:sub(5))
 				if sound then
-					self:_play_sfx(sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
+					local muzzle = self:_findModelPart(self.MuzzlePartName)
+					if muzzle then self:_play_sfx(sound, muzzle, nil, 0.1) end
 					print("Playing sound: " .. keyframe:sub(5))
 				else
 					warn("Sound not found for keyframe: " .. keyframe)
@@ -572,8 +595,9 @@ function BaseTool:equip()
 				end
 				if #matches > 0 then
 					if not self.actual_model then return end
-
-					self:_play_sfx(matches[math.random(1, #matches)], self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
+					local muzzle = self:_findModelPart(self.MuzzlePartName)
+					if not muzzle then return end
+					self:_play_sfx(matches[math.random(1, #matches)], muzzle, nil, 0.1)
 					print("Playing GSFX: " .. matches[math.random(1, #matches)].Name)
 				else
 					warn("No GSFX matches for: " .. baseName)

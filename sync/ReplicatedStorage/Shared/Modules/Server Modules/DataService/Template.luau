@@ -470,6 +470,7 @@ return {
 			["PrinceRifle"] = true,
 			["GraceRevolver"] = true,
 			["CrestfallRifle"] = true,
+			["JudgementRifle"] = true,
 		},
 		
 		["Equipment"] = {

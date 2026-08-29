@@ -1,0 +1,23 @@
+{
+  "name": "Grave-Digger-Sync",
+  "serveAddress": "127.0.0.1",
+  "servePort": 34872,
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedFirst": {
+      "$path": "sync/ReplicatedFirst"
+    },
+    "ReplicatedStorage": {
+      "$path": "sync/ReplicatedStorage"
+    },
+    "ServerScriptService": {
+      "$path": "sync/ServerScriptService"
+    },
+    "StarterPlayer": {
+      "$path": "sync/StarterPlayer"
+    },
+    "Workspace": {
+      "$path": "sync/Workspace"
+    }
+  }
+}

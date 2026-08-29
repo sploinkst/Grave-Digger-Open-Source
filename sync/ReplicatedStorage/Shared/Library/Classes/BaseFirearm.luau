@@ -2,6 +2,7 @@
 --!optimize 2
 
 -- Firearm-only behavior shared by rifle and pistol category bases.
+-- This class is not meant to be used directly, but rather as a base for other firearm classes.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -66,6 +67,8 @@ function BaseFirearm:_applyHit(result: RaycastResult, damage: number, direction:
 		Instance  = result.Instance,
 		Material  = result.Material,
 		Direction = direction,
+		WeaponName = self.className,
+		ArmorPenetration = self.Armor_Penetration_Level,
 	}, damage, knockback_force)
 end
 
@@ -86,7 +89,7 @@ end
 function BaseFirearm:_fireProjectile(bulletSpeed, penetrationLevel, damage, knockbackForce): boolean
 	if self:_if_sprinting() or self:_if_jumping() then return false end
 
-	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName or "Muzzle", true)
+	local muzzle = self:_findModelPart(self.MuzzlePartName or "Muzzle")
 	if not muzzle then warn(self.className .. ": Muzzle not found") return false end
 
 	local camera = workspace.CurrentCamera
@@ -371,14 +374,25 @@ function BaseFirearm:ammo_check()
 
 	local ammoCheckPartName = self.AmmoCheckPartName or self.className .. "_Middle"
 	local middle = actualModel:FindFirstChild(ammoCheckPartName, true)
-	local muzzle = actualModel:FindFirstChild(self.MuzzlePartName, true)
+		or actualModel.PrimaryPart
+		or actualModel:FindFirstChildWhichIsA("BasePart", true)
+	local muzzle = self:_findModelPart(self.MuzzlePartName or "Muzzle")
+	if not muzzle then
+		for _, descendant in ipairs(actualModel:GetDescendants()) do
+			if descendant:IsA("BasePart") and string.find(string.lower(descendant.Name), "muzzle", 1, true) then
+				muzzle = descendant
+				break
+			end
+		end
+	end
 	if not middle or not middle:IsA("BasePart") then
-		warn("BaseTool: Cannot check ammo because", ammoCheckPartName, "is missing for", self.className)
+		warn("BaseFirearm: Cannot check ammo because the equipped model has no usable parts for", self.className)
 		return
 	end
 	if not muzzle or not muzzle:IsA("BasePart") then
-		warn("BaseTool: Cannot check ammo because the muzzle part is missing for", self.className)
-		return
+		-- The ammo display only needs a stable weld target. Some cosmetic model
+		-- variants omit their dedicated muzzle marker, so use the body part.
+		muzzle = middle
 	end
 
 	self:_set_sprint_arms(true)
@@ -450,7 +464,7 @@ function BaseFirearm:_fireMuzzleFlash()
 	if not self.FireEmissions then return end
 	if not self.actual_model then return end
 
-	local muzzle = self.actual_model:FindFirstChild(self.MuzzlePartName or "Muzzle", true)
+	local muzzle = self:_findModelPart(self.MuzzlePartName or "Muzzle")
 	if not muzzle then return end
 
 	local emissions = {}

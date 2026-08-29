@@ -184,6 +184,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Aiming_Number           = 80
 	self.Short_Distance          = 3.5
 	self.MuzzlePartName          = "GraceRevolver_Muzzle"
+	self.AmmoCheckPartName       = "GraceRevolver_Middle"
 	self.Can_Drop                = true
 	self.Melee_Distance          = 5
 	self.Melee_Damage            = 80
@@ -295,7 +296,7 @@ function GraceRevolver:fire()
 		return
 	end
 
-	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
+	local muzzle = self:_findModelPart(self.MuzzlePartName)
 	if not muzzle or self:_if_sprinting() then self.Firing = false; return end
 
 	local camera = workspace.CurrentCamera
@@ -419,7 +420,7 @@ function GraceRevolver:_on_equip()
 	self:_initShoulderTracking()
 
 	self:_setupFastCast(FxFolder, function(cast, result, velocity)
-		local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
+		local muzzle = self:_findModelPart(self.MuzzlePartName)
 		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, self.damage, self.KnockBack_Force)
 	end)
 end

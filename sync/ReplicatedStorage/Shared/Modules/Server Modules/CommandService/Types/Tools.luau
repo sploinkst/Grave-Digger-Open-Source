@@ -4,6 +4,13 @@ local CmdrUtil = require(script.Parent.Parent.Shared.Util)
 local ToolClasses = ReplicatedStorage.Shared.Library.Classes.ToolClasses
 local GunClasses = ReplicatedStorage.Shared.Library.Classes.GunClasses
 
+local CLASS_ALIASES = {
+	judgement = "JudgementRifle",
+	judgementrifle = "JudgementRifle",
+	judgment = "JudgementRifle",
+	judgmentrifle = "JudgementRifle",
+}
+
 -- collect all class modules
 local function getClasses()
 	local list = {}
@@ -25,6 +32,11 @@ end
 
 local classType = {
 	Transform = function(text)
+		local alias = CLASS_ALIASES[string.lower(text)]
+		if alias and GunClasses:FindFirstChild(alias) then
+			return { alias }
+		end
+
 		local classList = getClasses()
 		local findClass = CmdrUtil.MakeFuzzyFinder(classList)
 
@@ -62,4 +74,3 @@ return function(cmdr)
 	cmdr:RegisterType("class", classType)
 	cmdr:RegisterType("classes", classesType)
 end
-

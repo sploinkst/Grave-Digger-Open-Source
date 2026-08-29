@@ -271,21 +271,26 @@ function module.start_module()
 
 		local hitCharacter = model
 		local hitPlayer    = game.Players:GetPlayerFromCharacter(hitCharacter)
-		
+		local weaponName = hitData.WeaponName
+		local isJudgement = weaponName == "JudgementRifle"
+			and character:FindFirstChild("JudgementRifle") ~= nil
 
-
-		
 		-- Prevent self-damage
-		if player.Team.Name == hitPlayer.Team.Name then return end
+		if hitPlayer and player.Team == hitPlayer.Team then return end
 		if hitPlayer and hitPlayer == player then return end
-		
-		hitPlayer:SetAttribute("LastTagged", player.Name)
+
+		if hitPlayer then
+			hitPlayer:SetAttribute("LastTagged", player.Name)
+		end
 		
 		-- Knockback
 		local forceDirection = (direction.Unit + Vector3.new(0, 0.1, 0)).Unit
 		local baseForce      = knockback_force or 5
 		local distance       = (hrp.Position - position).Magnitude
 		local finalForce     = getDistanceScaledForce(baseForce, distance)
+		if isJudgement and (model:GetAttribute("Construct") == true or model:GetAttribute("IsConstruct") == true) then
+			damage = (damage or 0) * 3
+		end
 
 		local knockbackTarget = if instance:IsA("BasePart")
 			then instance
@@ -303,18 +308,35 @@ function module.start_module()
 			local helmet, knockable = Util.check_for_helmet(hitCharacter)
 
 			if helmet then
+				-- Judgement's .577 Alloy round punches through ordinary helmets
+				-- inside 60 studs. Unknockable helmets are the Lancer exception.
+				if isJudgement and distance < 60 then
+					if knockable then
+						if not helmet:GetAttribute("Knocked") then
+							module.pop_helmet(hitCharacter, helmet, true)
+						end
+						humanoid:TakeDamage(damage or 199)
+						if humanoid.Health <= 0 then
+							player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
+						end
+					else
+						humanoid.Health = math.min(humanoid.Health, 100)
+					end
+					return
+				end
+
 				-- Only pop if not already knocked
 				if not helmet:GetAttribute("Knocked") then
 					module.pop_helmet(hitCharacter, helmet, knockable)
 				end
 
 				if hitPlayer then
-					status_service.give_status(hitPlayer, "ConcussionStatus")
+					status_service.GiveStatus(hitPlayer, "ConcussionStatus")
 					task.delay(3, function()
 						if hitPlayer.Character and
 							hitPlayer.Character:FindFirstChildOfClass("Humanoid") and
 							hitPlayer.Character.Humanoid.Health >= 100 then
-							status_service.remove_status(hitPlayer, "ConcussionStatus")
+							status_service.RemoveStatus(hitPlayer, "ConcussionStatus")
 						end
 					end)
 				end
@@ -330,8 +352,8 @@ function module.start_module()
 		humanoid:TakeDamage(damage or 0)
 		
 		if humanoid.Health < 100 and hitPlayer then
-			status_service.give_status(hitPlayer, "WoundStatus", nil, instance.Name)
-			status_service.give_status(hitPlayer, "ConcussionStatus")
+			status_service.GiveStatus(hitPlayer, "WoundStatus", nil, instance.Name)
+			status_service.GiveStatus(hitPlayer, "ConcussionStatus")
 		end
 		
 		if humanoid.Health <= 0 then
@@ -347,8 +369,8 @@ function module.start_module()
 		end
 		
 		
-		status_service.remove_status(healed, "WoundStatus")
-		status_service.remove_status(healed, "ConcussionStatus")
+		status_service.RemoveStatus(healed, "WoundStatus")
+		status_service.RemoveStatus(healed, "ConcussionStatus")
 		healed.Character.Humanoid.Health = 100
 	end)
 	
@@ -361,9 +383,9 @@ function module.start_module()
 	
 	status_connection.OnServerEvent:Connect(function(player, status, enabled: boolean)
 		if enabled then
-			status_service.give_status(player, status)
+			status_service.GiveStatus(player, status)
 		else
-			status_service.remove_status(player, status)
+			status_service.RemoveStatus(player, status)
 		end
 	end)
 

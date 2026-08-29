@@ -287,7 +287,7 @@ function PrinceRifle:fire()
 		return
 	end
 
-	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
+	local muzzle = self:_findModelPart(self.MuzzlePartName)
 	if not muzzle then
 		self.Firing = false
 		return
@@ -493,7 +493,7 @@ function PrinceRifle:_on_equip()
 	local char = game.Players.LocalPlayer.Character
 
 	self:_setupFastCast(FxFolder, function(cast, result, velocity)
-		local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName)
+		local muzzle = self:_findModelPart(self.MuzzlePartName)
 		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, self.damage, self.KnockBack_Force)
 	end)
 
@@ -517,7 +517,8 @@ function PrinceRifle:_on_equip()
 			if keyframe:sub(1, 4) == "sfx_" then
 				local sound = SoundFolder:FindFirstChild(keyframe:sub(5))
 				if sound then
-					self:_play_sfx(sound, self.actual_model:WaitForChild(self.MuzzlePartName), nil, 0.1)
+					local muzzle = self:_findModelPart(self.MuzzlePartName)
+					if muzzle then self:_play_sfx(sound, muzzle, nil, 0.1) end
 				else
 					warn("Sound not found for keyframe: " .. keyframe)
 				end

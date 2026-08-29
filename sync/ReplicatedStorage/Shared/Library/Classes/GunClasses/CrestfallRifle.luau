@@ -249,7 +249,7 @@ function Crestfall:fire()
 	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
 	if self.Capacity <= 0 or self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
 
-	local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName, true)
+	local muzzle = self:_findModelPart(self.MuzzlePartName)
 	local camera = workspace.CurrentCamera
 	if not muzzle or not muzzle:IsA("BasePart") or not camera then return end
 
@@ -345,7 +345,7 @@ function Crestfall:_on_equip()
 		local origin = cast.UserData and cast.UserData.Origin
 		local distance = origin and (result.Position - origin).Magnitude or 0
 		local damage = self:_damageAtDistance(distance)
-		local muzzle = self.actual_model and self.actual_model:FindFirstChild(self.MuzzlePartName, true)
+		local muzzle = self:_findModelPart(self.MuzzlePartName)
 		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, damage, self.KnockBack_Force)
 	end)
 end

@@ -79,7 +79,11 @@ local function create_weapon_options(slot_name: string)
 
 	for _, child in pairs(gun_classes:GetChildren()) do
 		if not child:IsA("ModuleScript") then continue end
-		local weapon_module = require(child)
+		local success, weapon_module = pcall(require, child)
+		if not success then
+			warn("[LoadoutHandler] Could not load weapon", child.Name, weapon_module)
+			continue
+		end
 
 		local equipment = local_player.PlayerData.PlayerData.Equipment
 		local other_slot_name = slot_name == "Primary" and "Secondary" or "Primary"
