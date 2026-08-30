@@ -56,7 +56,16 @@ export type BaseTool = typeof(setmetatable({} :: {
 	animations: { [string]: Animation }?,
 	RegisteredAnimations: { [string]: AnimationTrack }?,
 	ANIM_LAYERS: { [string]: number }?,
-	motor_6d_data: { Parent: string, Part0: string, Part1: string | BasePart, C0: CFrame }?,
+	motor_6d_data: {
+		Parent: string,
+		Part0: string,
+		Part1: string | BasePart,
+		C0: CFrame,
+		C1: CFrame?,
+		UseRightGripAttachment: boolean?,
+		ReloadGripC0: CFrame?,
+		ReloadGripC1: CFrame?,
+	}?,
 	motor_6d: Motor6D?,
 	_motorOriginal: { C0: CFrame, C1: CFrame, Part0: BasePart?, Part1: BasePart? }?,
 	current_shoulder: string,
@@ -138,6 +147,27 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 		self.RegisteredAnimations = utilities_module.register_animations(LOCAL_PLAYER, self.animations)
 		if not self.RegisteredAnimations then
 			warn("[" .. self.className .. "] Failed to register animations")
+		end
+
+		-- Saved KeyframeSequences retain their authoring loop/priority settings,
+		-- which are not necessarily correct for runtime weapon actions. Persistent
+		-- poses loop; every action must finish so it cannot leave _isBusy() stuck.
+		if self.RegisteredAnimations then
+			for animName, track in pairs(self.RegisteredAnimations) do
+				local persistent = animName == "Hold" or animName == "Aim" or animName == "Aim_Left"
+					or animName == "Charge"
+				track.Looped = persistent
+
+				if animName == "Hold" then
+					track.Priority = Enum.AnimationPriority.Action
+				elseif animName == "Aim" or animName == "Aim_Left" then
+					track.Priority = Enum.AnimationPriority.Action2
+				elseif animName == "Fire" or animName == "Fire_Left" or animName == "Cycle" or animName == "Short" then
+					track.Priority = Enum.AnimationPriority.Action3
+				else
+					track.Priority = Enum.AnimationPriority.Action4
+				end
+			end
 		end
 
 		if self.animation_speeds then
@@ -859,6 +889,10 @@ function BaseTool:_set_sprint_arms(enabled: boolean)
 	end
 end
 
+function BaseTool:_damageMeleeTarget(targetCharacter: Model, meleeRange: number, damage: number)
+	melee_communication.Melee_Connection:FireServer(targetCharacter, meleeRange, damage)
+end
+
 -- // Melee (shared)
 function BaseTool:melee()
 	if self.Meleeing then return end
@@ -959,7 +993,7 @@ function BaseTool:melee()
 		end
 
 		if targetCharacter then
-			melee_communication.Melee_Connection:FireServer(targetCharacter, meleeRange, self.Melee_Damage)
+			self:_damageMeleeTarget(targetCharacter, meleeRange, self.Melee_Damage)
 		end
 	end)
 
@@ -1396,13 +1430,46 @@ end
 
 -- // Motor6D helpers
 
+function BaseTool:_findToolMotor(): Motor6D?
+	if self.motor_6d and self.motor_6d.Parent then return self.motor_6d end
+	local character = LOCAL_PLAYER.Character
+	if not character then return nil end
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("Motor6D") and descendant.Name == "ToolMotor" then
+			if not self.actual_model or (descendant.Part1 and descendant.Part1:IsDescendantOf(self.actual_model)) then
+				self.motor_6d = descendant
+				return descendant
+			end
+		end
+	end
+	return nil
+end
+
+function BaseTool:_setGripArm(armName: string)
+	local motor = self:_findToolMotor()
+	local character = LOCAL_PLAYER.Character
+	local arm = character and character:FindFirstChild(armName)
+	if not motor or not arm or not arm:IsA("BasePart") or not self.motor_6d_data then return end
+
+	motor.Parent = arm
+	motor.Part0 = arm
+	if armName == "Left Arm" then
+		motor.C0 = self.motor_6d_data.ReloadGripC0 or self.motor_6d_data.C0
+		motor.C1 = self.motor_6d_data.ReloadGripC1 or self.motor_6d_data.C1 or CFrame.identity
+	else
+		motor.C0 = self.motor_6d_data.C0
+		motor.C1 = self.motor_6d_data.C1 or CFrame.identity
+	end
+end
+
 function BaseTool:_cacheMotor6D()
-	if not self.motor_6d then return end
+	local motor = self:_findToolMotor()
+	if not motor then return end
 	self._motorOriginal = {
-		C0    = self.motor_6d.C0,
-		C1    = self.motor_6d.C1,
-		Part0 = self.motor_6d.Part0,
-		Part1 = self.motor_6d.Part1,
+		C0    = motor.C0,
+		C1    = motor.C1,
+		Part0 = motor.Part0,
+		Part1 = motor.Part1,
 	}
 end
 

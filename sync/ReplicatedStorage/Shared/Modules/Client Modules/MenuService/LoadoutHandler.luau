@@ -78,7 +78,7 @@ local function create_weapon_options(slot_name: string)
 	clean_up_scrolling_list()
 
 	for _, child in pairs(gun_classes:GetChildren()) do
-		if not child:IsA("ModuleScript") then continue end
+		if not child:IsA("ModuleScript") or child.Name == "AnimationResolver" then continue end
 		local success, weapon_module = pcall(require, child)
 		if not success then
 			warn("[LoadoutHandler] Could not load weapon", child.Name, weapon_module)

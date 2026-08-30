@@ -19,7 +19,14 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Library = Shared:WaitForChild("Library")
 local Utilities = require(Library:WaitForChild("Util"))
 
-local concussionBlur = Lighting.Effects.ConcussionBlur
+local concussionBlur = Lighting:FindFirstChild("ConcussionBlur", true)
+if not concussionBlur or not concussionBlur:IsA("BlurEffect") then
+	concussionBlur = Instance.new("BlurEffect")
+	concussionBlur.Name = "ConcussionBlur"
+	concussionBlur.Size = 0
+	concussionBlur.Enabled = false
+	concussionBlur.Parent = Lighting
+end
 local concussionActive = false
 local concussionConnection: RBXScriptConnection? = nil
 local heartbeatSound: Sound? = nil
@@ -405,6 +412,10 @@ local function RemoveHolster(player: Player, child: Instance)
 end
 
 local function HandleAccessory(player, child)
+	-- These are organizational containers, not equippable accessories.
+	if child:IsA("Folder") then
+		return
+	end
 	if child:IsA("Model") then
 		print("[REPLICANTSERVICE] Accessory is a model:", child.Name)
 		return
@@ -1563,6 +1574,9 @@ function Module.start_module()
 			local playerAccessories = playerReference.GameData.Accessorys
 
 			for _, child in pairs(playerAccessories:GetChildren()) do
+				if child:IsA("Folder") then
+					continue
+				end
 				local accessory = Utilities.fetch_accessory(child.Name)
 				if not accessory then
 					print("[REPLICANTSERVICE] No accessory found for:", child.Name)

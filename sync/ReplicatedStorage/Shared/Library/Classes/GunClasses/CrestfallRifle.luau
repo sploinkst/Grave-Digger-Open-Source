@@ -10,6 +10,7 @@ local UserInputService = game:GetService("UserInputService")
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local Util = require(script.Parent.Parent.Parent.Util)
+local createAnimationResolver = require(script.Parent.AnimationResolver)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -19,6 +20,7 @@ local FxFolder = GunAssets.Effects
 
 local crestfallAnimations = Assets.Animations.Tools.Guns:FindFirstChild("lever")
 local fallbackAnimations = Assets.Animations.Tools.Guns.PrinceRifle
+local animation = createAnimationResolver("lever_rig", crestfallAnimations, fallbackAnimations)
 local crestfallSounds = GunAssets.Sounds:FindFirstChild("lever")
 local SoundFolder = crestfallSounds or GunAssets.Sounds.PrinceRifle
 
@@ -27,8 +29,10 @@ local BULLET_SPEED = 900
 local HIP_BRACE_SWITCH_TIME = 0.33
 local RELOAD_ROUND_TIME = 9.56 / 11
 local HIP_BRACE_CROSSHAIR_SPREAD = 20
-local CRESTFALL_GRIP_C0 = CFrame.new(-0.25, -1.45, -0.5)
+local CRESTFALL_GRIP_C0 = CFrame.new(0, -1, 0)
 	* CFrame.Angles(0, math.rad(-90), math.rad(90))
+local RELOAD_GRIP_C0 = CFrame.new(0.254, -1.703, -0.566)
+	* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
 local CRESTFALL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
 
@@ -55,10 +59,6 @@ Crestfall.__index = Crestfall
 setmetatable(Crestfall, { __index = BaseRifle })
 
 export type Crestfall = typeof(setmetatable({} :: any, Crestfall))
-
-local function animation(name: string, fallback: string): Animation
-	return ((crestfallAnimations and crestfallAnimations:FindFirstChild(name)) or fallbackAnimations:FindFirstChild(fallback)) :: Animation
-end
 
 local function get_holster_reference(model_reference: Model?): Model?
 	local existing = GunAssets.Holsters:FindFirstChild("CrestfallRifleHolster")
@@ -105,24 +105,26 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 		Part0 = "Right Arm",
 		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
 		C0 = CRESTFALL_GRIP_C0,
+		C1 = CFrame.identity,
+		ReloadGripC0 = RELOAD_GRIP_C0,
 	}
 
 	self.animations = {
-		Hold = animation("lever_Held", "PrinceRifle_Held"),
-		Draw = animation("lever_Draw", "PrinceRifle_Draw"),
-		Unequip = animation("lever_Unequip", "PrinceRifle_Unequip"),
-		Aim = animation("lever_Aim", "PrinceRifle_Aim"),
-		Aim_Left = animation("lever_Aim_Left", "PrinceRifle_Aim_Left"),
-		Fire = animation("lever_Fire", "PrinceRifle_Fire"),
-		Fire_Left = animation("lever_Fire_Left", "PrinceRifle_Fire_Left"),
-		Cycle = animation("lever_Cycle", "PrinceRifle_Cycle"),
-		Reload_Start = animation("lever_Reload_Start", "PrinceRifle_Reload_Start"),
-		Reload_Loop = animation("lever_Reload_Loop", "PrinceRifle_Reload_Loop"),
-		Reload_End = animation("lever_Reload_End", "PrinceRifle_Reload_End"),
-		Check = animation("lever_Check", "PrinceRifle_Check"),
-		Melee1 = animation("lever_Melee1", "PrinceRifle_Melee1"),
-		Melee2 = animation("lever_Melee2", "PrinceRifle_Melee2"),
-		Short = animation("lever_Short", "PrinceRifle_Short"),
+		Hold = animation("Hold", "PrinceRifle_Held"),
+		Draw = animation("Draw", "PrinceRifle_Draw"),
+		Unequip = animation("Unequip", "PrinceRifle_Unequip"),
+		Aim = animation("Aim", "PrinceRifle_Aim"),
+		Aim_Left = animation("Aim_Left", "PrinceRifle_Aim_Left"),
+		Fire = animation("Fire", "PrinceRifle_Fire"),
+		Fire_Left = animation("Fire_Left", "PrinceRifle_Fire_Left"),
+		Cycle = animation("Cycle", "PrinceRifle_Cycle"),
+		Reload_Start = animation("Reload_Start", "PrinceRifle_Reload_Start"),
+		Reload_Loop = animation("Reload_Loop", "PrinceRifle_Reload_Loop"),
+		Reload_End = animation("Reload_End", "PrinceRifle_Reload_End"),
+		Check = animation("Check", "PrinceRifle_Check"),
+		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
+		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
+		Short = animation("Short", "PrinceRifle_Short"),
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 
@@ -308,6 +310,7 @@ function Crestfall:reload()
 
 	if self.Aiming then self:endAiming() end
 	self.Reloading = true
+	self:_setGripArm("Left Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
@@ -322,6 +325,7 @@ function Crestfall:reload()
 
 	if not self._reloadCancelled then self:_playAnim("Reload_End").Stopped:Wait() end
 	self.Reloading = false
+	self:_setGripArm("Right Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 	self:_restoreBaseDeferred()
@@ -351,6 +355,7 @@ function Crestfall:_on_equip()
 end
 
 function Crestfall:_on_unequip()
+	self:_setGripArm("Right Arm")
 	self.Equipped = false
 	self.Firing = false
 	self.Cycling = false

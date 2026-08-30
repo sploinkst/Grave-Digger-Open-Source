@@ -18,6 +18,17 @@ local Hooks = {}       -- [InputName] = {Callbacks}
 
 local InputsLoaded = false
 
+local function WaitForReplicatedChild(parent: Instance, name: string): Instance
+	local child = parent:FindFirstChild(name)
+	while not child do
+		-- DataService can take longer than Roblox's five-second infinite-yield
+		-- warning threshold while loading a profile. A timeout keeps each wait
+		-- bounded without giving up on data that is still loading.
+		child = parent:WaitForChild(name, 30)
+	end
+	return child
+end
+
 local function BindInput(inputName: string, keyCode: Enum.KeyCode)
 	-- Remove old binding
 	local oldKey = Inputs[inputName]
@@ -122,10 +133,10 @@ function SettingsManager.UnhookInput(inputName: string, callback)
 end
 
 function SettingsManager.start_module()
- 	LocalPlayer 				= Players.LocalPlayer
- 	PlayerData 				= LocalPlayer:WaitForChild("PlayerData")
- 	SettingsData 				= PlayerData:WaitForChild("Settings Data")
- 	InputsData 				= SettingsData:WaitForChild("Inputs")
+	LocalPlayer = Players.LocalPlayer
+	PlayerData = WaitForReplicatedChild(LocalPlayer, "PlayerData")
+	SettingsData = WaitForReplicatedChild(PlayerData, "Settings Data")
+	InputsData = WaitForReplicatedChild(SettingsData, "Inputs")
 	
 	RegisterInputs()
 end

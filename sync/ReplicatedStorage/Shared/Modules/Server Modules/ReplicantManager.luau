@@ -437,6 +437,11 @@ function module.start_module()
 		if player.Name == targetCharacter.Name then
 			return
 		end
+
+		local targetPlayer = Players:GetPlayerFromCharacter(targetCharacter)
+		if targetPlayer and targetPlayer.Team == player.Team then
+			return
+		end
 		
 		if (player.Character.HumanoidRootPart.Position - targetCharacter.HumanoidRootPart.Position).Magnitude > meleeRange * 1.5 then
 			return

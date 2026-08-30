@@ -113,7 +113,14 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 
 				motor6d.Part0 = part0
 				motor6d.Part1 = part1
-				motor6d.C0 = object.motor_6d_data.C0
+				local armGrip = object.motor_6d_data.UseRightGripAttachment
+					and part0:FindFirstChild("RightGripAttachment")
+				if armGrip and armGrip:IsA("Attachment") then
+					motor6d.C0 = armGrip.CFrame
+				else
+					motor6d.C0 = object.motor_6d_data.C0
+				end
+				motor6d.C1 = object.motor_6d_data.C1 or CFrame.identity
 				print("Set Motor6D")
 			end
 			

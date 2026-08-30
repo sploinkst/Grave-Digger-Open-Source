@@ -10,6 +10,7 @@ local UserInputService = game:GetService("UserInputService")
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local Util = require(script.Parent.Parent.Parent.Util)
+local createAnimationResolver = require(script.Parent.AnimationResolver)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -22,6 +23,7 @@ local judgementAnimations = Assets.Animations.Tools.Guns:FindFirstChild("henry")
 	or Assets.Animations.Tools.Guns:FindFirstChild("Judgement")
 	or Assets.Animations.Tools.Guns:FindFirstChild("lever")
 local fallbackAnimations = Assets.Animations.Tools.Guns.PrinceRifle
+local animation = createAnimationResolver("henry_rig", judgementAnimations, fallbackAnimations)
 local judgementSounds = GunAssets.Sounds:FindFirstChild("henry")
 	or GunAssets.Sounds:FindFirstChild("JudgementRifle")
 	or GunAssets.Sounds:FindFirstChild("Judgement")
@@ -31,8 +33,16 @@ local SoundFolder = judgementSounds or GunAssets.Sounds.PrinceRifle
 local FIRE_INTERVAL = 60 / 80
 local BULLET_SPEED = 1000
 local RELOAD_ROUND_TIME = 2
-local CRESTFALL_GRIP_C0 = CFrame.new(-0.25, -1.45, -0.5)
+local CHARGE_MIN_SPEED = 17.5
+local CHARGE_SPEED = 22
+local CHARGE_DURATION = 3
+local CHARGE_TURN_RATE = math.rad(5)
+local CHARGE_RANGE = 30
+local CHARGE_DAMAGE = 300
+local CRESTFALL_GRIP_C0 = CFrame.new(0, -1, 0)
 	* CFrame.Angles(0, math.rad(-90), math.rad(90))
+local RELOAD_GRIP_C0 = CFrame.new(0.254, -1.703, -0.566)
+	* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
 local CRESTFALL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
 
@@ -52,6 +62,8 @@ local ANIM_LAYERS: { [string]: number } = {
 	Melee1 = 2,
 	Melee2 = 2,
 	Short = 2,
+	Charge = 2,
+	Charge_Stop = 2,
 }
 
 local JudgementRifle = {}
@@ -59,10 +71,6 @@ JudgementRifle.__index = JudgementRifle
 setmetatable(JudgementRifle, { __index = BaseRifle })
 
 export type JudgementRifle = typeof(setmetatable({} :: any, JudgementRifle))
-
-local function animation(name: string, fallback: string): Animation
-	return ((judgementAnimations and judgementAnimations:FindFirstChild(name)) or fallbackAnimations:FindFirstChild(fallback)) :: Animation
-end
 
 local function get_holster_reference(model_reference: Model?): Model?
 	local existing = GunAssets.Holsters:FindFirstChild("henryHolster")
@@ -110,29 +118,42 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		or ToolFolder:FindFirstChild("lever")
 		or ToolFolder:FindFirstChild("Lever")
 	self.holster_reference = get_holster_reference(self.model_reference)
+	-- Normal/idle mounting belongs at the gun's handle. The reload grip below
+	-- intentionally remains independent and uses the authored hitbox pose.
+	local gripC1 = Util.get_model_grip_c1(self.model_reference, "hitbox", {
+		"handle",
+		"grip",
+		"pearl",
+		"lever",
+	})
 	self.motor_6d_data = {
 		Parent = "Right Arm",
 		Part0 = "Right Arm",
 		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
 		C0 = CRESTFALL_GRIP_C0,
+		C1 = gripC1,
+		ReloadGripC0 = RELOAD_GRIP_C0,
+		ReloadGripC1 = CFrame.identity,
 	}
 
 	self.animations = {
-		Hold = animation("held", "PrinceRifle_Held"),
-		Draw = animation("draw", "PrinceRifle_Draw"),
-		Unequip = animation("lever_Unequip", "PrinceRifle_Unequip"),
-		Aim = animation("aim", "PrinceRifle_Aim"),
-		Aim_Left = animation("aim_left", "PrinceRifle_Aim_Left"),
-		Fire = animation("fire", "PrinceRifle_Fire"),
-		Fire_Left = animation("fire_left", "PrinceRifle_Fire_Left"),
-		Cycle = animation("lever_Cycle", "PrinceRifle_Cycle"),
-		Reload_Start = animation("reload_start", "PrinceRifle_Reload_Start"),
-		Reload_Loop = animation("reload_start", "PrinceRifle_Reload_Loop"),
-		Reload_End = animation("lever_Reload_End", "PrinceRifle_Reload_End"),
-		Check = animation("check", "PrinceRifle_Check"),
-		Melee1 = animation("melee1", "PrinceRifle_Melee1"),
-		Melee2 = animation("melee2", "PrinceRifle_Melee2"),
-		Short = animation("short", "PrinceRifle_Short"),
+		Hold = animation("Hold", "PrinceRifle_Held"),
+		Draw = animation("Draw", "PrinceRifle_Draw"),
+		Unequip = animation("Unequip", "PrinceRifle_Unequip"),
+		Aim = animation("Aim", "PrinceRifle_Aim"),
+		Aim_Left = animation("Aim_Left", "PrinceRifle_Aim_Left"),
+		Fire = animation("Fire", "PrinceRifle_Fire"),
+		Fire_Left = animation("Fire_Left", "PrinceRifle_Fire_Left"),
+		Cycle = animation({ "charge", "charge_stop" }, "PrinceRifle_Cycle"),
+		Reload_Start = animation("Reload_Start", "PrinceRifle_Reload_Start"),
+		Reload_Loop = animation("Reload_Loop", "PrinceRifle_Reload_Loop"),
+		Reload_End = animation("Reload_End", "PrinceRifle_Reload_End"),
+		Check = animation("Check", "PrinceRifle_Check"),
+		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
+		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
+		Short = animation("Short", "PrinceRifle_Short"),
+		Charge = animation("Charge", "PrinceRifle_Melee1"),
+		Charge_Stop = animation("Charge_Stop", "PrinceRifle_Held"),
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 
@@ -199,8 +220,86 @@ function JudgementRifle:endAiming()
 end
 
 function JudgementRifle:setAltMode()
-	if self:_isBusy() then return end
-	self:melee()
+	if self:_isBusy() or not self.Equipped then return end
+
+	local character = LOCAL_PLAYER.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not character or not humanoid or not root or not root:IsA("BasePart") then return end
+	if character:GetAttribute("Sprinting") ~= true or humanoid.WalkSpeed < CHARGE_MIN_SPEED then
+		self:notify("Reach full sprint speed to bayonet charge")
+		return
+	end
+
+	self.Alting = true
+	self.ForceBlockFire = true
+	self:_stopAllExcept()
+	self:_set_sprint_arms(true)
+	local chargeTrack = self:_playAnim("Charge")
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { character }
+	local startedAt = os.clock()
+	local hitTarget: Model? = nil
+	local chargeAttachment = Instance.new("Attachment")
+	chargeAttachment.Name = "JudgementChargeAttachment"
+	chargeAttachment.Parent = root
+	local chargeVelocity = Instance.new("LinearVelocity")
+	chargeVelocity.Name = "JudgementChargeVelocity"
+	chargeVelocity.Attachment0 = chargeAttachment
+	chargeVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
+	chargeVelocity.MaxForce = math.huge
+	chargeVelocity.VectorVelocity = root.CFrame.LookVector * CHARGE_SPEED
+	chargeVelocity.Parent = root
+
+	while self.Equipped and humanoid.Health > 0 and os.clock() - startedAt < CHARGE_DURATION do
+		local deltaTime = RunService.Heartbeat:Wait()
+		local desiredDirection = humanoid.MoveDirection * Vector3.new(1, 0, 1)
+		if desiredDirection.Magnitude > 0.05 then
+			desiredDirection = desiredDirection.Unit
+			local currentDirection = root.CFrame.LookVector * Vector3.new(1, 0, 1)
+			if currentDirection.Magnitude > 0.05 then
+				currentDirection = currentDirection.Unit
+				local currentYaw = math.atan2(-currentDirection.X, -currentDirection.Z)
+				local desiredYaw = math.atan2(-desiredDirection.X, -desiredDirection.Z)
+				local yawDelta = math.atan2(math.sin(desiredYaw - currentYaw), math.cos(desiredYaw - currentYaw))
+				local nextYaw = currentYaw + math.clamp(yawDelta, -CHARGE_TURN_RATE * deltaTime, CHARGE_TURN_RATE * deltaTime)
+				root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, nextYaw, 0)
+			end
+		end
+
+		local forward = root.CFrame.LookVector
+		chargeVelocity.VectorVelocity = forward * CHARGE_SPEED
+		humanoid:Move(forward, false)
+
+		local result = workspace:Raycast(root.Position, forward * CHARGE_RANGE, params)
+		if result then
+			local model = result.Instance:FindFirstAncestorOfClass("Model")
+			local targetHumanoid = model and model:FindFirstChildOfClass("Humanoid")
+			local targetPlayer = model and Players:GetPlayerFromCharacter(model)
+			if targetHumanoid and targetHumanoid.Health > 0 and targetPlayer and targetPlayer.Team ~= LOCAL_PLAYER.Team then
+				hitTarget = model
+			end
+			break
+		end
+
+	end
+	chargeVelocity:Destroy()
+	chargeAttachment:Destroy()
+
+	if chargeTrack and chargeTrack.IsPlaying then chargeTrack:Stop(0.08) end
+	if hitTarget then
+		self:_damageMeleeTarget(hitTarget, CHARGE_RANGE, CHARGE_DAMAGE)
+	end
+	if self.Equipped then
+		local stopTrack = self:_playAnim("Charge_Stop")
+		if stopTrack then stopTrack.Stopped:Wait() end
+	end
+	self:_set_sprint_arms(false)
+	self.ForceBlockFire = false
+	self.Alting = false
+	self:_restoreBaseDeferred()
 end
 
 function JudgementRifle:_damageAtDistance(distance: number): number
@@ -273,6 +372,7 @@ function JudgementRifle:reload()
 
 	if self.Aiming then self:endAiming() end
 	self.Reloading = true
+	self:_setGripArm("Left Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
@@ -284,6 +384,7 @@ function JudgementRifle:reload()
 		self:_fire_ammo(1)
 	end
 	self.Reloading = false
+	self:_setGripArm("Right Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 	self:_restoreBaseDeferred()
@@ -313,6 +414,7 @@ function JudgementRifle:_on_equip()
 end
 
 function JudgementRifle:_on_unequip()
+	self:_setGripArm("Right Arm")
 	self.Equipped = false
 	self.Firing = false
 	self.Cycling = false

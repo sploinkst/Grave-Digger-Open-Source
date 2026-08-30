@@ -5,7 +5,7 @@ local TorsoZRotation = 3
 local LegRotation = 3.5
 
 -- Smoothing settings (higher = smoother but slower response)
-local SMOOTHNESS = 8 -- Exponential decay rate
+local SMOOTHNESS = 12 -- Exponential decay rate
 
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -13,8 +13,8 @@ local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 
 -- Current smoothed values
-local SmoothedValue1 = 0
-local SmoothedValue2 = 0
+local SmoothedValue1 = 2
+local SmoothedValue2 = 2
 
 -- Store original C0 positions
 local RootJointC0 = nil

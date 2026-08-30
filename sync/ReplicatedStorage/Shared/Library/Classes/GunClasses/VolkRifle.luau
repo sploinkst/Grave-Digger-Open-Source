@@ -11,6 +11,7 @@ local UserInputService = game:GetService("UserInputService")
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local Util = require(script.Parent.Parent.Parent.Util)
+local createAnimationResolver = require(script.Parent.AnimationResolver)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -18,11 +19,13 @@ local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
-local volkAnimations = Assets.Animations.Tools.Guns:FindFirstChild("mosin")
+local volkAnimations = Assets.Animations.Tools.Guns:FindFirstChild("mosin_rig")
+	or Assets.Animations.Tools.Guns:FindFirstChild("mosin")
 	or Assets.Animations.Tools.Guns:FindFirstChild("Mosin")
 	or Assets.Animations.Tools.Guns:FindFirstChild("VolkRifle")
 	or Assets.Animations.Tools.Guns:FindFirstChild("Volk")
 local fallbackAnimations = Assets.Animations.Tools.Guns.PrinceRifle
+local animation = createAnimationResolver("mosin_rig", volkAnimations, fallbackAnimations)
 local volkSounds = GunAssets.Sounds:FindFirstChild("mosin")
 	or GunAssets.Sounds:FindFirstChild("Mosin")
 	or GunAssets.Sounds:FindFirstChild("VolkRifle")
@@ -34,8 +37,10 @@ local BULLET_SPEED = 1200
 local RELOAD_ROUND_TIME = 4 / 5
 local SCOPED_FOV = 25
 local IRON_FOV = 70
-local GRIP_C0 = CFrame.new(-0.25, -1.45, -0.5)
+local GRIP_C0 = CFrame.new(0, -1, 0)
 	* CFrame.Angles(0, math.rad(-90), math.rad(90))
+local RELOAD_GRIP_C0 = CFrame.new(0.254, -1.703, -0.566)
+	* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
 local HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
 
@@ -62,16 +67,6 @@ VolkRifle.__index = VolkRifle
 setmetatable(VolkRifle, { __index = BaseRifle })
 
 export type VolkRifle = typeof(setmetatable({} :: any, VolkRifle))
-
-local function animation(names: { string }, fallback: string): Animation
-	if volkAnimations then
-		for _, name in ipairs(names) do
-			local found = volkAnimations:FindFirstChild(name)
-			if found and found:IsA("Animation") then return found end
-		end
-	end
-	return fallbackAnimations:FindFirstChild(fallback) :: Animation
-end
 
 local function findSound(...: string): Sound?
 	for _, name in ipairs({ ... }) do
@@ -131,24 +126,26 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 		Part0 = "Right Arm",
 		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
 		C0 = GRIP_C0,
+		C1 = CFrame.identity,
+		ReloadGripC0 = RELOAD_GRIP_C0,
 	}
 
 	self.animations = {
-		Hold = animation({ "held", "hold", "mosin_Held" }, "PrinceRifle_Held"),
-		Draw = animation({ "draw", "mosin_Draw" }, "PrinceRifle_Draw"),
-		Unequip = animation({ "unequip", "mosin_Unequip" }, "PrinceRifle_Unequip"),
-		Aim = animation({ "aim", "mosin_Aim" }, "PrinceRifle_Aim"),
-		Aim_Left = animation({ "aim_left", "mosin_Aim_Left" }, "PrinceRifle_Aim_Left"),
-		Fire = animation({ "fire", "mosin_Fire" }, "PrinceRifle_Fire"),
-		Fire_Left = animation({ "fire_left", "mosin_Fire_Left" }, "PrinceRifle_Fire_Left"),
-		Cycle = animation({ "cycle", "bolt", "mosin_Cycle" }, "PrinceRifle_Cycle"),
-		Reload_Start = animation({ "reload_start", "mosin_Reload_Start" }, "PrinceRifle_Reload_Start"),
-		Reload_Loop = animation({ "reload_loop", "reload", "mosin_Reload_Loop" }, "PrinceRifle_Reload_Loop"),
-		Reload_End = animation({ "reload_end", "mosin_Reload_End" }, "PrinceRifle_Reload_End"),
-		Check = animation({ "check", "mosin_Check" }, "PrinceRifle_Check"),
-		Melee1 = animation({ "melee1", "mosin_Melee1" }, "PrinceRifle_Melee1"),
-		Melee2 = animation({ "melee2", "mosin_Melee2" }, "PrinceRifle_Melee2"),
-		Short = animation({ "short", "mosin_Short" }, "PrinceRifle_Short"),
+		Hold = animation("Hold", "PrinceRifle_Held"),
+		Draw = animation("Draw", "PrinceRifle_Draw"),
+		Unequip = animation("Unequip", "PrinceRifle_Unequip"),
+		Aim = animation("Aim", "PrinceRifle_Aim"),
+		Aim_Left = animation("Aim_Left", "PrinceRifle_Aim_Left"),
+		Fire = animation("Fire", "PrinceRifle_Fire"),
+		Fire_Left = animation("Fire_Left", "PrinceRifle_Fire_Left"),
+		Cycle = animation("Cycle", "PrinceRifle_Cycle"),
+		Reload_Start = animation("Reload_Start", "PrinceRifle_Reload_Start"),
+		Reload_Loop = animation("Reload_Loop", "PrinceRifle_Reload_Loop"),
+		Reload_End = animation("Reload_End", "PrinceRifle_Reload_End"),
+		Check = animation("Check", "PrinceRifle_Check"),
+		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
+		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
+		Short = animation("Short", "PrinceRifle_Short"),
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 
@@ -214,17 +211,7 @@ function VolkRifle:get_spread(muzzle: BasePart, shootDirection: Vector3): Vector
 end
 
 function VolkRifle:aim()
-	warn("[VolkRifle Debug] Aim requested", {
-		Equipped = self.Equipped,
-		Equipping = self.Equipping,
-		Aiming = self.Aiming,
-		Busy = self:_isBusy(),
-		Jumping = self:_if_jumping(),
-		FreeLook = LOCAL_PLAYER:GetAttribute("FreeLook"),
-		IsShorted = self.IsShorted,
-	})
 	BaseRifle.aim(self)
-	warn("[VolkRifle Debug] Aim finished; Aiming =", self.Aiming)
 	if not self.Aiming then return end
 	self:_setScopeFov()
 	local humanoid = LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:FindFirstChildOfClass("Humanoid")
@@ -274,6 +261,10 @@ function VolkRifle:_getMuzzlePart(): BasePart?
 
 	local model = self.actual_model
 	if not model then return nil end
+	local cachedMuzzle = self._runtimeMuzzle
+	if cachedMuzzle and cachedMuzzle:IsA("BasePart") and cachedMuzzle:IsDescendantOf(model) then
+		return cachedMuzzle
+	end
 
 	-- The Mosin keeps its muzzle inside special. The model can replicate before
 	-- all of its descendants, so give that exact path a moment to arrive.
@@ -281,7 +272,6 @@ function VolkRifle:_getMuzzlePart(): BasePart?
 	if special then
 		local nestedMuzzle = special:FindFirstChild("muzzle") or special:WaitForChild("muzzle", 1)
 		if nestedMuzzle and nestedMuzzle:IsA("BasePart") then
-			warn("[VolkRifle Debug] Found muzzle at", nestedMuzzle:GetFullName())
 			return nestedMuzzle
 		end
 	end
@@ -311,46 +301,27 @@ function VolkRifle:_getMuzzlePart(): BasePart?
 	weld.Part1 = hitbox
 	weld.Parent = runtimeMuzzle
 
-	warn("[VolkRifle Debug] Created a runtime muzzle from", marker and marker:GetFullName() or hitbox:GetFullName())
+	self._runtimeMuzzle = runtimeMuzzle
 	return runtimeMuzzle
 end
 
 function VolkRifle:fire()
-	warn("[VolkRifle Debug] Fire requested", {
-		Firing = self.Firing,
-		Reloading = self.Reloading,
-		Cycling = self.Cycling,
-		Checking = self.Checking,
-		Alting = self.Alting,
-		Meleeing = self.Meleeing,
-		Aiming = self.Aiming,
-		Capacity = self.Capacity,
-		Sprinting = self:_if_sprinting(),
-		Jumping = self:_if_jumping(),
-		ForceBlockFire = self.ForceBlockFire,
-	})
 	if self.Firing or self.Reloading or self.Cycling or self.Checking or self.Alting or self.Meleeing then
-		warn("[VolkRifle Debug] Fire blocked by an active weapon action")
 		return
 	end
 	if not self.Aiming then
-		warn("[VolkRifle Debug] Fire blocked because Aiming is false")
 		return
 	end
 	if self.Capacity <= 0 then
-		warn("[VolkRifle Debug] Fire blocked because the rifle is empty")
 		return
 	end
 	if self:_if_sprinting() then
-		warn("[VolkRifle Debug] Fire blocked because Sprinting is true")
 		return
 	end
 	if self:_if_jumping() then
-		warn("[VolkRifle Debug] Fire blocked because Jumping is true")
 		return
 	end
 	if self.ForceBlockFire then
-		warn("[VolkRifle Debug] Fire blocked because ForceBlockFire is true; IsShorted =", self.IsShorted)
 		return
 	end
 
@@ -368,7 +339,6 @@ function VolkRifle:fire()
 		warn("[VolkRifle Debug] Fire blocked because FastCast was not initialized", self.Caster, self.CasterBehavior)
 		return
 	end
-	warn("[VolkRifle Debug] All fire checks passed; firing from", muzzle:GetFullName())
 
 	self.Firing = true
 	local mousePosition = UserInputService:GetMouseLocation()
@@ -432,6 +402,7 @@ function VolkRifle:reload()
 
 	if self.Aiming then self:endAiming() end
 	self.Reloading = true
+	self:_setGripArm("Left Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
@@ -451,20 +422,14 @@ function VolkRifle:reload()
 	end
 
 	self.Reloading = false
+	self:_setGripArm("Right Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 	self:_restoreBaseDeferred()
 end
 
 function VolkRifle:activate()
-	warn("[VolkRifle Debug] Tool activated", {
-		ActualModel = self.actual_model and self.actual_model:GetFullName() or "missing",
-		Aiming = self.Aiming,
-		Busy = self:_isBusy(),
-		Equipping = self.Equipping,
-	})
 	if self.Reloading then
-		warn("[VolkRifle Debug] Activation cancelled the active reload")
 		self._reloadCancelled = true
 		return
 	end
@@ -472,13 +437,15 @@ function VolkRifle:activate()
 		warn("[VolkRifle Debug] Activation blocked because actual_model is missing")
 		return
 	end
+	-- A left click can arrive on the frame immediately after right click. Honor
+	-- the held aim input instead of dropping that first shot during transition.
+	if self.holding_aim_button and not self.Aiming and not self:_isBusy() then
+		self:aim()
+	end
 	if self.Aiming then
 		self:fire()
 	elseif not self:_isBusy() then
-		warn("[VolkRifle Debug] Not aiming, using melee instead of firing")
 		self:melee()
-	else
-		warn("[VolkRifle Debug] Activation blocked while not aiming; busy state is true")
 	end
 end
 
@@ -494,16 +461,10 @@ function VolkRifle:_on_equip()
 		local muzzle = self:_findModelPart(self.MuzzlePartName)
 		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, damage, self.KnockBack_Force)
 	end)
-	warn("[VolkRifle Debug] Equipped", {
-		ActualModel = self.actual_model and self.actual_model:GetFullName() or "not assigned yet",
-		ModelReference = self.model_reference and self.model_reference:GetFullName() or "missing",
-		MuzzleName = self.MuzzlePartName,
-		CasterReady = self.Caster ~= nil and self.CasterBehavior ~= nil,
-		AnimationsReady = self.RegisteredAnimations ~= nil,
-	})
 end
 
 function VolkRifle:_on_unequip()
+	self:_setGripArm("Right Arm")
 	self:endAiming()
 	self.Equipped = false
 	self.Firing = false

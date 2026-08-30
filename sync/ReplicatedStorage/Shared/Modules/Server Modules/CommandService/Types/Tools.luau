@@ -25,6 +25,7 @@ local function getClasses()
 	end
 
 	for _, child in ipairs(GunClasses:GetChildren()) do
+		if child.Name == "AnimationResolver" then continue end
 		if child:IsA("ModuleScript") and not child:GetAttribute("UnListAble") then
 			table.insert(list, child.Name)
 		end

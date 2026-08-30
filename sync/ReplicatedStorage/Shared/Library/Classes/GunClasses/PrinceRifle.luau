@@ -112,7 +112,7 @@ export type PrinceRifle = typeof(setmetatable({} :: {
 function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	local self = setmetatable(BaseRifle.new(info), PrinceRifle)
 
-	self.className   = "PrinceRifle"
+	self.className   = "BaseTool"
 	self.item_image  = "rbxassetid://17496049645"
 	self.Designation = "Primary"
 	self.ANIM_LAYERS = ANIM_LAYERS
@@ -234,6 +234,9 @@ function PrinceRifle:setAltMode()
 	if self.Alt_Mode then
 		self:_playAnim("Alt_Mode_Off").Stopped:Wait()
 		self.Alt_Mode = false
+		-- Single Fire uses a separately hand-loaded round, never the internal
+		-- magazine. Require the player to load that first round with R.
+		self.Cycled = false
 		self:notify("Firemode: Single Fire")
 		print("Firemode: Single Fire")
 	else
@@ -273,7 +276,7 @@ end
 
 function PrinceRifle:fire()
 	if self.Checking then return end
-	if self.Capacity <= 0 then return end
+	if self.Alt_Mode and self.Capacity <= 0 then return end
 	if self.Firing then return end
 	if not self.Aiming then return end
 	if self.CantFire then return end
@@ -332,7 +335,9 @@ function PrinceRifle:fire()
 	print("Sent:", table.concat(activeCast.UserData, ","))
 
 	self.Cycled   = false
-	self.Capacity -= 1
+	if self.Alt_Mode then
+		self.Capacity -= 1
+	end
 
 	local fireAnim = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 
@@ -369,7 +374,6 @@ function PrinceRifle:fire()
 end
 
 function PrinceRifle:_autoCycle()
-	if self.Capacity >= self.Max_Capacity then self.Cycled = true; return end
 	if self.Cycling then return end
 
 	self.Cycling = true
@@ -382,12 +386,15 @@ function PrinceRifle:_autoCycle()
 
 	local reserveAmmo = self.tool:FindFirstChild("Reserve_Ammo")
 	if reserveAmmo and reserveAmmo.Value > 0 then
+		-- The hand-loaded round is paid for directly from reserve ammo. It is
+		-- deliberately not added to Capacity, which belongs to Repeating Fire.
 		self:_fire_ammo(1)
-		self.Capacity += 1
+		self.Cycled = true
+	else
+		self:notify("I don't have any more ammo...")
 	end
 
 	self.Cycling = false
-	self.Cycled  = true
 	self:_restoreBase()
 	game.Players.LocalPlayer:SetAttribute("CantUnequip", nil)
 end
@@ -398,7 +405,8 @@ function PrinceRifle:reload()
 	
 	if not self.Equipped then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
 	if self.Reloading or self.Equipping then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
-	if self.Capacity >= self.Max_Capacity then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
+	if self.Alt_Mode and self.Capacity >= self.Max_Capacity then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
+	if not self.Alt_Mode and self.Cycled then game.Players.LocalPlayer:SetAttribute("CantUnequip", nil) return end
 
 	local reserveAmmo = self.tool:FindFirstChild("Reserve_Ammo")
 	if not reserveAmmo then
@@ -537,7 +545,8 @@ function PrinceRifle:_on_unequip()
 	self:_resetMotor6D()
 
 	self.Aiming    = false
-	self.Cycled    = true
+	-- Re-equipping in Single Fire must not grant an unaccounted free round.
+	self.Cycled    = self.Alt_Mode
 	self.Firing    = false
 	self.Cycling   = false
 	self.Reloading = false

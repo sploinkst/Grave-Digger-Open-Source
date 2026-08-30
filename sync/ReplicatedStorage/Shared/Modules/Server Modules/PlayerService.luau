@@ -383,6 +383,9 @@ end
 local function SetupPlayer(player: Player)
 	CopyUI(player)
 	SetupGameData(player)
+	-- Client modules require these replicated roots at module load time. Publish
+	-- one readiness signal only after the server has created both sets.
+	player:SetAttribute("ClientDependenciesReady", true)
 	local hairSuccess, hairError = pcall(FetchHairAccessories, player)
 	if not hairSuccess then
 		warn("[PLAYERSERVICE] Could not load hair accessories for", player.Name, hairError)

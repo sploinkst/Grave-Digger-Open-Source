@@ -54,6 +54,25 @@ function Util.quick_weld(p0, p1, parent, name, weld_type)
 	return weld_type
 end
 
+-- Returns the Motor6D C1 that places a named grip-area part at the hand while
+-- keeping the weapon's root part as Part1. This avoids attaching long guns by
+-- the center of their hitbox.
+function Util.get_model_grip_c1(model: Model?, rootName: string, gripNames: { string }): CFrame
+	if not model then return CFrame.identity end
+	local root = model:FindFirstChild(rootName, true)
+	if not root or not root:IsA("BasePart") then return CFrame.identity end
+
+	for _, gripName in ipairs(gripNames) do
+		for _, descendant in ipairs(model:GetDescendants()) do
+			if descendant:IsA("BasePart") and string.lower(descendant.Name) == string.lower(gripName) then
+				return CFrame.new(root.CFrame:PointToObjectSpace(descendant.Position))
+			end
+		end
+	end
+
+	return CFrame.identity
+end
+
 function Util.hide_holster(player: Player, holster_reference: Instance)
 	for _, child in pairs(holster_reference:GetDescendants()) do
 		if child:GetAttribute("Hide_On_Equip") then

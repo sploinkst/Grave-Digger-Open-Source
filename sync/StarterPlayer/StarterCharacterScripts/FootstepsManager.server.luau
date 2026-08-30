@@ -14,6 +14,7 @@ end
 local Character = Player.Character or Player.CharacterAdded:Wait()
 local Humanoid = Character:WaitForChild("Humanoid")
 local Root = Character:WaitForChild("HumanoidRootPart")
+local IDList = require(script:WaitForChild("IDList"))
 
 -- // Sound folder
 local SoundFolder = ReplicatedStorage:WaitForChild("Shared")
@@ -59,23 +60,14 @@ local function GetSoundProperties()
 		return false
 	end
 
-	local MaterialFolder = SoundFolder:FindFirstChild(Material)
-
-	if not MaterialFolder then
+	local Properties = IDList[Material]
+	if not Properties then
 		return false
 	end
 
-	local Sounds = MaterialFolder:GetChildren()
-
-	if #Sounds == 0 then
-		return false
-	end
-
-	local Chosen = Sounds[math.random(1, #Sounds)]
-
-	Id = "rbxassetid://" .. Chosen.Name
-	Volume = Chosen:GetAttribute("Volume") or 0.5
-	PlaybackSpeed = Chosen:GetAttribute("PlaybackSpeed") or 1
+	Id = Properties.id
+	Volume = Properties.volume or 0.5
+	PlaybackSpeed = Properties.speed or 1
 
 	return true
 end
