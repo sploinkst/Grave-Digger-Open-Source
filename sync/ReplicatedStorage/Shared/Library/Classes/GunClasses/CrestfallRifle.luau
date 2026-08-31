@@ -19,8 +19,7 @@ local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
 local crestfallAnimations = Assets.Animations.Tools.Guns:FindFirstChild("lever")
-local fallbackAnimations = Assets.Animations.Tools.Guns.PrinceRifle
-local animation = createAnimationResolver("lever_rig", crestfallAnimations, fallbackAnimations)
+local animation = createAnimationResolver("lever_rig", nil, nil)
 local crestfallSounds = GunAssets.Sounds:FindFirstChild("lever")
 local SoundFolder = crestfallSounds or GunAssets.Sounds.PrinceRifle
 
@@ -42,7 +41,19 @@ local ANIM_LAYERS: { [string]: number } = {
 	Aim_Left = 0,
 	Fire = 1,
 	Fire_Left = 1,
-	Cycle = 1,
+	Fire_Empty = 1,
+	Fire_Empty_Left = 1,
+	Fire_Last = 1,
+	Fire_Last_Left = 1,
+	Hip_Hold = 0,
+	Hip_Aim = 0,
+	Hip_Aim_Left = 0,
+	Hip_Fire = 1,
+	Hip_Fire_Left = 1,
+	Hip_Fire_Empty = 1,
+	Hip_Fire_Empty_Left = 1,
+	Hip_Fire_Last = 1,
+	Hip_Fire_Last_Left = 1,
 	Draw = 2,
 	Unequip = 2,
 	Reload_Start = 2,
@@ -117,11 +128,27 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 		Aim_Left = animation("Aim_Left", "PrinceRifle_Aim_Left"),
 		Fire = animation("Fire", "PrinceRifle_Fire"),
 		Fire_Left = animation("Fire_Left", "PrinceRifle_Fire_Left"),
-		Cycle = animation("Cycle", "PrinceRifle_Cycle"),
+		Fire_Empty = animation({ "fire_empty" }, "fire_empty"),
+		Fire_Empty_Left = animation({ "fire_empty_left" }, "fire_empty_left"),
+		Fire_Last = animation({ "fire_last" }, "fire_last"),
+		Fire_Last_Left = animation({ "fire_last_left" }, "fire_last_left"),
+		Hip_Hold = animation({ "locked" }, "locked"),
+		Hip_Aim = animation({ "alt_changeaim" }, "alt_changeaim"),
+		Hip_Aim_Left = animation({ "alt_changeaim_left" }, "alt_changeaim_left"),
+		Hip_Fire = animation({ "alt_changefire" }, "alt_changefire"),
+		Hip_Fire_Left = animation({ "alt_changefire_left" }, "alt_changefire_left"),
+		Hip_Fire_Empty = animation({ "alt_changefire_empty" }, "alt_changefire_empty"),
+		Hip_Fire_Empty_Left = animation({ "alt_changefire_empty_left" }, "alt_changefire_empty_left"),
+		Hip_Fire_Last = animation({ "alt_changefire_last" }, "alt_changefire_last"),
+		Hip_Fire_Last_Left = animation({ "alt_changefire_last_left" }, "alt_changefire_last_left"),
 		Reload_Start = animation("Reload_Start", "PrinceRifle_Reload_Start"),
+		Reload_Empty = animation("Reload_Empty", "reload_empty"),
+		Reload_Empty_Vet = animation("Reload_Empty_Vet", "reload_empty_vet"),
+		Reload_Empty_Vet_Old = animation({ "reload_empty_vetOLD", "reload_empty_vet_old" }, "reload_empty_vetOLD"),
 		Reload_Loop = animation("Reload_Loop", "PrinceRifle_Reload_Loop"),
 		Reload_End = animation("Reload_End", "PrinceRifle_Reload_End"),
 		Check = animation("Check", "PrinceRifle_Check"),
+		Check_Empty = animation({ "check_empty" }, "check_empty"),
 		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
 		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
 		Short = animation("Short", "PrinceRifle_Short"),
@@ -216,10 +243,17 @@ function Crestfall:endAiming()
 end
 
 function Crestfall:setAltMode()
-	if self:_isBusy() then return end
+	if not self.Equipped or self:_isBusy() then return end
 	self.Alting = true
 	task.wait(HIP_BRACE_SWITCH_TIME)
+	if not self.Equipped then
+		self.Alting = false
+		return
+	end
 	self.HipBraced = not self.HipBraced
+	self:_killAimTracks()
+	local hipAim = self:_aimTrack()
+	if self.HipBraced and self.Aiming and hipAim then hipAim:Play(CUT) end
 
 	if self.Aiming then
 		self.FixedAimingSpread = self.HipBraced and HIP_BRACE_CROSSHAIR_SPREAD or nil
@@ -238,6 +272,45 @@ function Crestfall:setAltMode()
 	self.Alting = false
 end
 
+function Crestfall:_aimTrack(): AnimationTrack?
+	if self.HipBraced and self.RegisteredAnimations then
+		return (self.current_shoulder == "Right")
+			and self.RegisteredAnimations.Hip_Aim
+			or self.RegisteredAnimations.Hip_Aim_Left
+	end
+	return BaseRifle._aimTrack(self)
+end
+
+function Crestfall:_killAimTracks()
+	BaseRifle._killAimTracks(self)
+	local anims = self.RegisteredAnimations
+	if not anims then return end
+	for _, name in ipairs({ "Hip_Aim", "Hip_Aim_Left" }) do
+		local track = anims[name]
+		if track and track.IsPlaying then track:Stop(0.15) end
+	end
+end
+
+function Crestfall:_restoreBase()
+	BaseRifle._restoreBase(self)
+	if self:_isBusy() or not self.Equipped or not self.HipBraced then return end
+	local anims = self.RegisteredAnimations
+	if not anims then return end
+
+	if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(0.15) end
+	local wanted = self.Aiming and anims.Hip_Aim or anims.Hip_Hold
+	if wanted and not wanted.IsPlaying then wanted:Play(0.15) end
+end
+
+function Crestfall:_getFireAnim(): AnimationTrack?
+	if self.HipBraced and self.RegisteredAnimations then
+		return (self.current_shoulder == "Right")
+			and self.RegisteredAnimations.Hip_Fire
+			or self.RegisteredAnimations.Hip_Fire_Left
+	end
+	return BaseRifle._getFireAnim(self)
+end
+
 function Crestfall:_damageAtDistance(distance: number): number
 	if distance < 70 then
 		return 120
@@ -249,7 +322,18 @@ end
 
 function Crestfall:fire()
 	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
-	if self.Capacity <= 0 or self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
+	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
+	if self.Capacity <= 0 then
+		local left = self.current_shoulder ~= "Right"
+		local emptyAnimation
+		if self.HipBraced then
+			emptyAnimation = left and "Hip_Fire_Empty_Left" or "Hip_Fire_Empty"
+		else
+			emptyAnimation = left and "Fire_Empty_Left" or "Fire_Empty"
+		end
+		self:_playFireAnimation(emptyAnimation, false)
+		return
+	end
 
 	local muzzle = self:_findModelPart(self.MuzzlePartName)
 	local camera = workspace.CurrentCamera
@@ -284,7 +368,22 @@ function Crestfall:fire()
 
 	self.Capacity -= 1
 	self:_stopAllExcept()
-	self:_playAnim((self.current_shoulder == "Right") and "Fire" or "Fire_Left")
+	local left = self.current_shoulder ~= "Right"
+	local fireAnimation
+	if self.HipBraced then
+		if self.Capacity == 0 then
+			fireAnimation = left and "Hip_Fire_Last_Left" or "Hip_Fire_Last"
+		else
+			fireAnimation = left and "Hip_Fire_Left" or "Hip_Fire"
+		end
+	else
+		if self.Capacity == 0 then
+			fireAnimation = left and "Fire_Last_Left" or "Fire_Last"
+		else
+			fireAnimation = left and "Fire_Left" or "Fire"
+		end
+	end
+	self:_playFireAnimation(fireAnimation)
 	local fireSound = SoundFolder:FindFirstChild("fire")
 	if fireSound then self:_play_sfx(fireSound, muzzle) end
 	self:_bounce_scoped_ui()
@@ -292,7 +391,9 @@ function Crestfall:fire()
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
 
 	self.Cycling = true
-	local cycleTrack = self:_playAnim("Cycle")
+	local cycleTrack = self.RegisteredAnimations
+		and self.RegisteredAnimations.Cycle
+		and self:_playAnim("Cycle")
 	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / FIRE_INTERVAL, 0.01)) end
 	task.wait(FIRE_INTERVAL)
 	self.Cycling = false

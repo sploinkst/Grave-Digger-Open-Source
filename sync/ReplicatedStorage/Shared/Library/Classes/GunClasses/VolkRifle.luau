@@ -24,8 +24,7 @@ local volkAnimations = Assets.Animations.Tools.Guns:FindFirstChild("mosin_rig")
 	or Assets.Animations.Tools.Guns:FindFirstChild("Mosin")
 	or Assets.Animations.Tools.Guns:FindFirstChild("VolkRifle")
 	or Assets.Animations.Tools.Guns:FindFirstChild("Volk")
-local fallbackAnimations = Assets.Animations.Tools.Guns.PrinceRifle
-local animation = createAnimationResolver("mosin_rig", volkAnimations, fallbackAnimations)
+local animation = createAnimationResolver("mosin_rig", nil, nil)
 local volkSounds = GunAssets.Sounds:FindFirstChild("mosin")
 	or GunAssets.Sounds:FindFirstChild("Mosin")
 	or GunAssets.Sounds:FindFirstChild("VolkRifle")
@@ -47,19 +46,12 @@ local HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 local ANIM_LAYERS: { [string]: number } = {
 	Hold = 0,
 	Aim = 0,
-	Aim_Left = 0,
 	Fire = 1,
-	Fire_Left = 1,
 	Cycle = 1,
-	Draw = 2,
-	Unequip = 2,
 	Reload_Start = 2,
 	Reload_Loop = 2,
 	Reload_End = 2,
 	Check = 2,
-	Melee1 = 2,
-	Melee2 = 2,
-	Short = 2,
 }
 
 local VolkRifle = {}
@@ -131,28 +123,27 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 	}
 
 	self.animations = {
-		Hold = animation("Hold", "PrinceRifle_Held"),
-		Draw = animation("Draw", "PrinceRifle_Draw"),
-		Unequip = animation("Unequip", "PrinceRifle_Unequip"),
-		Aim = animation("Aim", "PrinceRifle_Aim"),
-		Aim_Left = animation("Aim_Left", "PrinceRifle_Aim_Left"),
-		Fire = animation("Fire", "PrinceRifle_Fire"),
-		Fire_Left = animation("Fire_Left", "PrinceRifle_Fire_Left"),
-		Cycle = animation("Cycle", "PrinceRifle_Cycle"),
-		Reload_Start = animation("Reload_Start", "PrinceRifle_Reload_Start"),
-		Reload_Loop = animation("Reload_Loop", "PrinceRifle_Reload_Loop"),
-		Reload_End = animation("Reload_End", "PrinceRifle_Reload_End"),
-		Check = animation("Check", "PrinceRifle_Check"),
-		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
-		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
-		Short = animation("Short", "PrinceRifle_Short"),
+		Hold = animation("Hold", "held"),
+		Aim = animation("Aim", "aim"),
+		Fire = animation("Fire", "fire"),
+		Locked = animation("Locked", "locked"),
+		Cycle = animation("Cycle", "cycle"),
+		Reload_Clip = animation("Reload_Clip", "reload_clip"),
+		Reload_Clip_Start_Empty = animation("Reload_Clip_Start_Empty", "reload_clip_start_empty"),
+		Reload_Clip_Start_Empty_Novet = animation("Reload_Clip_Start_Empty_Novet", "reload_clip_start_empty_novet"),
+		Reload_Clip_Start_One = animation("Reload_Clip_Start_One", "reload_clip_start_one"),
+		Reload_Empty = animation("Reload_Empty", "reload_empty"),
+		Reload_Empty_Vet = animation("Reload_Empty_Vet", "reload_empty_vet"),
+		Reload_Start = animation("Reload_Start", "reload_start"),
+		Reload_Start_Vet = animation("Reload_Start_Vet", "reload_start_vet"),
+		Reload_Loop = animation("Reload_Loop", "reload_loop"),
+		Reload_End = animation("Reload_End", "reload_end"),
+		Check = animation("Check", "check"),
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 
 	self.animation_speeds = {
-		Draw = 1,
 		Aim = 1 / 0.35,
-		Aim_Left = 1 / 0.35,
 		Reload_Loop = 1 / RELOAD_ROUND_TIME,
 	}
 
@@ -231,8 +222,14 @@ function VolkRifle:endAiming()
 end
 
 function VolkRifle:setAltMode()
-	if self:_isBusy() then return end
-	self.ScopedMode = not self.ScopedMode
+	if not self.Equipped or self:_isBusy() then return end
+	local nextScopedMode = not self.ScopedMode
+	local altName = nextScopedMode and "Alt_Mode_On" or "Alt_Mode_Off"
+	local altTrack = self.RegisteredAnimations and self.RegisteredAnimations[altName]
+	if altTrack then altTrack = self:_playAnim(altName) end
+	if altTrack then altTrack.Stopped:Wait() end
+	if not self.Equipped then return end
+	self.ScopedMode = nextScopedMode
 	self:notify(self.ScopedMode and "Sight: Scope" or "Sight: Iron")
 	if self.Aiming then
 		local humanoid = LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:FindFirstChildOfClass("Humanoid")
@@ -369,7 +366,9 @@ function VolkRifle:fire()
 
 	self.Capacity -= 1
 	self:_stopAllExcept()
-	self:_playAnim((self.current_shoulder == "Right") and "Fire" or "Fire_Left")
+	if self.current_shoulder == "Right" then
+		self:_playFireAnimation("Fire")
+	end
 	local fireSound = findSound("fire", "Fire")
 	if fireSound then self:_play_sfx(fireSound, muzzle) end
 	self:_bounce_scoped_ui()

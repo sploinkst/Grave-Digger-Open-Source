@@ -240,6 +240,7 @@ function GraceRevolver:_getKeyBindings()
 end
 
 function GraceRevolver:setAltMode()
+	if not self.Equipped then return end
 	task.spawn(function() self:spin() end)
 end
 
@@ -260,7 +261,7 @@ function GraceRevolver:_cancelSpin()
 end
 
 function GraceRevolver:spin()
-	if self:_isBusy() then return end
+	if not self.Equipped or self:_isBusy() then return end
 	self.Spinning       = true
 	self._spinCancelled = false
 
@@ -290,7 +291,7 @@ function GraceRevolver:fire()
 	-- Dry fire
 	if self.Capacity <= 0 then
 		local emptyAnim = (self.current_shoulder == "Right") and "Fire_Empty" or "Fire_Empty_Left"
-		self:_playAnim(emptyAnim).Stopped:Wait()
+		self:_playFireAnimation(emptyAnim, false).Stopped:Wait()
 		self.Firing = false
 		self:_restoreBaseDeferred()
 		return
@@ -334,7 +335,7 @@ function GraceRevolver:fire()
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
 
 	local fireAnim  = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
-	local fireTrack = self:_playAnim(fireAnim)
+	local fireTrack = self:_playFireAnimation(fireAnim)
 
 	self:_play_sfx(fire_sound, muzzle, nil, self.Alt_Mode and 0.5 or nil)
 	self:_bounce_scoped_ui()

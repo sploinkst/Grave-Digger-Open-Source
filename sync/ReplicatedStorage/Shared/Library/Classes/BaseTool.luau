@@ -155,14 +155,18 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 		if self.RegisteredAnimations then
 			for animName, track in pairs(self.RegisteredAnimations) do
 				local persistent = animName == "Hold" or animName == "Aim" or animName == "Aim_Left"
+					or animName == "Hip_Hold" or animName == "Hip_Aim" or animName == "Hip_Aim_Left"
 					or animName == "Charge"
 				track.Looped = persistent
 
 				if animName == "Hold" then
 					track.Priority = Enum.AnimationPriority.Action
-				elseif animName == "Aim" or animName == "Aim_Left" then
+				elseif animName == "Aim" or animName == "Aim_Left"
+					or animName == "Hip_Aim" or animName == "Hip_Aim_Left" then
 					track.Priority = Enum.AnimationPriority.Action2
-				elseif animName == "Fire" or animName == "Fire_Left" or animName == "Cycle" or animName == "Short" then
+				elseif animName == "Fire" or animName == "Fire_Left"
+					or animName == "Recoil" or animName == "Recoil_Left"
+					or animName == "Cycle" or animName == "Short" then
 					track.Priority = Enum.AnimationPriority.Action3
 				else
 					track.Priority = Enum.AnimationPriority.Action4
@@ -497,14 +501,21 @@ function BaseTool:equip()
 			if self._drawStoppedConnection then
 				self._drawStoppedConnection:Disconnect()
 			end
-			self._drawStoppedConnection = draw.Stopped:Connect(function()
-				if hold and self.tool and self.tool.Parent == character and self.Equipped then
+			local function finishDraw()
+				if self.tool and self.tool.Parent == character and self.Equipped then
 					self:_playAnim("Hold", true)
 					hold:AdjustSpeed(0.2)
 					self.Equipping = false
 					self:init_short_mechanic()
 				end
-			end)
+			end
+			if draw then
+				self._drawStoppedConnection = draw.Stopped:Connect(finishDraw)
+			else
+				finishDraw()
+			end
+		elseif not draw then
+			self.Equipping = false
 		end
 	end
 
@@ -738,9 +749,11 @@ end
 -- // State helpers
 
 function BaseTool:_isBusy(): boolean
+	local animations = self.RegisteredAnimations
+	local drawTrack = animations and animations.Draw
 	return self.Firing or self.Reloading or self.Cycling or self.Alting or self.Spinning
 		or self.Checking or self.Meleeing
-		or (self.RegisteredAnimations and self.RegisteredAnimations.Draw.IsPlaying) or false
+		or (drawTrack ~= nil and drawTrack.IsPlaying) or false
 end
 
 function BaseTool:_if_sprinting(): boolean
@@ -834,6 +847,44 @@ function BaseTool:_getFireAnim(): AnimationTrack?
 	return (self.current_shoulder == "Right") and anims.Fire or anims.Fire_Left
 end
 
+function BaseTool:_playRecoilAnimation(): AnimationTrack?
+	local anims = self.RegisteredAnimations
+	if not anims then return nil end
+	local recoil = (self.current_shoulder == "Right") and anims.Recoil or (anims.Recoil_Left or anims.Recoil)
+	if recoil then recoil:Play(0.03) end
+	return recoil
+end
+
+function BaseTool:_playFireAnimation(animationName: string, playRecoil: boolean?): AnimationTrack?
+	local anims = self.RegisteredAnimations
+	if not anims then return nil end
+
+	-- Empty/last/recoil variants are optional in the saved rigs. Preserve the
+	-- current shoulder when falling back; never substitute a right-side track
+	-- while the weapon is on the left shoulder (or vice versa).
+	local resolvedName = animationName
+	if not anims[resolvedName] then
+		resolvedName = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
+	end
+	local fireTrack = anims[resolvedName] and self:_playAnim(resolvedName) or nil
+	if playRecoil ~= false then self:_playRecoilAnimation() end
+
+	if fireTrack then
+		fireTrack.Stopped:Once(function()
+			if not self.Equipped or not self.Aiming then return end
+			local aimTrack = self:_aimTrack()
+			if not aimTrack then return end
+			self:_killAimTracks()
+			aimTrack:Play(0)
+		end)
+	elseif self.Equipped and self.Aiming then
+		local aimTrack = self:_aimTrack()
+		if aimTrack and not aimTrack.IsPlaying then aimTrack:Play(0) end
+	end
+
+	return fireTrack
+end
+
 function BaseTool:_killAimTracks()
 	local anims = self.RegisteredAnimations
 	if not anims then return end
@@ -906,7 +957,17 @@ function BaseTool:melee()
 
 	self:_stopAllExcept()
 
-	local anim = self:_playAnim("Melee" .. math.random(1, 2))
+	local meleeIndex = math.random(1, 2)
+	local meleeAnimation = "Melee" .. meleeIndex
+	if self._getMeleeAnimationName then
+		meleeAnimation = self:_getMeleeAnimationName(meleeIndex)
+	end
+	local anim = self:_playAnim(meleeAnimation)
+	if not anim then
+		self.Meleeing = false
+		self:_restoreBase()
+		return
+	end
 
 	task.delay(0.15, function()
 		if not character or not character.Parent then
@@ -1217,7 +1278,7 @@ function BaseTool:_connectInput()
 	SettingsManager.HookInput("Check Ammo", self._checkAmmoHook)
 
 	self._altHook = function(_, pressed)
-		if pressed then
+		if pressed and self.Equipped then
 			self:setAltMode()
 		end
 	end
@@ -1226,7 +1287,7 @@ end
 
 function BaseTool:_disconnectInput()
 	self._ammoCheckHeld = false
-	self:end_ammo_check()
+	self:end_ammo_check(true)
 
 	if self._inputBeganConn then self._inputBeganConn:Disconnect(); self._inputBeganConn = nil end
 	if self._inputEndedConn then self._inputEndedConn:Disconnect(); self._inputEndedConn = nil end

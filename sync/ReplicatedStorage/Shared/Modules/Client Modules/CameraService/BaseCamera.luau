@@ -117,7 +117,7 @@ function BaseCamera.new(cameraInfo)
 	self.CameraYaw   = 0
 	self.CameraPitch = 0
 	self.CameraKick  = 0
-	self.MaxTurnRate = math.rad(700)
+	self.MaxTurnRate = math.rad(180)
 	self.MaxTurnRate_Transitioning = math.rad(1000)
 
 	self.RecoilPitch       = 0
@@ -468,15 +468,23 @@ function BaseCamera:_setupAlignOrientation(root: BasePart)
 end
 
 function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
-	if LocalPlayer.Character:GetAttribute("DontRotate") then return end
+	local character = LocalPlayer.Character
+	if not character or character:GetAttribute("DontRotate") then return end
 	local targetYaw = self.CameraYaw
+
+	-- Body turn delay is an ADS mechanic. Outside ADS the avatar should remain
+	-- immediately aligned with the freely moving camera.
+	if character:GetAttribute("Aiming") ~= true then
+		self.CharacterYaw = targetYaw
+		root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, targetYaw, 0)
+		return
+	end
 
 	local diff = math.atan2(
 		math.sin(targetYaw - self.CharacterYaw),
 		math.cos(targetYaw - self.CharacterYaw)
 	)
 
-	local character = LocalPlayer.Character
 	local maxRate
 
 	if self.IsTransitioning then
@@ -489,7 +497,6 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 		local class        = character:GetAttribute("class") or ""
 		local hasLancer    = character:FindFirstChild("elitekit") and
 			character.elitekit.Value == "lancer"
-		local aiming       = character:GetAttribute("aiming") == true
 
 		if isCharging or isFallIntr then
 			if (perk == "butcher" or perk == "vet" or hasLancer) and class == "lancer" then
@@ -499,13 +506,11 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 			end
 		elseif isSlowRotate then
 			maxRate = math.rad(12)
-		elseif aiming then
-			maxRate = math.rad(850)
 		else
-			maxRate = math.rad(800)
+			maxRate = self.MaxTurnRate
 		end
 	else
-		maxRate = math.rad(800)
+		maxRate = self.MaxTurnRate
 	end
 
 	local responsivenessAlpha = math.clamp((maxRate / math.rad(100)) * 10 * dt, 0, 1)

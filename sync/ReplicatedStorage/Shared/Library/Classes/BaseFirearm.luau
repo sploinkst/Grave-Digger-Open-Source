@@ -22,6 +22,7 @@ local casing_event = events.Casing
 local ammo_communication = events.Ammo
 local FX_BULLET_HOLE = ReplicatedStorage.Shared.Assets.Guns.Effects.BulletHole
 local CUT = 0.15
+local MIN_AMMO_CHECK_DISPLAY_TIME = 1
 
 local BaseFirearm = {}
 BaseFirearm.__index = BaseFirearm
@@ -342,15 +343,30 @@ end
 -- // Notifications
 
 
-function BaseFirearm:end_ammo_check()
-	local checkTrack = self.RegisteredAnimations and self.RegisteredAnimations.Check
-	if self._ammoCheckPaused and checkTrack and checkTrack.IsPlaying then
-		self._ammoCheckPaused = false
-		checkTrack:AdjustSpeed(self.animation_speeds and self.animation_speeds.Check or 1)
+function BaseFirearm:end_ammo_check(force: boolean?)
+	local displayId = self._ammoCheckDisplayId
+	local shownAt = self._ammoCheckShownAt
+	local remaining = force and 0
+		or math.max(0, MIN_AMMO_CHECK_DISPLAY_TIME - (shownAt and (os.clock() - shownAt) or 0))
+
+	local function finishAmmoCheck()
+		if not force and (self._ammoCheckHeld or displayId ~= self._ammoCheckDisplayId) then return end
+
+		local checkTrack = self.RegisteredAnimations and self.RegisteredAnimations.Check
+		if self._ammoCheckPaused and checkTrack and checkTrack.IsPlaying then
+			self._ammoCheckPaused = false
+			checkTrack:AdjustSpeed(self.animation_speeds and self.animation_speeds.Check or 1)
+		end
+
+		if self._ammoCheckUtils and type(self._ammoCheckUtils.hide) == "function" then
+			task.spawn(self._ammoCheckUtils.hide)
+		end
 	end
 
-	if self._ammoCheckUtils and type(self._ammoCheckUtils.hide) == "function" then
-		task.spawn(self._ammoCheckUtils.hide)
+	if force then
+		finishAmmoCheck()
+	else
+		task.delay(remaining, finishAmmoCheck)
 	end
 end
 
@@ -398,6 +414,7 @@ function BaseFirearm:ammo_check()
 	self:_set_sprint_arms(true)
 	self.Checking     = true
 	self.Check_Delayed = true
+	self._ammoCheckDisplayId = (self._ammoCheckDisplayId or 0) + 1
 
 	local ammo_check_part, ammo_check_utils
 	local cam = workspace.CurrentCamera
@@ -443,6 +460,7 @@ function BaseFirearm:ammo_check()
 
 	ammo_check_utils.utils(self.Ammo_Type, math.clamp(self.Capacity / self.Max_Capacity, 0, 1),
 		false, reserveAmmo.Value / (self.Max_Capacity * 3))
+	self._ammoCheckShownAt = os.clock()
 	if not self._ammoCheckHeld then
 		self:end_ammo_check()
 	end

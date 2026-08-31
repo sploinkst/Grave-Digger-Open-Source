@@ -10,9 +10,11 @@ local modules_folder = ReplicatedStorage.Shared.Modules["Server Modules"]
 -- runtime weapon classes, preserving the RBX_ANIMSAVES folder structure.
 local sourceAnimationSaves = ServerStorage:FindFirstChild("RBX_ANIMSAVES")
 if sourceAnimationSaves then
+	local existingAnimationSaves = ReplicatedStorage:FindFirstChild("RBX_ANIMSAVES")
+	if existingAnimationSaves then existingAnimationSaves:Destroy() end
 	local replicatedAnimationSaves = Instance.new("Folder")
 	replicatedAnimationSaves.Name = "RBX_ANIMSAVES"
-	for _, rigName in ipairs({ "lever_rig", "henry_rig", "mosin_rig" }) do
+	for _, rigName in ipairs({ "lebel_rig", "lever_rig", "henry_rig", "springfield_rig", "mosin_rig" }) do
 		local rig = sourceAnimationSaves:FindFirstChild(rigName)
 		if rig then
 			rig:Clone().Parent = replicatedAnimationSaves

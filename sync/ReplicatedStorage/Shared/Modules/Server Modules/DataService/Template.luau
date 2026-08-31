@@ -472,6 +472,7 @@ return {
 			["CrestfallRifle"] = true,
 			["JudgementRifle"] = true,
 			["VolkRifle"] = true,
+			["WhisperRifle"] = true,
 		},
 		
 		["Equipment"] = {

@@ -22,8 +22,7 @@ local judgementAnimations = Assets.Animations.Tools.Guns:FindFirstChild("henry")
 	or Assets.Animations.Tools.Guns:FindFirstChild("JudgementRifle")
 	or Assets.Animations.Tools.Guns:FindFirstChild("Judgement")
 	or Assets.Animations.Tools.Guns:FindFirstChild("lever")
-local fallbackAnimations = Assets.Animations.Tools.Guns.PrinceRifle
-local animation = createAnimationResolver("henry_rig", judgementAnimations, fallbackAnimations)
+local animation = createAnimationResolver("henry_rig", nil, nil)
 local judgementSounds = GunAssets.Sounds:FindFirstChild("henry")
 	or GunAssets.Sounds:FindFirstChild("JudgementRifle")
 	or GunAssets.Sounds:FindFirstChild("Judgement")
@@ -52,6 +51,12 @@ local ANIM_LAYERS: { [string]: number } = {
 	Aim_Left = 0,
 	Fire = 1,
 	Fire_Left = 1,
+	Fire_Empty = 1,
+	Fire_Empty_Left = 1,
+	Fire_Last = 1,
+	Fire_Last_Left = 1,
+	Recoil = 1,
+	Recoil_Left = 1,
 	Cycle = 1,
 	Draw = 2,
 	Unequip = 2,
@@ -144,6 +149,12 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		Aim_Left = animation("Aim_Left", "PrinceRifle_Aim_Left"),
 		Fire = animation("Fire", "PrinceRifle_Fire"),
 		Fire_Left = animation("Fire_Left", "PrinceRifle_Fire_Left"),
+		Fire_Empty = animation({ "fire_empty" }, "fire_empty"),
+		Fire_Empty_Left = animation({ "fire_empty_left" }, "fire_empty_left"),
+		Fire_Last = animation({ "fire_last" }, "fire_last"),
+		Fire_Last_Left = animation({ "fire_last_left" }, "fire_last_left"),
+		Recoil = animation({ "recoil" }, "recoil"),
+		Recoil_Left = animation({ "recoil_left" }, "recoil_left"),
 		Cycle = animation({ "charge", "charge_stop" }, "PrinceRifle_Cycle"),
 		Reload_Start = animation("Reload_Start", "PrinceRifle_Reload_Start"),
 		Reload_Loop = animation("Reload_Loop", "PrinceRifle_Reload_Loop"),
@@ -152,8 +163,8 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
 		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
 		Short = animation("Short", "PrinceRifle_Short"),
-		Charge = animation("Charge", "PrinceRifle_Melee1"),
-		Charge_Stop = animation("Charge_Stop", "PrinceRifle_Held"),
+		Charge = animation({ "charge" }, "PrinceRifle_Melee1"),
+		Charge_Stop = animation({ "charge_stop" }, "PrinceRifle_Held"),
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 
@@ -313,7 +324,11 @@ end
 
 function JudgementRifle:fire()
 	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
-	if self.Capacity <= 0 or self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
+	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
+	if self.Capacity <= 0 then
+		self:_playFireAnimation((self.current_shoulder == "Right") and "Fire_Empty" or "Fire_Empty_Left", false)
+		return
+	end
 
 	local muzzle = self:_findModelPart(self.MuzzlePartName)
 	local camera = workspace.CurrentCamera
@@ -348,7 +363,10 @@ function JudgementRifle:fire()
 
 	self.Capacity -= 1
 	self:_stopAllExcept()
-	self:_playAnim((self.current_shoulder == "Right") and "Fire" or "Fire_Left")
+	local fireAnimation = if self.Capacity == 0
+		then ((self.current_shoulder == "Right") and "Fire_Last" or "Fire_Last_Left")
+		else ((self.current_shoulder == "Right") and "Fire" or "Fire_Left")
+	self:_playFireAnimation(fireAnimation)
 	local fireSound = SoundFolder:FindFirstChild("fire")
 	if fireSound then self:_play_sfx(fireSound, muzzle) end
 	self:_bounce_scoped_ui()
