@@ -9,6 +9,7 @@ local local_player = player_service.LocalPlayer
 local loadout_ui = local_player.PlayerGui:WaitForChild("Menu_Scenes"):WaitForChild("Loadout").Main_Frame
 
 local gun_classes = replicatedstorage_service.Shared.Library.Classes.GunClasses
+local tool_classes = replicatedstorage_service.Shared.Library.Classes.ToolClasses
 local datapush_event = replicatedstorage_service
 	:WaitForChild("Shared")
 	:WaitForChild("Library")
@@ -58,7 +59,7 @@ local function clean_up_scrolling_list()
 end
 
 local function get_weapon_weight(weapon_name: string): number
-	local weapon_script = gun_classes:FindFirstChild(weapon_name)
+	local weapon_script = gun_classes:FindFirstChild(weapon_name) or tool_classes:FindFirstChild(weapon_name)
 	if not weapon_script or not weapon_script:IsA("ModuleScript") then return 0 end
 	local weapon_module = require(weapon_script)
 	return weapon_module.Weight or 0
@@ -77,13 +78,19 @@ local function create_weapon_options(slot_name: string)
 	print("creating weapon options")
 	clean_up_scrolling_list()
 
-	for _, child in pairs(gun_classes:GetChildren()) do
+	local choices = gun_classes:GetChildren()
+	for _, child in ipairs(tool_classes:GetChildren()) do
+		local ok, class = pcall(require, child)
+		if ok and class.Designation == slot_name then table.insert(choices, child) end
+	end
+	for _, child in pairs(choices) do
 		if not child:IsA("ModuleScript") or child.Name == "AnimationResolver" then continue end
 		local success, weapon_module = pcall(require, child)
 		if not success then
 			warn("[LoadoutHandler] Could not load weapon", child.Name, weapon_module)
 			continue
 		end
+		if weapon_module.Designation ~= slot_name then continue end
 
 		local equipment = local_player.PlayerData.PlayerData.Equipment
 		local other_slot_name = slot_name == "Primary" and "Secondary" or "Primary"
@@ -150,7 +157,7 @@ function module.start_module()
 		:WaitForChild("Equipment")
 	for slot_name, button in pairs(slot_buttons) do
 		local selected = equipment:WaitForChild(slot_name).Value
-		local weapon_script = gun_classes:FindFirstChild(selected)
+		local weapon_script = gun_classes:FindFirstChild(selected) or tool_classes:FindFirstChild(selected)
 		if weapon_script and weapon_script:IsA("ModuleScript") then
 			update_selected_weapon(slot_name, selected, require(weapon_script))
 		end

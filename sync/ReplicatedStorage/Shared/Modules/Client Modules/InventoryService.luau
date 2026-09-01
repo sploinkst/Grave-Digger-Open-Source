@@ -275,6 +275,9 @@ local function EquipTool(toolObject)
 			currentEquipped = nil
 
 			if toolObject then
+				if type(toolObject.setDualWieldWeapon) == "function" then
+					toolObject:setDualWieldWeapon(InventorySlots["2"].Tool)
+				end
 				toolObject:equip()
 				currentEquipped = toolObject
 			end

@@ -465,6 +465,10 @@ return {
 
 	["PlayerData"] = {
 		["CMDRLevel"] = 5,
+		["Dogtags"] = {
+			["Empire"] = 0,
+			["Nation"] = 0,
+		},
 		
 		["Unlocked Items"] = {
 			["PrinceRifle"] = true,
@@ -473,6 +477,9 @@ return {
 			["JudgementRifle"] = true,
 			["VolkRifle"] = true,
 			["WhisperRifle"] = true,
+			["AdjudicatorRifle"] = true,
+			["HellionShotgun"] = true,
+			["CavalrySword"] = true,
 		},
 		
 		["Equipment"] = {

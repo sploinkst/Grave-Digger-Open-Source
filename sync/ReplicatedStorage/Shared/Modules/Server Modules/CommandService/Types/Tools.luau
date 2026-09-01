@@ -5,6 +5,14 @@ local ToolClasses = ReplicatedStorage.Shared.Library.Classes.ToolClasses
 local GunClasses = ReplicatedStorage.Shared.Library.Classes.GunClasses
 
 local CLASS_ALIASES = {
+	adjudicator = "AdjudicatorRifle",
+	adjudicatorrifle = "AdjudicatorRifle",
+	rsc = "AdjudicatorRifle",
+	autosg = "HellionShotgun",
+	hellion = "HellionShotgun",
+	hellionshotgun = "HellionShotgun",
+	cavalrysword = "CavalrySword",
+	cavsword = "CavalrySword",
 	judgement = "JudgementRifle",
 	judgementrifle = "JudgementRifle",
 	judgment = "JudgementRifle",

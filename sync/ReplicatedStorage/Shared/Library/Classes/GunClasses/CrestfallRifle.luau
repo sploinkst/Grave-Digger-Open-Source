@@ -384,7 +384,7 @@ function Crestfall:fire()
 		end
 	end
 	self:_playFireAnimation(fireAnimation)
-	local fireSound = SoundFolder:FindFirstChild("fire")
+	local fireSound = self.SoundFolder and self.SoundFolder:FindFirstChild("fire")
 	if fireSound then self:_play_sfx(fireSound, muzzle) end
 	self:_bounce_scoped_ui()
 	self:_fireMuzzleFlash()
@@ -394,8 +394,9 @@ function Crestfall:fire()
 	local cycleTrack = self.RegisteredAnimations
 		and self.RegisteredAnimations.Cycle
 		and self:_playAnim("Cycle")
-	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / FIRE_INTERVAL, 0.01)) end
-	task.wait(FIRE_INTERVAL)
+	local fireInterval = self.FireInterval or FIRE_INTERVAL
+	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / fireInterval, 0.01)) end
+	task.wait(fireInterval)
 	self.Cycling = false
 	self.Firing = false
 	self:_restoreBaseDeferred()

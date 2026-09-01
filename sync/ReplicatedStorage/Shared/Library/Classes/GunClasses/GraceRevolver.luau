@@ -192,6 +192,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Moving_Accuracy         = 50
 
 	self.SoundFolder             = SoundFolder
+	self.FireInterval            = FIRE_RATE
 
 	self.unequip_wait     = false
 	self.Aiming           = false

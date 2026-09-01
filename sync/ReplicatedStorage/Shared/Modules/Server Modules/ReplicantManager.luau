@@ -39,6 +39,13 @@ local AmmoPackEvent = replicant_folder.Ammo
 local AmmoPack = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Equipment"):WaitForChild("AmmoPack")
 local Helmet_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Helmet
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
+local hellionHelmetHits = {}
+local dualWieldEvent = replicant_folder:FindFirstChild("DualWield") :: RemoteEvent?
+if not dualWieldEvent then
+	dualWieldEvent = Instance.new("RemoteEvent")
+	dualWieldEvent.Name = "DualWield"
+	dualWieldEvent.Parent = replicant_folder
+end
 
 -- // funcs
 
@@ -274,6 +281,8 @@ function module.start_module()
 		local weaponName = hitData.WeaponName
 		local isJudgement = weaponName == "JudgementRifle"
 			and character:FindFirstChild("JudgementRifle") ~= nil
+		local isHellion = weaponName == "HellionShotgun"
+			and character:FindFirstChild("HellionShotgun") ~= nil
 
 		-- Prevent self-damage
 		if hitPlayer and player.Team == hitPlayer.Team then return end
@@ -308,6 +317,32 @@ function module.start_module()
 			local helmet, knockable = Util.check_for_helmet(hitCharacter)
 
 			if helmet then
+				local hellionCannotPenetrate = isHellion and (not knockable or distance > 35)
+				if hellionCannotPenetrate and type(hitData.ShotId) == "string" then
+					local shotKey = tostring(player.UserId) .. ":" .. hitData.ShotId .. ":" .. tostring(hitCharacter)
+					local pelletHits = (hellionHelmetHits[shotKey] or 0) + 1
+					hellionHelmetHits[shotKey] = pelletHits
+					if pelletHits == 1 then
+						task.delay(2, function() hellionHelmetHits[shotKey] = nil end)
+					end
+					if pelletHits >= 4 then
+						hellionHelmetHits[shotKey] = nil
+						-- Four close pellets strip a resistant Shock Trooper helmet. At
+						-- long range ordinary helmets deflect the pattern and stay on.
+						if not knockable and distance <= 35 and not helmet:GetAttribute("Knocked") then
+							module.pop_helmet(hitCharacter, helmet, true)
+						end
+						humanoid:TakeDamage(100)
+						if hitPlayer then
+							status_service.GiveStatus(hitPlayer, "RagdollStatus", direction)
+							task.delay(2, function()
+								if hitPlayer.Parent then status_service.RemoveStatus(hitPlayer, "RagdollStatus") end
+							end)
+						end
+					end
+					return
+				end
+
 				-- Judgement's .577 Alloy round punches through ordinary helmets
 				-- inside 60 studs. Unknockable helmets are the Lancer exception.
 				if isJudgement and distance < 60 then
@@ -339,6 +374,12 @@ function module.start_module()
 							status_service.RemoveStatus(hitPlayer, "ConcussionStatus")
 						end
 					end)
+				end
+				return
+			elseif isHellion then
+				humanoid:TakeDamage((damage or 0) * 1.2)
+				if humanoid.Health <= 0 then
+					player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
 				end
 				return
 			else
@@ -431,7 +472,7 @@ function module.start_module()
 		end
 	end)
 	
-	melee_connection.OnServerEvent:Connect(function(player, targetCharacter, meleeRange, damage)
+	melee_connection.OnServerEvent:Connect(function(player, targetCharacter, meleeRange, damage, weaponName)
 		print("Received melee_connection from", player.Name, "target:", targetCharacter.Name, "range:", meleeRange, "damage:", damage)
 		
 		if player.Name == targetCharacter.Name then
@@ -447,8 +488,73 @@ function module.start_module()
 			return
 		end
 		
-		targetCharacter.Humanoid:TakeDamage(damage)
+		local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+		local attackerRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		local isCavalrySword = weaponName == "CavalrySword"
+			and player.Character and player.Character:FindFirstChild("CavalrySword") ~= nil
+		local fromBehind = false
+		if isCavalrySword and targetRoot and attackerRoot then
+			fromBehind = targetRoot.CFrame.LookVector:Dot((attackerRoot.Position - targetRoot.Position).Unit) < -0.5
+		end
+
+		local humanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
+		if not humanoid then return end
+		local healthBefore = humanoid.Health
+		local appliedDamage = if isCavalrySword then math.min(120, damage or 0) else (damage or 0)
+		humanoid:TakeDamage(fromBehind and humanoid.MaxHealth or appliedDamage)
+		if isCavalrySword and healthBefore > 0 and humanoid.Health <= 0 then
+			local factionName = targetPlayer and targetPlayer.Team and targetPlayer.Team.Name or "Unknown"
+			local dogtagName = string.find(string.lower(factionName), "empire", 1, true) and "Empire" or "Nation"
+			local data = player:FindFirstChild("PlayerData")
+			local playerData = data and data:FindFirstChild("PlayerData")
+			local dogtags = playerData and playerData:FindFirstChild("Dogtags")
+			local counter = dogtags and dogtags:FindFirstChild(dogtagName)
+			if counter and counter:IsA("NumberValue") then counter.Value += 1 end
+			player:SetAttribute(dogtagName .. "Dogtags", (player:GetAttribute(dogtagName .. "Dogtags") or 0) + 1)
+		end
 		print("Applied damage to", targetCharacter.Name)
+	end)
+
+	dualWieldEvent.OnServerEvent:Connect(function(player, enabled, handgunName)
+		local character = player.Character
+		if not character then return end
+		local existing = character:FindFirstChild("DualWieldModel")
+		if existing then existing:Destroy() end
+		local oldMotor = character:FindFirstChild("DualWieldMotor", true)
+		if oldMotor then oldMotor:Destroy() end
+		if enabled ~= true or type(handgunName) ~= "string" then return end
+		local backpack = player:FindFirstChild("Backpack")
+		if not character:FindFirstChild("CavalrySword") and not (backpack and backpack:FindFirstChild("CavalrySword")) then return end
+		local handgunTool = player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild(handgunName)
+		if not handgunTool then return end
+
+		local classScript = ReplicatedStorage.Shared.Library.Classes.GunClasses:FindFirstChild(handgunName)
+		if not classScript or not classScript:IsA("ModuleScript") then return end
+		local ok, handgunClass = pcall(require, classScript)
+		if not ok then return end
+		local handgun = handgunClass.new({ name = handgunName })
+		if handgun.WeaponCategory ~= "Pistol" or not handgun.model_reference then return end
+
+		local model = handgun.model_reference:Clone()
+		model.Name = "DualWieldModel"
+		model.Parent = character.CharacterData.Equipment
+		model:PivotTo(character:GetPivot())
+		local leftArm = character:FindFirstChild("Left Arm")
+		local sourcePart = handgun.motor_6d_data and handgun.motor_6d_data.Part1
+		local partName = sourcePart and sourcePart.Name
+		local part1 = partName and model:FindFirstChild(partName, true)
+		if not leftArm or not leftArm:IsA("BasePart") or not part1 or not part1:IsA("BasePart") then
+			model:Destroy()
+			return
+		end
+		local motor = Instance.new("Motor6D")
+		motor.Name = "DualWieldMotor"
+		motor.Part0 = leftArm
+		motor.Part1 = part1
+		motor.C0 = CFrame.new(0, -1, 0) * CFrame.Angles(0, math.rad(-90), math.rad(90))
+		motor.C1 = handgun.motor_6d_data.C1 or CFrame.identity
+		motor.Parent = leftArm
+		model:SetAttribute("WeaponClass", handgunName)
 	end)
 	
 	ammo_connection.OnServerEvent:Connect(function(player, tool, count)

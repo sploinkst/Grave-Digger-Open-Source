@@ -46,11 +46,11 @@ function BaseFirearm:_onBulletHit(cast, result, velocity, muzzle, penetrationLev
 
 	if isCharacter then
 		-- Apply damage to the character.
-		self:_applyHit(result, damage, direction, knockback_force)
+		self:_applyHit(result, damage, direction, knockback_force, cast.UserData)
 		return
 	end
 
-	self:_applyHit(result, damage, direction, knockback_force)
+	self:_applyHit(result, damage, direction, knockback_force, cast.UserData)
 
 	-- // if roblox terrain return
 	if instance:IsDescendantOf(workspace.Terrain) then
@@ -60,7 +60,7 @@ function BaseFirearm:_onBulletHit(cast, result, velocity, muzzle, penetrationLev
 	end
 end
 
-function BaseFirearm:_applyHit(result: RaycastResult, damage: number, direction: Vector3, knockback_force: number)
+function BaseFirearm:_applyHit(result: RaycastResult, damage: number, direction: Vector3, knockback_force: number, metadata: any?)
 	if not result then return end
 	hit_connection:FireServer({
 		Position  = result.Position,
@@ -70,6 +70,10 @@ function BaseFirearm:_applyHit(result: RaycastResult, damage: number, direction:
 		Direction = direction,
 		WeaponName = self.className,
 		ArmorPenetration = self.Armor_Penetration_Level,
+		HeadshotMultiplier = self.HeadshotMultiplier,
+		ShotId = metadata and metadata.ShotId,
+		PelletIndex = metadata and metadata.PelletIndex,
+		PelletCount = metadata and metadata.PelletCount,
 	}, damage, knockback_force)
 end
 

@@ -10,6 +10,7 @@ if not datapush_remoteevent then
 	datapush_remoteevent.Parent = events_folder
 end
 local gun_classes = ReplicatedStorage.Shared.Library.Classes.GunClasses
+local tool_classes = ReplicatedStorage.Shared.Library.Classes.ToolClasses
 
 -- lookup table
 local allowedchanges_table = {
@@ -28,11 +29,12 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 	local slot_name = loadout_targets[target]
 	if not slot_name or type(weapon_name) ~= "string" then return end
 
-	local weapon_script = gun_classes:FindFirstChild(weapon_name)
+	local weapon_script = gun_classes:FindFirstChild(weapon_name) or tool_classes:FindFirstChild(weapon_name)
 	if not weapon_script or not weapon_script:IsA("ModuleScript") then return end
 
 	local success, weapon_class = pcall(require, weapon_script)
 	if not success or type(weapon_class.Weight) ~= "number" then return end
+	if weapon_class.Designation ~= slot_name then return end
 
 	local player_data = player:FindFirstChild("PlayerData")
 	local data = player_data and player_data:FindFirstChild("PlayerData")
@@ -44,7 +46,7 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 	local other_slot = equipment:FindFirstChild(other_name)
 	local other_weight = 0
 	if other_slot and other_slot:IsA("StringValue") and other_slot.Value ~= "" then
-		local other_script = gun_classes:FindFirstChild(other_slot.Value)
+		local other_script = gun_classes:FindFirstChild(other_slot.Value) or tool_classes:FindFirstChild(other_slot.Value)
 		if other_script and other_script:IsA("ModuleScript") then
 			local other_success, other_class = pcall(require, other_script)
 			if other_success and type(other_class.Weight) == "number" then

@@ -14,7 +14,16 @@ if sourceAnimationSaves then
 	if existingAnimationSaves then existingAnimationSaves:Destroy() end
 	local replicatedAnimationSaves = Instance.new("Folder")
 	replicatedAnimationSaves.Name = "RBX_ANIMSAVES"
-	for _, rigName in ipairs({ "lebel_rig", "lever_rig", "henry_rig", "springfield_rig", "mosin_rig" }) do
+	for _, rigName in ipairs({
+		"lebel_rig",
+		"lever_rig",
+		"henry_rig",
+		"springfield_rig",
+		"mosin_rig",
+		"rsc_rig",
+		"autosg_rig",
+		"cavsword_rig",
+	}) do
 		local rig = sourceAnimationSaves:FindFirstChild(rigName)
 		if rig then
 			rig:Clone().Parent = replicatedAnimationSaves

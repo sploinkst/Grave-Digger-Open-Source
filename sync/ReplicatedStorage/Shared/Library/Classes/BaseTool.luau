@@ -155,13 +155,16 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 		if self.RegisteredAnimations then
 			for animName, track in pairs(self.RegisteredAnimations) do
 				local persistent = animName == "Hold" or animName == "Aim" or animName == "Aim_Left"
+					or animName == "Aim_Dual" or animName == "Aim_Normal"
 					or animName == "Hip_Hold" or animName == "Hip_Aim" or animName == "Hip_Aim_Left"
+					or animName == "Shoulder_Hold" or animName == "Shoulder_Aim" or animName == "Shoulder_Aim_Left"
 					or animName == "Charge"
 				track.Looped = persistent
 
 				if animName == "Hold" then
 					track.Priority = Enum.AnimationPriority.Action
 				elseif animName == "Aim" or animName == "Aim_Left"
+					or animName == "Aim_Dual" or animName == "Aim_Normal"
 					or animName == "Hip_Aim" or animName == "Hip_Aim_Left" then
 					track.Priority = Enum.AnimationPriority.Action2
 				elseif animName == "Fire" or animName == "Fire_Left"
@@ -941,7 +944,7 @@ function BaseTool:_set_sprint_arms(enabled: boolean)
 end
 
 function BaseTool:_damageMeleeTarget(targetCharacter: Model, meleeRange: number, damage: number)
-	melee_communication.Melee_Connection:FireServer(targetCharacter, meleeRange, damage)
+	melee_communication.Melee_Connection:FireServer(targetCharacter, meleeRange, damage, self.className)
 end
 
 -- // Melee (shared)
