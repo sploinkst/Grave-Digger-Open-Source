@@ -142,54 +142,87 @@ local function CarveEntrances()
 	end
 end
 
-local function HandleDeleteTerrain(...)
-	local args = { ... }
+local Debris = game:GetService("Debris")
+local ServerStorage = game:GetService("ServerStorage")
+local miningCooldowns = setmetatable({}, {__mode = "k"})
+local MINING_REACH = 5
+local TUNNEL_SIZE = Vector3.new(16, 14, 14)
+local ROCK_MINED_SOUND_ID = "rbxassetid://0" -- Replace when the mining sound is available.
 
-	local carveCFrame
-	local position
-	local size
-
-	if typeof(args[2]) == "CFrame" then
-		carveCFrame = args[2]
-		size = args[3]
-
-	-- // Vector3 position supplied
-	elseif typeof(args[2]) == "Vector3" then
-		position = args[2]
-		size = args[3]
-
-		-- // XYZ supplied separately
-	elseif typeof(args[2]) == "number"
-		and typeof(args[3]) == "number"
-		and typeof(args[4]) == "number" then
-
-		position = Vector3.new(
-			args[2],
-			args[3],
-			args[4]
-		)
-
-		size = args[5]
+local function playRockImpact(position, normal)
+	local assets = ReplicatedStorageService.Shared.Assets
+	local template = assets.Guns.Effects:FindFirstChild("rockbreak")
+		or assets.Guns.Effects:FindFirstChild("smallrock")
+	local anchor = Instance.new("Part")
+	anchor.Name = "RockMiningImpact"
+	anchor.Size = Vector3.new(0.1, 0.1, 0.1)
+	anchor.Transparency = 1
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.CFrame = CFrame.lookAt(position, position + normal)
+	anchor.Parent = workspace
+	local lifetime = 3
+	local effect = template and template:Clone()
+	if effect then
+		effect.Parent = anchor
+		if effect:IsA("BasePart") then effect.CFrame = anchor.CFrame
+		elseif effect:IsA("Model") then effect:PivotTo(anchor.CFrame) end
+		local descendants = effect:GetDescendants()
+		table.insert(descendants, effect)
+		for _, item in descendants do
+			if item:IsA("BasePart") then
+				item.Anchored = true
+				item.CanCollide = false
+				item.CanQuery = false
+				item.CanTouch = false
+			elseif item:IsA("ParticleEmitter") then
+				item.Enabled = false
+				lifetime = math.max(lifetime, item.Lifetime.Max + 1)
+				task.delay(0.05, function()
+					if item.Parent then item:Emit(item:GetAttribute("EmitCount") or 20) end
+				end)
+			end
+		end
 	end
-
-	if not carveCFrame and position then
-		carveCFrame = CFrame.new(position)
+	local sound = effect and effect:FindFirstChildWhichIsA("Sound", true)
+	if not sound then
+		local soundTemplate = assets:FindFirstChild("rock_mined", true)
+			or ServerStorage:FindFirstChild("rock_mined", true)
+		sound = soundTemplate and soundTemplate:IsA("Sound") and soundTemplate:Clone() or Instance.new("Sound")
+		if sound.SoundId == "" then sound.SoundId = ROCK_MINED_SOUND_ID end
+		sound.Parent = anchor
 	end
-
-	if not carveCFrame or not size then
-		warn("Delete terrain called with invalid arguments")
-		return
+	sound.RollOffMaxDistance = 70
+	if sound.SoundId ~= "" and sound.SoundId ~= "rbxassetid://0" then
+		sound:Play()
+		lifetime = math.max(lifetime, sound.TimeLength + 1)
 	end
+	Debris:AddItem(anchor, lifetime)
+end
 
-	if typeof(size) == "number" then
-		size = Vector3.new(size, size, size)
-	end
-
-	TerrainService:FillBlock(
-		carveCFrame,
-		size,
-		Enum.Material.Air
-	)
+local function HandleDeleteTerrain(player, direction)
+	if typeof(direction) ~= "Vector3" then return end
+	local magnitude = direction.Magnitude
+	if magnitude ~= magnitude or magnitude == math.huge or magnitude < 0.01 then return end
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local head = character and character:FindFirstChild("Head")
+	local tool = character and character:FindFirstChildOfClass("Tool")
+	if not head or not humanoid or humanoid.Health <= 0 or not tool
+		or (tool.Name ~= "Pickaxe" and tool.Name ~= "HeavyPickaxe") then return end
+	if (miningCooldowns[player] or 0) > os.clock() then return end
+	miningCooldowns[player] = os.clock() + 0.4
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = {character}
+	local unit = direction.Unit
+	local hit = workspace:Raycast(head.Position, unit * MINING_REACH, params)
+	if not hit or hit.Instance ~= workspace.Terrain or hit.Material ~= Enum.Material.Rock then return end
+	local center = hit.Position + unit * (TUNNEL_SIZE.Z / 2 - 2)
+	TerrainService:FillBlock(CFrame.lookAt(center, center + unit), TUNNEL_SIZE, Enum.Material.Air)
+	playRockImpact(hit.Position, hit.Normal)
 end
 
 -- // Start

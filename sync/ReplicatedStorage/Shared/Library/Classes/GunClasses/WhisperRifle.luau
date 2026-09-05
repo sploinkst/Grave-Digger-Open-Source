@@ -13,11 +13,7 @@ local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 
-local animation = createAnimationResolver(
-	"springfield_rig",
-	nil,
-	nil
-)
+local animation = createAnimationResolver("springfield")
 
 local whisperSounds = GunAssets.Sounds:FindFirstChild("springfield")
 		or GunAssets.Sounds:FindFirstChild("Springfield")
@@ -83,6 +79,7 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 		self.motor_6d_data.Part1 = model:FindFirstChild("hitbox", true)
 	end
 
+	self.AnimationGunType = "springfield"
 	self.animations = {
 		Hold = animation("Hold", "PrinceRifle_Held"),
 		Draw = animation("Draw", "PrinceRifle_Draw"),

@@ -60,7 +60,7 @@ export type BaseTool = typeof(setmetatable({} :: {
 		Parent: string,
 		Part0: string,
 		Part1: string | BasePart,
-		C0: CFrame,
+		C0: CFrame?,
 		C1: CFrame?,
 		UseRightGripAttachment: boolean?,
 		ReloadGripC0: CFrame?,
@@ -141,6 +141,7 @@ end
 -- // on_give
 
 function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
+	if self._prepareAnimations then self:_prepareAnimations() end
 	self.tool = tool
 
 	if self.animations then
@@ -162,7 +163,9 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 				track.Looped = persistent
 
 				if animName == "Hold" then
-					track.Priority = Enum.AnimationPriority.Action
+					-- Keep the authored held pose above the character's Action
+					-- sprint overlays instead of blending the gun into sprint arms.
+					track.Priority = Enum.AnimationPriority.Action2
 				elseif animName == "Aim" or animName == "Aim_Left"
 					or animName == "Aim_Dual" or animName == "Aim_Normal"
 					or animName == "Hip_Aim" or animName == "Hip_Aim_Left" then
@@ -184,8 +187,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 				if track then
 					print("Adjusting speed for:", track)
 					track:AdjustSpeed(speed)
-				else
-					warn("Animation '" .. animName .. "' not found for speed adjustment")
+
 				end
 			end
 		end
@@ -269,7 +271,7 @@ function BaseTool:_findModelPart(partName: string?): BasePart?
 	if not model or not partName then return nil end
 
 	for _, descendant in ipairs(model:GetDescendants()) do
-		if descendant:IsA("BasePart") and descendant.Name == partName then
+		if descendant:IsA("BasePart") and (descendant.Name == partName or descendant:GetAttribute("OriginalPartName") == partName) then
 			return descendant
 		end
 	end
@@ -495,31 +497,25 @@ function BaseTool:equip()
 	end
 
 	self:define_shorts()
-	if self.RegisteredAnimations then
-		local draw = self.RegisteredAnimations.Draw
-		local hold = self.RegisteredAnimations.Hold
-		if draw then self:_playAnim("Draw", true) end
-		if hold then
-			-- Replace the previous draw callback when the tool is equipped again.
-			if self._drawStoppedConnection then
-				self._drawStoppedConnection:Disconnect()
-			end
-			local function finishDraw()
-				if self.tool and self.tool.Parent == character and self.Equipped then
-					self:_playAnim("Hold", true)
-					hold:AdjustSpeed(0.2)
-					self.Equipping = false
-					self:init_short_mechanic()
-				end
-			end
-			if draw then
-				self._drawStoppedConnection = draw.Stopped:Connect(finishDraw)
-			else
-				finishDraw()
-			end
-		elseif not draw then
+	if self._drawStoppedConnection then
+		self._drawStoppedConnection:Disconnect()
+		self._drawStoppedConnection = nil
+	end
+	local draw = self.RegisteredAnimations and self.RegisteredAnimations.Draw
+	local function finishDraw()
+		if self.tool and self.tool.Parent == character and self.Equipped then
 			self.Equipping = false
+			self:_restoreBase()
+			self:init_short_mechanic()
 		end
+	end
+	if draw then
+		-- Subscribe before playback, including very short draw clips. Equip
+		-- completion must not depend on the weapon also having a Hold track.
+		self._drawStoppedConnection = draw.Stopped:Once(finishDraw)
+		self:_playAnim("Draw", true)
+	else
+		finishDraw()
 	end
 
 	if self.model_reference then
@@ -530,25 +526,11 @@ function BaseTool:equip()
 	self:_startAimTracking()
 
 	self.sprint_connection = character:GetAttributeChangedSignal("Sprinting"):Connect(function()
-		if character:GetAttribute("Sprinting") == true then
-			character:GetAttributeChangedSignal("Sprint_Animation"):Wait()
-			self:_stopAllExcept()
-			local hold = self.RegisteredAnimations.Hold
-			hold:Stop()
-			print("Is sprinting animation")
-		else
-			print("Is not sprinting animation")
-			if not self.Equipped then return end
-			if self.Aiming then
-				local aimTrack = self:_aimTrack()
-				if aimTrack and not aimTrack.IsPlaying then aimTrack:Play(CUT) end
-				return
-			end
-			if self.RegisteredAnimations and self.RegisteredAnimations.Hold then
-				self.RegisteredAnimations.Hold:AdjustSpeed(0.2)
-				self:_playAnim("Hold", true)
-			end
+		if not self.Equipped then return end
+		if character:GetAttribute("Sprinting") == true and self.Aiming then
+			self:endAiming()
 		end
+		self:_restoreBase()
 	end)
 
 	-- Keyframe dispatch
@@ -755,7 +737,7 @@ function BaseTool:_isBusy(): boolean
 	local animations = self.RegisteredAnimations
 	local drawTrack = animations and animations.Draw
 	return self.Firing or self.Reloading or self.Cycling or self.Alting or self.Spinning
-		or self.Checking or self.Meleeing
+		or self.Checking or self.Meleeing or self.Mining
 		or (drawTrack ~= nil and drawTrack.IsPlaying) or false
 end
 
@@ -791,7 +773,9 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean): AnimationTra
 	assert(anims, self.className .. ":_playAnim called before animations registered")
 
 	local track = anims[name]
-	assert(track, self.className .. ": unknown animation '" .. tostring(name) .. "'")
+	-- Optional clips are absent on some weapons. Callers can skip the action
+	-- or restore idle instead of leaving a busy flag set after an assertion.
+	if not track then return nil end
 
 
 	if not self.Equipped and not bypass_equiped then
@@ -910,7 +894,7 @@ function BaseTool:_restoreBase()
 		end
 	end
 
-	if self.Aiming or self.holding_aim_button == true then
+	if not self:_if_sprinting() and (self.Aiming or self.holding_aim_button == true) then
 		if self.Aiming then
 			local want = self:_aimTrack()
 			local kill = (want == anims.Aim) and anims.Aim_Left or anims.Aim
@@ -964,6 +948,10 @@ function BaseTool:melee()
 	local meleeAnimation = "Melee" .. meleeIndex
 	if self._getMeleeAnimationName then
 		meleeAnimation = self:_getMeleeAnimationName(meleeIndex)
+	end
+	local animations = self.RegisteredAnimations
+	if animations and not animations[meleeAnimation] then
+		meleeAnimation = animations.Melee1 and "Melee1" or "Melee2"
 	end
 	local anim = self:_playAnim(meleeAnimation)
 	if not anim then
@@ -1335,6 +1323,7 @@ end
 -- // Aim motor tracking
 
 function BaseTool:_startAimTracking()
+	if self.AnimationDrivenGrip then return end
 	if self._aimConnection then return end
 
 	local character = LOCAL_PLAYER.Character
@@ -1510,6 +1499,7 @@ function BaseTool:_findToolMotor(): Motor6D?
 end
 
 function BaseTool:_setGripArm(armName: string)
+	if self.AnimationDrivenGrip then return end
 	local motor = self:_findToolMotor()
 	local character = LOCAL_PLAYER.Character
 	local arm = character and character:FindFirstChild(armName)
@@ -1538,6 +1528,7 @@ function BaseTool:_cacheMotor6D()
 end
 
 function BaseTool:_resetMotor6D()
+	if self.AnimationDrivenGrip then return end
 	if not self.motor_6d or not self._motorOriginal then return end
 	local motor    = self.motor_6d
 	local targetC0 = CFrame.new(-1, 0.5, 0) * CFrame.Angles(-math.rad(90), 0, 0)

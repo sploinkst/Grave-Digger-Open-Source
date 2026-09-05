@@ -32,7 +32,43 @@ export type BaseFirearm = BaseTool.BaseTool
 
 function BaseFirearm.new(info): BaseFirearm
 	local self = BaseTool.new(info) :: any
+	self.AnimationDrivenGrip = false
+	-- Shared rifle mount matches Prince's original scripted attachment.
+	self.DefaultGripC0 = CFrame.new(0.254, -1.703, -0.566)
+		* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
 	return setmetatable(self, BaseFirearm)
+end
+
+-- Optional empty variants are shared behavior, even for guns with explicit
+-- animation tables. Capacity is magazine ammo; reserves never select a pose.
+function BaseFirearm:_prepareAnimations()
+	local folders = ReplicatedStorage:FindFirstChild("ToolAnimations")
+	local source = folders and self.AnimationGunType and folders:FindFirstChild(self.AnimationGunType)
+	if not source or not self.animations then return end
+	local resolve = require(script.Parent.GunClasses.AnimationResolver)(self.AnimationGunType)
+	for key, clipName in {Draw = "draw", Reload_Empty = "reload_empty", Check_Empty = "check_empty"} do
+		if not self.animations[key] and source:FindFirstChild(clipName, true) then
+			self.animations[key] = resolve({clipName}, clipName)
+		end
+	end
+	if self.ANIM_LAYERS then
+		self.ANIM_LAYERS = table.clone(self.ANIM_LAYERS)
+		self.ANIM_LAYERS.Reload_Empty = self.ANIM_LAYERS.Reload_Start or 2
+		self.ANIM_LAYERS.Check_Empty = self.ANIM_LAYERS.Check or 2
+	end
+end
+
+function BaseFirearm:_magazineAnimation(name: string): string
+	local emptyName = if name == "Reload_Start" or name == "Reload_Alt" then "Reload_Empty"
+		elseif name == "Check" then "Check_Empty" else nil
+	if self.Capacity == 0 and emptyName and self.RegisteredAnimations and self.RegisteredAnimations[emptyName] then
+		return emptyName
+	end
+	return name
+end
+
+function BaseFirearm:_playAnim(name: string, bypassEquipped: boolean?)
+	return BaseTool._playAnim(self, self:_magazineAnimation(name), bypassEquipped)
 end
 
 function BaseFirearm:_onBulletHit(cast, result, velocity, muzzle, penetrationLevel, damage, knockback_force)
@@ -197,6 +233,7 @@ function BaseFirearm:_reloadSequence(startAnimName, loopAnimName, endAnimName, o
 	local anims = self.RegisteredAnimations
 	if not anims then self.Reloading = false; return false end
 
+	if startAnimName then startAnimName = self:_magazineAnimation(startAnimName) end
 	if startAnimName and anims[startAnimName] then
 		self:_playAnim(startAnimName).Stopped:Wait()
 	end
@@ -356,10 +393,10 @@ function BaseFirearm:end_ammo_check(force: boolean?)
 	local function finishAmmoCheck()
 		if not force and (self._ammoCheckHeld or displayId ~= self._ammoCheckDisplayId) then return end
 
-		local checkTrack = self.RegisteredAnimations and self.RegisteredAnimations.Check
+		local checkTrack = self._ammoCheckTrack
 		if self._ammoCheckPaused and checkTrack and checkTrack.IsPlaying then
 			self._ammoCheckPaused = false
-			checkTrack:AdjustSpeed(self.animation_speeds and self.animation_speeds.Check or 1)
+			checkTrack:AdjustSpeed(self.animation_speeds and self.animation_speeds[self._ammoCheckAnimationName] or 1)
 		end
 
 		if self._ammoCheckUtils and type(self._ammoCheckUtils.hide) == "function" then
@@ -375,7 +412,8 @@ function BaseFirearm:end_ammo_check(force: boolean?)
 end
 
 function BaseFirearm:ammo_check()
-	if not self.RegisteredAnimations or not self.RegisteredAnimations.Check then return end
+	local checkName = self:_magazineAnimation("Check")
+	if not self.RegisteredAnimations or not self.RegisteredAnimations[checkName] then return end
 	if self:_isBusy() or self.Checking or self.Check_Delayed then return end
 	if self.Equipping then return end
 	if not self.Equipped then return end
@@ -438,10 +476,12 @@ function BaseFirearm:ammo_check()
 		self.RegisteredAnimations.Hold:Stop(CUT)
 	end
 
-	local checkTrack = self.RegisteredAnimations.Check
+	local checkTrack = self.RegisteredAnimations[checkName]
+	self._ammoCheckTrack = checkTrack
+	self._ammoCheckAnimationName = checkName
 	self._ammoCheckPaused = false
 	checkTrack:AdjustWeight(1)
-	self:_playAnim("Check")
+	self:_playAnim(checkName)
 
 	-- Leave enough of the animation after this point to close and recock the gun.
 	-- Releasing the ammo-check key before this point simply lets it finish normally.

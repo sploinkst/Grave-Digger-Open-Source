@@ -15,7 +15,7 @@ local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 local rifleFallback = Assets.Animations.Tools.Guns:FindFirstChild("PrinceRifle")
 local legacyAnimations = Assets.Animations.Tools.Guns:FindFirstChild("rsc")
-local animation = createAnimationResolver("rsc_rig", legacyAnimations, rifleFallback)
+local animation = createAnimationResolver("rsc")
 local assetSounds = Assets:FindFirstChild("Sounds")
 local toolSounds = assetSounds and assetSounds:FindFirstChild("tools")
 local SoundFolder = (toolSounds and toolSounds:FindFirstChild("rsc"))
@@ -112,17 +112,16 @@ function AdjudicatorRifle.new(info: Types.BaseToolCreateInfo): AdjudicatorRifle
 	self.holster_reference = GunAssets.Holsters:FindFirstChild("rscHolster")
 		or GunAssets.Holsters:FindFirstChild("AdjudicatorRifleHolster")
 	self.motor_6d_data = {
-		Parent = "Right Arm",
-		Part0 = "Right Arm",
+		Parent = "Left Arm",
+		Part0 = "Left Arm",
 		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
-		C0 = CFrame.new(0, -1, 0) * CFrame.Angles(0, math.rad(-90), math.rad(90)),
+		C0 = self.DefaultGripC0,
 		C1 = CFrame.identity,
-		ReloadGripC0 = CFrame.new(0.254, -1.703, -0.566)
-			* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90)),
 	}
 
+	self.AnimationGunType = "rsc"
 	self.animations = {
-		Hold = animation({ "locked" }, "PrinceRifle_Held"),
+		Hold = animation({"held", "locked"}, "held"),
 		Draw = animation({ "draw" }, "PrinceRifle_Draw"),
 		Unequip = animation({ "unequip" }, "PrinceRifle_Unequip"),
 		Aim = animation({ "aim" }, "PrinceRifle_Aim"),
@@ -201,7 +200,6 @@ function AdjudicatorRifle:reload()
 
 	if self.Aiming then self:endAiming() end
 	self.Reloading = true
-	self:_setGripArm("Left Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
@@ -217,7 +215,6 @@ function AdjudicatorRifle:reload()
 		self:_fire_ammo(CLIP_SIZE)
 	end
 	self.Reloading = false
-	self:_setGripArm("Right Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 	self:_restoreBaseDeferred()

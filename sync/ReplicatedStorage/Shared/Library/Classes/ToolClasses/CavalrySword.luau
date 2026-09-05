@@ -16,7 +16,7 @@ local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
 local FxFolder = GunAssets.Effects
 local legacyAnimations = Assets.Animations.Tools.Guns:FindFirstChild("cavsword")
-local animation = createAnimationResolver("cavsword_rig", legacyAnimations, nil)
+local animation = createAnimationResolver("cavsword")
 local Events = ReplicatedStorage.Shared.Library.Events
 
 local function getDualWieldEvent(): RemoteEvent

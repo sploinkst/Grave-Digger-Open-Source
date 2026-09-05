@@ -1,34 +1,36 @@
--- Adapts Studio's saved KeyframeSequences into Animations that BaseTool can load.
--- The server mirrors the selected rigs from ServerStorage.RBX_ANIMSAVES.
-
+-- Shared authored-animation lookup for all weapon controllers.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local KeyframeSequenceProvider = game:GetService("KeyframeSequenceProvider")
-
-local replicatedSaves = ReplicatedStorage:FindFirstChild("RBX_ANIMSAVES")
-	or ReplicatedStorage:WaitForChild("RBX_ANIMSAVES", 15)
+local toolAnimations = ReplicatedStorage:FindFirstChild("ToolAnimations")
+if not toolAnimations and RunService:IsClient() then
+	toolAnimations = ReplicatedStorage:WaitForChild("ToolAnimations", 15)
+end
 local registeredSequences: { [KeyframeSequence]: Animation } = {}
+local sourceIndexes: { [Instance]: { [string]: Instance } } = {}
 
 local function normalize(name: string): string
 	local normalized = string.lower(name):gsub("[^%w]", "")
 	return normalized
 end
 
-local function findAnimationSource(source: Instance, candidate: string): Instance?
-	local exact = source:FindFirstChild(candidate, true)
-	if exact then return exact end
-
-	local wanted = normalize(candidate)
+local function indexSource(source: Instance): { [string]: Instance }
+	if sourceIndexes[source] then return sourceIndexes[source] end
+	local index = {}
 	for _, descendant in source:GetDescendants() do
-		if normalize(descendant.Name) == wanted
-			and (descendant:IsA("Animation") or descendant:IsA("KeyframeSequence")) then
-			return descendant
+		if descendant:IsA("Animation") or descendant:IsA("KeyframeSequence") then
+			index[normalize(descendant.Name)] = descendant
 		end
 	end
-	return nil
+	sourceIndexes[source] = index
+	return index
 end
 
--- Exact animation vocabulary exposed by lebel_rig. Do not add aliases here:
--- weapon-specific names belong in that weapon's class.
+local function findAnimationSource(source: Instance, candidate: string): Instance?
+	return indexSource(source)[normalize(candidate)]
+end
+
+-- Shared controller vocabulary; unusual gameplay aliases stay in the weapon.
 local PRIMARY_CANDIDATES: { [string]: { string } } = {
 	Aim = { "aim" },
 	Aim_Left = { "aim_left" },
@@ -105,21 +107,21 @@ local function registerSequence(sequence: KeyframeSequence): Animation?
 	return animation
 end
 
-return function(rigName: string, legacySource: Instance?, fallbackSource: Instance?)
-	local savedRig = replicatedSaves and replicatedSaves:FindFirstChild(rigName)
+return function(gunType: string)
+	local authored = toolAnimations and toolAnimations:FindFirstChild(gunType)
+	if authored and next(indexSource(authored)) == nil then authored = nil end
 
-	return function(names: string | { string }, fallbackName: string): Animation?
+	local function resolve(names: string | { string }, fallbackName: string): Animation?
 		local candidates: { string } = {}
 		if type(names) == "string" then
-			candidates = PRIMARY_CANDIDATES[names] or {}
+			candidates = PRIMARY_CANDIDATES[names] or {string.lower(names)}
 		else
 			-- Explicit arrays are weapon-owned exact names. They intentionally do
 			-- not expand PRIMARY_CANDIDATES or borrow another weapon's aliases.
 			candidates = names
 		end
 		local sources: { Instance } = {}
-		if savedRig then table.insert(sources, savedRig) end
-		if legacySource and legacySource ~= savedRig then table.insert(sources, legacySource) end
+		if authored then table.insert(sources, authored) end
 
 		for _, source in ipairs(sources) do
 			for _, name in ipairs(candidates) do
@@ -132,12 +134,30 @@ return function(rigName: string, legacySource: Instance?, fallbackSource: Instan
 			end
 		end
 
-		if fallbackSource then
-			local fallback = fallbackSource:FindFirstChild(fallbackName, true)
-			if fallback and fallback:IsA("Animation") then return fallback end
-		end
-
-		warn(("Missing optional animation %q for RBX_ANIMSAVES.%s"):format(fallbackName, rigName))
+		warn(("Missing optional animation %q in ServerStorage.animations.tools.%s"):format(table.concat(candidates, "/"), gunType))
 		return nil
 	end
+
+	-- Build the common bindings from the folder itself. New standard clips do
+	-- not require another per-gun list, and absent optional clips stay absent.
+	local function loadAnimations(overrides: { [string]: Animation }?): { [string]: Animation }
+		local result = {}
+		local source = authored
+		if source then
+			local controllerNames = {}
+			for key, candidates in PRIMARY_CANDIDATES do
+				for _, candidate in candidates do controllerNames[normalize(candidate)] = key end
+			end
+			for normalizedName, clip in indexSource(source) do
+				local key = controllerNames[normalizedName] or clip.Name:gsub("[^_]+", function(word)
+					return word:sub(1, 1):upper() .. word:sub(2):lower()
+				end)
+				local animation = if clip:IsA("Animation") then clip else registerSequence(clip)
+				if animation then result[key] = animation end
+			end
+		end
+		for key, animation in overrides or {} do result[key] = animation end
+		return result
+	end
+	return resolve, loadAnimations
 end

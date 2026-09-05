@@ -17,7 +17,7 @@ local GunAssets = Assets.Guns
 local FxFolder = GunAssets.Effects
 local rifleFallback = Assets.Animations.Tools.Guns:FindFirstChild("PrinceRifle")
 local legacyAnimations = Assets.Animations.Tools.Guns:FindFirstChild("autosg")
-local animation = createAnimationResolver("autosg_rig", legacyAnimations, rifleFallback)
+local animation, loadAnimations = createAnimationResolver("autosg")
 local assetSounds = Assets:FindFirstChild("Sounds")
 local toolSounds = assetSounds and assetSounds:FindFirstChild("tools")
 local SoundFolder = (toolSounds and toolSounds:FindFirstChild("autosg"))
@@ -101,24 +101,15 @@ function HellionShotgun.new(info: Types.BaseToolCreateInfo): HellionShotgun
 	self.holster_reference = GunAssets.Holsters:FindFirstChild("autosgHolster")
 		or GunAssets.Holsters:FindFirstChild("HellionShotgunHolster")
 	self.motor_6d_data = {
-		Parent = "Right Arm", Part0 = "Right Arm",
+		Parent = "Left Arm", Part0 = "Left Arm",
 		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
-		C0 = CFrame.new(0, -1, 0) * CFrame.Angles(0, math.rad(-90), math.rad(90)),
+		C0 = self.DefaultGripC0,
 		C1 = CFrame.identity,
-		ReloadGripC0 = CFrame.new(0.254, -1.703, -0.566)
-			* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90)),
 	}
 
-	self.animations = {
-		Hold = animation({ "held" }, "PrinceRifle_Held"),
-		Draw = animation({ "draw" }, "PrinceRifle_Draw"),
-		Unequip = animation({ "unequip" }, "PrinceRifle_Unequip"),
-		Aim = animation({ "aim" }, "PrinceRifle_Aim"),
-		Aim_Left = animation({ "aim_left" }, "PrinceRifle_Aim_Left"),
-		Fire = animation({ "fire" }, "PrinceRifle_Fire"),
-		Fire_Left = animation({ "fire_left" }, "PrinceRifle_Fire_Left"),
-		Fire_Last = animation({ "fire_last" }, "PrinceRifle_Fire"),
-		Fire_Last_Left = animation({ "fire_last_left" }, "PrinceRifle_Fire_Left"),
+	self.AnimationGunType = "autosg"
+	self.animations = loadAnimations({
+		Hold = animation({"held", "locked"}, "held"),
 		Shoulder_Hold = animation({ "locked" }, "PrinceRifle_Held"),
 		Shoulder_Aim = animation({ "alt_changeaim" }, "PrinceRifle_Aim"),
 		Shoulder_Aim_Left = animation({ "alt_changeaim_left" }, "PrinceRifle_Aim_Left"),
@@ -126,16 +117,8 @@ function HellionShotgun.new(info: Types.BaseToolCreateInfo): HellionShotgun
 		Shoulder_Fire_Left = animation({ "alt_changefire_left" }, "PrinceRifle_Fire_Left"),
 		Shoulder_Fire_Last = animation({ "alt_changefire_last" }, "PrinceRifle_Fire"),
 		Shoulder_Fire_Last_Left = animation({ "alt_changefire_last_left" }, "PrinceRifle_Fire_Left"),
-		Reload_Start = animation({ "reload_start" }, "PrinceRifle_Reload_Start"),
-		Reload_Loop = animation({ "reload_loop" }, "PrinceRifle_Reload_Loop"),
-		Reload_End = animation({ veteran and "reload_empty_vet" or "reload_empty" }, "PrinceRifle_Reload_End"),
-		Check = animation({ "check" }, "PrinceRifle_Check"),
-		Check_Empty = animation({ "check_empty" }, "PrinceRifle_Check"),
-		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
-		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
-		Short = animation("Short", "PrinceRifle_Short"),
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
-	}
+	})
 	self.animation_speeds = {
 		Draw = 1 / (blackHand and 0.6 or 1),
 		Aim = 1 / (blackHand and 0.3 or 0.35),
@@ -208,16 +191,7 @@ function HellionShotgun:_killAimTracks()
 	end
 end
 
-function HellionShotgun:_restoreBase()
-	BaseShotgun._restoreBase(self)
-	if self:_isBusy() or not self.Equipped or not self.Shouldered then return end
-	local animations = self.RegisteredAnimations
-	if not animations then return end
-	if animations.Hold and animations.Hold.IsPlaying then animations.Hold:Stop(0.15) end
-	if not self.Aiming and animations.Shoulder_Hold and not animations.Shoulder_Hold.IsPlaying then
-		animations.Shoulder_Hold:Play(0.15)
-	end
-end
+-- Use the shared held pose outside ADS, including alternate firing modes.
 
 function HellionShotgun:setAltMode()
 	if not self.Equipped or self:_isBusy() then return end

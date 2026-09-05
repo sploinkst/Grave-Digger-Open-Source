@@ -11,16 +11,14 @@ local BaseTool = require(script.Parent.Parent.BaseTool)
 local Holster_Folder = ReplicatedStorage.Shared.Assets.Guns.Holsters
 local Tool_Folder = ReplicatedStorage.Shared.Assets.Guns.ToolModels
 local Animations_Folder = ReplicatedStorage.Shared.Assets.Animations
-local Effects_Folder = ReplicatedStorage.Shared.Assets.Guns.Effects
-local small_rocks = Effects_Folder.smallrock
 
 local utilities_module = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 local delete_terrain: RemoteEvent = ReplicatedStorage.Shared.Library.Events.DeleteTerrain
 
 local LOCAL_PLAYER = Players.LocalPlayer
 
-local TUNNEL_SIZE = Vector3.new(16, 14, 14)
-local TUNNEL_SURFACE_OVERLAP = 2
+local MINING_REACH = 5
+local IMPACT_FALLBACK_TIME = 0.3
 
 local Pickaxe = {}
 Pickaxe.__index = Pickaxe
@@ -79,6 +77,7 @@ function Pickaxe.new(PickaxeCreateInfo: Types.BaseToolCreateInfo): Pickaxe
 	}
 
 	self.mining_power = 12
+	self.ANIM_LAYERS = {Hold = 0, Draw = 2, Unequip = 2, Mine = 2, Melee1 = 2, Melee2 = 2}
 	self.Mining = false
 	self._activationConnection = nil
 	self.CompassDisabled = false
@@ -86,146 +85,55 @@ function Pickaxe.new(PickaxeCreateInfo: Types.BaseToolCreateInfo): Pickaxe
 	return self
 end
 
-function Pickaxe:on_give(tool: Tool, holster: Model?, model: Model?)
-	BaseTool.on_give(self, tool, holster)
-
-	self.tool = tool
-
-	self.RegisteredAnimations = utilities_module.register_animations(LOCAL_PLAYER, self.animations)
-	if not self.RegisteredAnimations then
-		warn("[Pickaxe] Failed to register animations")
-	end
-
-	if holster then
-		self.actual_holster = holster
-	elseif self.holster_reference then
-		self.actual_holster = utilities_module.reverse_search_holster(
-			LOCAL_PLAYER,
-			self.holster_reference.Name
-		)
-	else
-		warn("[Pickaxe] Missing holster_reference")
-	end
-
-	if self._activationConnection then
-		self._activationConnection:Disconnect()
-	end
-
-	self._activationConnection = tool.Activated:Connect(function()
-		self:activate()
-	end)
-end
-
-function Pickaxe:equip()
-	if not self.tool then return end
-
-	local character = LOCAL_PLAYER.Character
-	if not character then return end
-
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then return end
-
-	humanoid:EquipTool(self.tool)
-
-	if self.RegisteredAnimations then
-		local draw = self.RegisteredAnimations.Draw
-		local hold = self.RegisteredAnimations.Hold
-
-		if draw then
-			draw:Play()
-		end
-
-		if hold then
-			hold:Play()
-		end
-
-		for _, animation in pairs(self.RegisteredAnimations) do
-			if typeof(animation) == "Instance" and animation:IsA("AnimationTrack") then
-				animation:AdjustWeight(5, 0)
-				animation.Priority = Enum.AnimationPriority.Action4
-			end
-		end
-	end
-
-	if self.actual_holster then
-		utilities_module.hide_holster(LOCAL_PLAYER, self.actual_holster)
-	end
-	
-	LOCAL_PLAYER.Character:SetAttribute("CompassDenied", true)	
-end
-
-function Pickaxe:unequip()
-	if not self.tool then return end
-
-	local character = LOCAL_PLAYER.Character
-	if not character then return end
-
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then return end
-
-	self.RegisteredAnimations.Unequip:Play()
-
-	humanoid:UnequipTools()
-
-	self.RegisteredAnimations.Unequip.Stopped:Wait()
-	for _, animation in pairs(self.RegisteredAnimations) do
-		animation:Stop()
-	end
-	
-	LOCAL_PLAYER.Character:SetAttribute("CompassDenied", nil)	
+-- Use the shared equip lifecycle: draw finishes before held starts, and
+-- tracks are registered once with their correct priorities and loop settings.
+function Pickaxe:_on_unequip()
+	self._miningSwing = (self._miningSwing or 0) + 1
+	self.Mining = false
 end
 
 function Pickaxe:activate()
-	if self.Mining then return end
+	if not self.Equipped or self.Equipping or self:_isBusy() then return end
+	local animations = self.RegisteredAnimations
+	local track = animations and animations.Mine
+	if not track then return end
 	local character = LOCAL_PLAYER.Character
-	if not character then return end
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return end
 
-	local camera = workspace.CurrentCamera
-	if not camera then return end
-
-	local origin = character:FindFirstChild("Head").Position
-	local direction = camera.CFrame.LookVector * 5
-
-	local raycast = utilities_module.send_raycast(
-		origin,
-		direction,
-		nil,
-		{ workspace.Terrain }
-	)
-
-
-	if self.RegisteredAnimations then
-		local index = math.random(1, 2)
-		local anim = self.RegisteredAnimations["Melee" .. index]
-		if anim then
-			self.Mining = true
-			anim:Play()
-			task.delay(0.5, function()
-				self.Mining = false
-			end)
-		end
+	self.Mining = true
+	self._miningSwing = (self._miningSwing or 0) + 1
+	local swing = self._miningSwing
+	local impacted = false
+	local connections = {}
+	local function hitRock()
+		if impacted or swing ~= self._miningSwing or not self.Mining then return end
+		impacted = true
+		if not self.Equipped or not self.tool or self.tool.Parent ~= character or humanoid.Health <= 0 then return end
+		local camera = workspace.CurrentCamera
+		local head = character:FindFirstChild("Head")
+		if not camera or not head then return end
+		-- The server raycasts this direction and owns carving, particles and audio.
+		delete_terrain:FireServer(camera.CFrame.LookVector * MINING_REACH)
 	end
-
-	if not raycast then print("Return raycast") return end
-
-	if raycast.Instance == workspace.Terrain and raycast.Material == Enum.Material.Rock then
-		print("Hit rock")
-
-		local tunnelDirection = direction.Unit
-		local tunnelCenter = raycast.Position
-			+ tunnelDirection * ((TUNNEL_SIZE.Z / 2) - TUNNEL_SURFACE_OVERLAP)
-		local tunnelCFrame = CFrame.lookAt(tunnelCenter, tunnelCenter + tunnelDirection)
-		delete_terrain:FireServer(tunnelCFrame, TUNNEL_SIZE)
-
-		local small_rocks_clone = small_rocks:Clone()
-		small_rocks_clone.Position = raycast.Position
-		small_rocks_clone.Parent = workspace
-
-		utilities_module.emit_part(small_rocks_clone)
-		small_rocks_clone:Destroy()
-
-		print("sent rock")
+	local function finishSwing()
+		for _, connection in connections do connection:Disconnect() end
+		if swing ~= self._miningSwing then return end
+		self.Mining = false
+		self:_restoreBase()
 	end
+	for _, marker in {"Hit", "Mine", "Impact", "hit", "mine", "impact"} do
+		table.insert(connections, track:GetMarkerReachedSignal(marker):Connect(hitRock))
+	end
+	table.insert(connections, track.KeyframeReached:Connect(function(name)
+		if name:lower() == "hit" or name:lower() == "mine" or name:lower() == "impact" then hitRock() end
+	end))
+	table.insert(connections, track.Stopped:Once(finishSwing))
+	self:_stopAllExcept(track)
+	self:_playAnim("Mine")
+	-- Legacy published clips may have no impact marker. Submit at mid-swing
+	-- once; a marker and this fallback can never mine twice.
+	task.delay(IMPACT_FALLBACK_TIME, hitRock)
 end
 
 return Pickaxe

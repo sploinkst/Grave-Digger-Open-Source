@@ -19,19 +19,15 @@ local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
 local crestfallAnimations = Assets.Animations.Tools.Guns:FindFirstChild("lever")
-local animation = createAnimationResolver("lever_rig", nil, nil)
-local crestfallSounds = GunAssets.Sounds:FindFirstChild("lever")
-local SoundFolder = crestfallSounds or GunAssets.Sounds.PrinceRifle
+local animation, loadAnimations = createAnimationResolver("lever")
+local crestfallSounds = GunAssets.Sounds:FindFirstChild("lever") or GunAssets.Sounds:FindFirstChild("CrestfallRifle")
+local SoundFolder = crestfallSounds or GunAssets.Sounds.CrestfallRifle
 
 local FIRE_INTERVAL = 60 / 86
 local BULLET_SPEED = 900
 local HIP_BRACE_SWITCH_TIME = 0.33
 local RELOAD_ROUND_TIME = 9.56 / 11
 local HIP_BRACE_CROSSHAIR_SPREAD = 20
-local CRESTFALL_GRIP_C0 = CFrame.new(0, -1, 0)
-	* CFrame.Angles(0, math.rad(-90), math.rad(90))
-local RELOAD_GRIP_C0 = CFrame.new(0.254, -1.703, -0.566)
-	* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
 local CRESTFALL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
 
@@ -112,26 +108,15 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	self.model_reference = ToolFolder:FindFirstChild("lever") or ToolFolder:FindFirstChild("Lever")
 	self.holster_reference = get_holster_reference(self.model_reference)
 	self.motor_6d_data = {
-		Parent = "Right Arm",
-		Part0 = "Right Arm",
+		Parent = "Left Arm",
+		Part0 = "Left Arm",
 		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
-		C0 = CRESTFALL_GRIP_C0,
+		C0 = self.DefaultGripC0,
 		C1 = CFrame.identity,
-		ReloadGripC0 = RELOAD_GRIP_C0,
 	}
 
-	self.animations = {
-		Hold = animation("Hold", "PrinceRifle_Held"),
-		Draw = animation("Draw", "PrinceRifle_Draw"),
-		Unequip = animation("Unequip", "PrinceRifle_Unequip"),
-		Aim = animation("Aim", "PrinceRifle_Aim"),
-		Aim_Left = animation("Aim_Left", "PrinceRifle_Aim_Left"),
-		Fire = animation("Fire", "PrinceRifle_Fire"),
-		Fire_Left = animation("Fire_Left", "PrinceRifle_Fire_Left"),
-		Fire_Empty = animation({ "fire_empty" }, "fire_empty"),
-		Fire_Empty_Left = animation({ "fire_empty_left" }, "fire_empty_left"),
-		Fire_Last = animation({ "fire_last" }, "fire_last"),
-		Fire_Last_Left = animation({ "fire_last_left" }, "fire_last_left"),
+	self.AnimationGunType = "lever"
+	self.animations = loadAnimations({
 		Hip_Hold = animation({ "locked" }, "locked"),
 		Hip_Aim = animation({ "alt_changeaim" }, "alt_changeaim"),
 		Hip_Aim_Left = animation({ "alt_changeaim_left" }, "alt_changeaim_left"),
@@ -141,19 +126,9 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 		Hip_Fire_Empty_Left = animation({ "alt_changefire_empty_left" }, "alt_changefire_empty_left"),
 		Hip_Fire_Last = animation({ "alt_changefire_last" }, "alt_changefire_last"),
 		Hip_Fire_Last_Left = animation({ "alt_changefire_last_left" }, "alt_changefire_last_left"),
-		Reload_Start = animation("Reload_Start", "PrinceRifle_Reload_Start"),
-		Reload_Empty = animation("Reload_Empty", "reload_empty"),
-		Reload_Empty_Vet = animation("Reload_Empty_Vet", "reload_empty_vet"),
 		Reload_Empty_Vet_Old = animation({ "reload_empty_vetOLD", "reload_empty_vet_old" }, "reload_empty_vetOLD"),
-		Reload_Loop = animation("Reload_Loop", "PrinceRifle_Reload_Loop"),
-		Reload_End = animation("Reload_End", "PrinceRifle_Reload_End"),
-		Check = animation("Check", "PrinceRifle_Check"),
-		Check_Empty = animation({ "check_empty" }, "check_empty"),
-		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
-		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
-		Short = animation("Short", "PrinceRifle_Short"),
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
-	}
+	})
 
 	self.animation_speeds = {
 		Draw = 1 / 0.75,
@@ -291,16 +266,7 @@ function Crestfall:_killAimTracks()
 	end
 end
 
-function Crestfall:_restoreBase()
-	BaseRifle._restoreBase(self)
-	if self:_isBusy() or not self.Equipped or not self.HipBraced then return end
-	local anims = self.RegisteredAnimations
-	if not anims then return end
-
-	if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(0.15) end
-	local wanted = self.Aiming and anims.Hip_Aim or anims.Hip_Hold
-	if wanted and not wanted.IsPlaying then wanted:Play(0.15) end
-end
+-- Use the shared held pose outside ADS, including alternate firing modes.
 
 function Crestfall:_getFireAnim(): AnimationTrack?
 	if self.HipBraced and self.RegisteredAnimations then
@@ -412,7 +378,6 @@ function Crestfall:reload()
 
 	if self.Aiming then self:endAiming() end
 	self.Reloading = true
-	self:_setGripArm("Left Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
@@ -425,9 +390,11 @@ function Crestfall:reload()
 		self:_fire_ammo(1)
 	end
 
-	if not self._reloadCancelled then self:_playAnim("Reload_End").Stopped:Wait() end
+	if not self._reloadCancelled and self.RegisteredAnimations.Reload_End then
+		local endTrack = self:_playAnim("Reload_End")
+		if endTrack then endTrack.Stopped:Wait() end
+	end
 	self.Reloading = false
-	self:_setGripArm("Right Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 	self:_restoreBaseDeferred()
@@ -457,7 +424,6 @@ function Crestfall:_on_equip()
 end
 
 function Crestfall:_on_unequip()
-	self:_setGripArm("Right Arm")
 	self.Equipped = false
 	self.Firing = false
 	self.Cycling = false

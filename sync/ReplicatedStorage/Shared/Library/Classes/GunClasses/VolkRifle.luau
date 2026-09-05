@@ -24,22 +24,18 @@ local volkAnimations = Assets.Animations.Tools.Guns:FindFirstChild("mosin_rig")
 	or Assets.Animations.Tools.Guns:FindFirstChild("Mosin")
 	or Assets.Animations.Tools.Guns:FindFirstChild("VolkRifle")
 	or Assets.Animations.Tools.Guns:FindFirstChild("Volk")
-local animation = createAnimationResolver("mosin_rig", nil, nil)
+local _, loadAnimations = createAnimationResolver("mosin")
 local volkSounds = GunAssets.Sounds:FindFirstChild("mosin")
 	or GunAssets.Sounds:FindFirstChild("Mosin")
 	or GunAssets.Sounds:FindFirstChild("VolkRifle")
 	or GunAssets.Sounds:FindFirstChild("Volk")
-local SoundFolder = volkSounds or GunAssets.Sounds.PrinceRifle
+local SoundFolder = volkSounds or GunAssets.Sounds.VolkRifle
 
 local FIRE_INTERVAL = 60 / 50
 local BULLET_SPEED = 1200
 local RELOAD_ROUND_TIME = 4 / 5
 local SCOPED_FOV = 25
 local IRON_FOV = 70
-local GRIP_C0 = CFrame.new(0, -1, 0)
-	* CFrame.Angles(0, math.rad(-90), math.rad(90))
-local RELOAD_GRIP_C0 = CFrame.new(0.254, -1.703, -0.566)
-	* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
 local HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
 
@@ -114,33 +110,17 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 		or ToolFolder:FindFirstChild("Volk")
 	self.holster_reference = getHolster(self.model_reference)
 	self.motor_6d_data = {
-		Parent = "Right Arm",
-		Part0 = "Right Arm",
+		Parent = "Left Arm",
+		Part0 = "Left Arm",
 		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
-		C0 = GRIP_C0,
+		C0 = self.DefaultGripC0,
 		C1 = CFrame.identity,
-		ReloadGripC0 = RELOAD_GRIP_C0,
 	}
 
-	self.animations = {
-		Hold = animation("Hold", "held"),
-		Aim = animation("Aim", "aim"),
-		Fire = animation("Fire", "fire"),
-		Locked = animation("Locked", "locked"),
-		Cycle = animation("Cycle", "cycle"),
-		Reload_Clip = animation("Reload_Clip", "reload_clip"),
-		Reload_Clip_Start_Empty = animation("Reload_Clip_Start_Empty", "reload_clip_start_empty"),
-		Reload_Clip_Start_Empty_Novet = animation("Reload_Clip_Start_Empty_Novet", "reload_clip_start_empty_novet"),
-		Reload_Clip_Start_One = animation("Reload_Clip_Start_One", "reload_clip_start_one"),
-		Reload_Empty = animation("Reload_Empty", "reload_empty"),
-		Reload_Empty_Vet = animation("Reload_Empty_Vet", "reload_empty_vet"),
-		Reload_Start = animation("Reload_Start", "reload_start"),
-		Reload_Start_Vet = animation("Reload_Start_Vet", "reload_start_vet"),
-		Reload_Loop = animation("Reload_Loop", "reload_loop"),
-		Reload_End = animation("Reload_End", "reload_end"),
-		Check = animation("Check", "check"),
+	self.AnimationGunType = "mosin"
+	self.animations = loadAnimations({
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
-	}
+	})
 
 	self.animation_speeds = {
 		Aim = 1 / 0.35,
@@ -401,7 +381,6 @@ function VolkRifle:reload()
 
 	if self.Aiming then self:endAiming() end
 	self.Reloading = true
-	self:_setGripArm("Left Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
@@ -421,7 +400,6 @@ function VolkRifle:reload()
 	end
 
 	self.Reloading = false
-	self:_setGripArm("Right Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 	self:_restoreBaseDeferred()
@@ -463,7 +441,6 @@ function VolkRifle:_on_equip()
 end
 
 function VolkRifle:_on_unequip()
-	self:_setGripArm("Right Arm")
 	self:endAiming()
 	self.Equipped = false
 	self.Firing = false

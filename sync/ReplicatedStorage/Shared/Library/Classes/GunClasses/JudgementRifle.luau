@@ -22,7 +22,7 @@ local judgementAnimations = Assets.Animations.Tools.Guns:FindFirstChild("henry")
 	or Assets.Animations.Tools.Guns:FindFirstChild("JudgementRifle")
 	or Assets.Animations.Tools.Guns:FindFirstChild("Judgement")
 	or Assets.Animations.Tools.Guns:FindFirstChild("lever")
-local animation = createAnimationResolver("henry_rig", nil, nil)
+local _, loadAnimations = createAnimationResolver("henry")
 local judgementSounds = GunAssets.Sounds:FindFirstChild("henry")
 	or GunAssets.Sounds:FindFirstChild("JudgementRifle")
 	or GunAssets.Sounds:FindFirstChild("Judgement")
@@ -38,10 +38,6 @@ local CHARGE_DURATION = 3
 local CHARGE_TURN_RATE = math.rad(5)
 local CHARGE_RANGE = 30
 local CHARGE_DAMAGE = 300
-local CRESTFALL_GRIP_C0 = CFrame.new(0, -1, 0)
-	* CFrame.Angles(0, math.rad(-90), math.rad(90))
-local RELOAD_GRIP_C0 = CFrame.new(0.254, -1.703, -0.566)
-	* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
 local CRESTFALL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
 
@@ -123,50 +119,18 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		or ToolFolder:FindFirstChild("lever")
 		or ToolFolder:FindFirstChild("Lever")
 	self.holster_reference = get_holster_reference(self.model_reference)
-	-- Normal/idle mounting belongs at the gun's handle. The reload grip below
-	-- intentionally remains independent and uses the authored hitbox pose.
-	local gripC1 = Util.get_model_grip_c1(self.model_reference, "hitbox", {
-		"handle",
-		"grip",
-		"pearl",
-		"lever",
-	})
 	self.motor_6d_data = {
-		Parent = "Right Arm",
-		Part0 = "Right Arm",
+		Parent = "Left Arm",
+		Part0 = "Left Arm",
 		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
-		C0 = CRESTFALL_GRIP_C0,
-		C1 = gripC1,
-		ReloadGripC0 = RELOAD_GRIP_C0,
-		ReloadGripC1 = CFrame.identity,
+		C0 = self.DefaultGripC0,
+		C1 = CFrame.identity,
 	}
 
-	self.animations = {
-		Hold = animation("Hold", "PrinceRifle_Held"),
-		Draw = animation("Draw", "PrinceRifle_Draw"),
-		Unequip = animation("Unequip", "PrinceRifle_Unequip"),
-		Aim = animation("Aim", "PrinceRifle_Aim"),
-		Aim_Left = animation("Aim_Left", "PrinceRifle_Aim_Left"),
-		Fire = animation("Fire", "PrinceRifle_Fire"),
-		Fire_Left = animation("Fire_Left", "PrinceRifle_Fire_Left"),
-		Fire_Empty = animation({ "fire_empty" }, "fire_empty"),
-		Fire_Empty_Left = animation({ "fire_empty_left" }, "fire_empty_left"),
-		Fire_Last = animation({ "fire_last" }, "fire_last"),
-		Fire_Last_Left = animation({ "fire_last_left" }, "fire_last_left"),
-		Recoil = animation({ "recoil" }, "recoil"),
-		Recoil_Left = animation({ "recoil_left" }, "recoil_left"),
-		Cycle = animation({ "charge", "charge_stop" }, "PrinceRifle_Cycle"),
-		Reload_Start = animation("Reload_Start", "PrinceRifle_Reload_Start"),
-		Reload_Loop = animation("Reload_Loop", "PrinceRifle_Reload_Loop"),
-		Reload_End = animation("Reload_End", "PrinceRifle_Reload_End"),
-		Check = animation("Check", "PrinceRifle_Check"),
-		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
-		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
-		Short = animation("Short", "PrinceRifle_Short"),
-		Charge = animation({ "charge" }, "PrinceRifle_Melee1"),
-		Charge_Stop = animation({ "charge_stop" }, "PrinceRifle_Held"),
+	self.AnimationGunType = "henry"
+	self.animations = loadAnimations({
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
-	}
+	})
 
 	self.animation_speeds = {
 		Draw = 1 / 1.2,
@@ -390,7 +354,6 @@ function JudgementRifle:reload()
 
 	if self.Aiming then self:endAiming() end
 	self.Reloading = true
-	self:_setGripArm("Left Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
@@ -402,7 +365,6 @@ function JudgementRifle:reload()
 		self:_fire_ammo(1)
 	end
 	self.Reloading = false
-	self:_setGripArm("Right Arm")
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 	self:_restoreBaseDeferred()
@@ -432,7 +394,6 @@ function JudgementRifle:_on_equip()
 end
 
 function JudgementRifle:_on_unequip()
-	self:_setGripArm("Right Arm")
 	self.Equipped = false
 	self.Firing = false
 	self.Cycling = false

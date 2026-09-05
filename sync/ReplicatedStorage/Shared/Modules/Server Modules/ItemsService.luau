@@ -7,6 +7,48 @@ local item_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes
 local gun_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes.GunClasses
 
 
+local function animatedMount(object, character, clone, part1)
+	local storage = game:GetService("ServerStorage")
+	local animations = storage:FindFirstChild("animations")
+	local tools = animations and animations:FindFirstChild("tools")
+	local source = tools and object.AnimationGunType and tools:FindFirstChild(object.AnimationGunType)
+
+	local part0 = character:FindFirstChild(object.motor_6d_data.Part0)
+	local rootName = part1.Name
+	if source then
+		local clip = source:FindFirstChild("held", true) or source:FindFirstChild("aim", true)
+			or source:FindFirstChildWhichIsA("KeyframeSequence", true)
+		if clip and clip:IsA("KeyframeSequence") then
+			for _, pose in clip:GetDescendants() do
+				if pose:IsA("Pose") and (pose.Name == part1.Name or pose.Name == "hitbox") then
+					local parentPart = character:FindFirstChild(pose.Parent.Name)
+					if parentPart and parentPart:IsA("BasePart") then
+						part0 = parentPart
+						rootName = pose.Name
+						break
+					end
+				end
+			end
+		end
+	end
+	-- Keep authored bind offsets when the model includes its attachment joint.
+	-- Otherwise use a neutral joint; no hand-tuned pose is applied by scripts.
+	local c0, c1 = CFrame.identity, CFrame.identity
+	for _, joint in clone:GetDescendants() do
+		if joint:IsA("Motor6D") and joint.Part1 == part1 and joint.Part0
+			and not joint.Part0:IsDescendantOf(clone) then
+			c0, c1 = joint.C0, joint.C1
+			joint:Destroy()
+			break
+		end
+	end
+	if part1.Name ~= rootName then
+		part1:SetAttribute("OriginalPartName", part1.Name)
+		part1.Name = rootName
+	end
+	return part0, c0, c1
+end
+
 function module.give_item(player: Player, item: string, given_ammo: number)
 	print("Received with:", player.Name, item)
 	
@@ -100,13 +142,19 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 				end
 
 				-- Resolve Part1 from cloned model
-				local part1 = clone:FindFirstChild(object.motor_6d_data.Part1.Name, true)
+				local rootReference = object.motor_6d_data.Part1
+				local part1 = rootReference and clone:FindFirstChild(rootReference.Name, true)
 
 				if not part1 then
 					print("No Part1 found")
 					return
 				end
 
+				local authoredC0, authoredC1
+				if object.AnimationDrivenGrip then
+					part0, authoredC0, authoredC1 = animatedMount(object, character, clone, part1)
+				end
+				if not part0 then clone:Destroy(); return end
 				local motor6d: Motor6D = Instance.new("Motor6D")
 				motor6d.Name = "ToolMotor"
 				motor6d.Parent = part0
@@ -115,12 +163,14 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 				motor6d.Part1 = part1
 				local armGrip = object.motor_6d_data.UseRightGripAttachment
 					and part0:FindFirstChild("RightGripAttachment")
-				if armGrip and armGrip:IsA("Attachment") then
+				if object.AnimationDrivenGrip then
+					motor6d.C0 = authoredC0
+				elseif armGrip and armGrip:IsA("Attachment") then
 					motor6d.C0 = armGrip.CFrame
 				else
 					motor6d.C0 = object.motor_6d_data.C0
 				end
-				motor6d.C1 = object.motor_6d_data.C1 or CFrame.identity
+				motor6d.C1 = authoredC1 or object.motor_6d_data.C1 or CFrame.identity
 				print("Set Motor6D")
 			end
 			

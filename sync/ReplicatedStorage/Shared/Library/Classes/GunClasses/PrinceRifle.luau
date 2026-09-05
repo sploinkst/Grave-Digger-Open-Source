@@ -13,7 +13,6 @@ local UserInputService  = game:GetService("UserInputService")
 local Types    = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local Util     = require(script.Parent.Parent.Parent.Util)
-local createAnimationResolver = require(script.Parent.AnimationResolver)
 
 -- // Assets
 
@@ -23,7 +22,6 @@ local HolsterFolder = Assets.Guns.Holsters
 local ToolFolder    = Assets.Guns.ToolModels
 local AnimFolder    = Assets.Animations.Tools.Guns.PrinceRifle
 local FxFolder      = Assets.Guns.Effects
-local animation     = createAnimationResolver("lebel_rig", nil, nil)
 
 local fire_sound = SoundFolder.fire
 
@@ -126,6 +124,7 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 		C0 = CFrame.new(-0.1, 0, 0) * CFrame.Angles(0,0,0)
 	}
 
+	self.AnimationDrivenGrip = false
 	self.motor_6d_data = {
 		Parent = "Left Arm",
 		Part0  = "Left Arm",
@@ -134,33 +133,33 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	}
 
 	self.animations = {
-		Draw    = animation("Draw", "PrinceRifle_Draw"),
-		Hold    = animation("Hold", "PrinceRifle_Held"),
-		Unequip = animation("Unequip", "PrinceRifle_Unequip"),
+		Draw = AnimFolder.PrinceRifle_Draw,
+		Hold = AnimFolder.PrinceRifle_Held,
+		Unequip = AnimFolder.PrinceRifle_Unequip,
 
-		Aim      = animation("Aim", "PrinceRifle_Aim"),
-		Aim_Left = animation("Aim_Left", "PrinceRifle_Aim_Left"),
+		Aim      = AnimFolder.PrinceRifle_Aim,
+		Aim_Left = AnimFolder.PrinceRifle_Aim_Left,
 
-		Fire      = animation("Fire", "PrinceRifle_Fire"),
-		Fire_Left = animation("Fire_Left", "PrinceRifle_Fire_Left"),
+		Fire      = AnimFolder.PrinceRifle_Fire,
+		Fire_Left = AnimFolder.PrinceRifle_Fire_Left,
 
-		Cycle = animation("Cycle", "PrinceRifle_Cycle"),
+		Cycle = AnimFolder.PrinceRifle_Cycle,
 
-		Reload_Empty = animation("Reload_Empty", "PrinceRifle_Reload_Empty"),
-		Reload_Start = animation("Reload_Start", "PrinceRifle_Reload_Start"),
-		Reload_Loop  = animation("Reload_Loop", "PrinceRifle_Reload_Loop"),
-		Reload_End   = animation("Reload_End", "PrinceRifle_Reload_End"),
-		Reload_Alt   = animation("Reload_Alt", "PrinceRifle_Reload_Alt"),
+		Reload_Empty = AnimFolder.PrinceRifle_Reload_Empty,
+		Reload_Start = AnimFolder.PrinceRifle_Reload_Start,
+		Reload_Loop  = AnimFolder.PrinceRifle_Reload_Loop,
+		Reload_End   = AnimFolder.PrinceRifle_Reload_End,
+		Reload_Alt   = AnimFolder.PrinceRifle_Reload_Alt,
 
-		Alt_Mode_On  = animation("Alt_Mode_On", "PrinceRifle_Alt_Mode_On"),
-		Alt_Mode_Off = animation("Alt_Mode_Off", "PrinceRifle_Alt_Mode_Off"),
+		Alt_Mode_On  = AnimFolder.PrinceRifle_Alt_Mode_On,
+		Alt_Mode_Off = AnimFolder.PrinceRifle_Alt_Mode_Off,
 
-		Check  = animation("Check", "PrinceRifle_Check"),
-		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
-		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
+		Check  = AnimFolder.PrinceRifle_Check,
+		Melee1 = AnimFolder.PrinceRifle_Melee1,
+		Melee2 = AnimFolder.PrinceRifle_Melee2,
 
 		Drop  = AnimFolder.Parent.Parent.Misc.Drop_Rifle,
-		Short = animation("Short", "PrinceRifle_Short"),
+		Short = AnimFolder.PrinceRifle_Short,
 	}
 
 	self.animation_speeds = {
@@ -373,6 +372,11 @@ function PrinceRifle:fire()
 	task.delay(CYCLE_REST_TIME, function()
 		self.CantFire = false
 	end)
+end
+
+-- Prince selects its legacy clips explicitly in its own action methods.
+function PrinceRifle:_magazineAnimation(name: string): string
+	return name
 end
 
 function PrinceRifle:_autoCycle()

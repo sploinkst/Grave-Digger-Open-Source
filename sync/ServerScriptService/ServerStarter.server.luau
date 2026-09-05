@@ -6,35 +6,35 @@ local MarketPlaceService = game:GetService("MarketplaceService")
 
 local modules_folder = ReplicatedStorage.Shared.Modules["Server Modules"]
 
--- Clients cannot read ServerStorage. Mirror only the animation saves used by
--- runtime weapon classes, preserving the RBX_ANIMSAVES folder structure.
-local sourceAnimationSaves = ServerStorage:FindFirstChild("RBX_ANIMSAVES")
-if sourceAnimationSaves then
-	local existingAnimationSaves = ReplicatedStorage:FindFirstChild("RBX_ANIMSAVES")
-	if existingAnimationSaves then existingAnimationSaves:Destroy() end
-	local replicatedAnimationSaves = Instance.new("Folder")
-	replicatedAnimationSaves.Name = "RBX_ANIMSAVES"
-	for _, rigName in ipairs({
-		"lebel_rig",
-		"lever_rig",
-		"henry_rig",
-		"springfield_rig",
-		"mosin_rig",
-		"rsc_rig",
-		"autosg_rig",
-		"cavsword_rig",
-	}) do
-		local rig = sourceAnimationSaves:FindFirstChild(rigName)
-		if rig then
-			rig:Clone().Parent = replicatedAnimationSaves
-		else
-			warn(("[ServerStarter] Missing ServerStorage.RBX_ANIMSAVES.%s"):format(rigName))
-		end
+-- Publish the authored tool folders once; clients register sequences on demand.
+local authoredAnimations = ServerStorage:FindFirstChild("animations")
+local authoredTools = authoredAnimations and authoredAnimations:FindFirstChild("tools")
+local toolAnimations = Instance.new("Folder")
+toolAnimations.Name = "ToolAnimations"
+if authoredTools then
+	for _, folder in authoredTools:GetChildren() do
+		folder:Clone().Parent = toolAnimations
 	end
-	replicatedAnimationSaves.Parent = ReplicatedStorage
 else
-	warn("[ServerStarter] Missing ServerStorage.RBX_ANIMSAVES; custom gun animations will use fallbacks")
+	warn("[ServerStarter] Missing ServerStorage.animations.tools; dynamic tool animations are unavailable")
 end
+local previousToolAnimations = ReplicatedStorage:FindFirstChild("ToolAnimations")
+if previousToolAnimations then previousToolAnimations:Destroy() end
+toolAnimations.Parent = ReplicatedStorage
+
+-- Movement clips are authored alongside the shared restock animation.
+local sharedSource = authoredAnimations and authoredAnimations:FindFirstChild("shared")
+local movementAnimations = Instance.new("Folder")
+movementAnimations.Name = "MovementAnimations"
+for _, name in {"walk_forward", "walk_injured", "walk_left", "walk_right",
+	"sprinting_arms", "sprinting_full", "sprinting_lean", "leg_aiming"} do
+	local clip = sharedSource and sharedSource:FindFirstChild(name)
+	if clip then clip:Clone().Parent = movementAnimations
+	else warn("[ServerStarter] Missing shared animation: " .. name) end
+end
+local previousMovement = ReplicatedStorage:FindFirstChild("MovementAnimations")
+if previousMovement then previousMovement:Destroy() end
+movementAnimations.Parent = ReplicatedStorage
 
 for _, child in ipairs(modules_folder:GetChildren()) do
 	if not child:IsA("ModuleScript") then

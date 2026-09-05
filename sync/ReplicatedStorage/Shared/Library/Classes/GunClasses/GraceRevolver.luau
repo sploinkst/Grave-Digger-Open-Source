@@ -119,11 +119,12 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Round             = Assets.Guns.Rounds.GraceRevolver_Round
 	self.Round_Target_Part = "Left Arm"
 
+	self.AnimationDrivenGrip = false
 	self.motor_6d_data = {
 		Parent = "Right Arm",
 		Part0  = "Right Arm",
 		Part1  = self.model_reference and self.model_reference:FindFirstChild("GraceRevolver_Middle"),
-		C0     = CFrame.new(-0.258, -1.438, -0.506) * CFrame.Angles(math.rad(0), math.rad(-90), math.rad(90)),
+		C0 = CFrame.new(-0.258, -1.438, -0.506) * CFrame.Angles(0, math.rad(-90), math.rad(90)),
 	}
 
 	self.animations = {
