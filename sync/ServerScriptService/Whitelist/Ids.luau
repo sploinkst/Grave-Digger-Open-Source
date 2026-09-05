@@ -23,6 +23,7 @@ return {
 	[3330580713] = true, -- // RearedGlobe
 	[999442131] = true, -- // Z_Clan,
 	[2707824098] = true, -- // NexusTheNormie
-	
 	[4055144969] = true, -- // ThatOneWebbyBoi
+	
+	[154144307] = true, -- // theManNamedKake
 }

@@ -2,7 +2,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local InteractionPrompt = script.Parent.GiveItem
 local item_service = require(game.ReplicatedStorage.Shared.Modules["Server Modules"].ItemsService)
 
-local GivenItem = "GraceRevolver"
+local GivenItem = "PrinceRifle"
 
 script.Parent.Marker.label.Text = "Give " .. GivenItem
 

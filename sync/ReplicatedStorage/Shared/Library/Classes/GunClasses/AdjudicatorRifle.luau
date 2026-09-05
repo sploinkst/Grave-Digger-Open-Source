@@ -19,7 +19,7 @@ local animation = createAnimationResolver("rsc")
 local assetSounds = Assets:FindFirstChild("Sounds")
 local toolSounds = assetSounds and assetSounds:FindFirstChild("tools")
 local SoundFolder = (toolSounds and toolSounds:FindFirstChild("rsc"))
-	or GunAssets.Sounds:FindFirstChild("rsc")
+	or GunAssets.Sounds:FindFirstChild("rsc") or GunAssets.Sounds:FindFirstChild("AdjudicatorRifle")
 	or GunAssets.Sounds.PrinceRifle
 
 local CLIP_SIZE = 5
