@@ -320,6 +320,9 @@ local function create_weapon_options(slot_name: string)
 		if child.Name == "AnimationResolver" then
 			continue
 		end
+		if Classes.IsEliteWeapon(child.Name) then
+			continue
+		end
 
 		local success, weapon_module =
 			pcall(require, child)
@@ -338,8 +341,8 @@ local function create_weapon_options(slot_name: string)
 			continue
 		end
 
-		local equipment =
-			local_player.PlayerData.PlayerData.Equipment
+		local equipment = Classes.GetLoadout(local_player, Classes.Selected(local_player))
+		if not equipment then continue end
 
 		local other_slot_name =
 			slot_name == "Primary"
@@ -695,13 +698,9 @@ local function refresh_class()
 		if name ~= "Pickaxe"
 			and name ~= "HeavyPickaxe" then
 
-			table.insert(
-				extras,
-				name:gsub(
-					"(%l)(%u)",
-					"%1 %2"
-				)
-			)
+			-- gsub returns both the changed string and its replacement count. Keep
+			-- only the string; otherwise table.insert treats the count as an index.
+			table.insert(extras, (name:gsub("(%l)(%u)", "%1 %2")))
 		end
 	end
 
@@ -715,8 +714,8 @@ local function refresh_class()
 		)
 
 	-- // Equipment
-	local equipment =
-		local_player.PlayerData.PlayerData.Equipment
+	local equipment = Classes.GetLoadout(local_player, selected)
+	if not equipment then return end
 
 	for slot, button in slot_buttons do
 		local name

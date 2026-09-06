@@ -95,6 +95,13 @@ function BaseEquipment:Start(character)
 			or character:GetAttribute("Equipment") ~= self.className
 			or game.Players.LocalPlayer:GetAttribute("MenuOpen") then return end
 		if Pressed then
+
+			if self.InstantActivate then
+				if self.UnequipHeldToolsOnActivate then self:UnequipHeldTools(character) end
+				self.Activated = true
+				self:Activate(character)
+				return
+			end
 			if self.PlayerTarget then
 				self.Activated = true
 				self:Activate(character)
@@ -127,6 +134,15 @@ end
 
 function BaseEquipment:Activate(character)
 	-- Override in subclasses.
+end
+
+-- Shared behavior for class equipment that occupies the player's hands.  A
+-- controller opts in with `UnequipHeldToolsOnActivate = true`; consumables
+-- such as AmmoPack remain free to use without putting weapons away.
+function BaseEquipment:UnequipHeldTools(character: Model?)
+	local target = character or self.Character
+	local humanoid = target and target:FindFirstChildOfClass("Humanoid")
+	if humanoid then humanoid:UnequipTools() end
 end
 
 function BaseEquipment:_getEquipmentGui(): BillboardGui?

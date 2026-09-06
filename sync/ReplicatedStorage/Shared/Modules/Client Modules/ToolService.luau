@@ -26,6 +26,26 @@ local function DestroyToolInstance(instance)
 	end
 end
 
+-- The whistle is created and equipped by the server in the same frame. It can
+-- therefore skip the Backpack replication event entirely, so register it from
+-- either container and never depend on hotbar/inventory setup.
+local function RegisterWhistleTool(tool)
+	if tool.Name ~= "TrenchWhistleTool" or Module.RegisteredTools[tool] then return end
+	local moduleScript = ToolClasses:FindFirstChild("TrenchWhistle", true)
+	if not moduleScript then
+		warn("[ToolService] Missing TrenchWhistle controller")
+		return
+	end
+	local class = require(moduleScript)
+	local instance = class.new({ name = "TrenchWhistle" })
+	Module.RegisteredTools[tool] = instance
+	tool.Destroying:Connect(function()
+		DestroyToolInstance(instance)
+		Module.RegisteredTools[tool] = nil
+	end)
+	instance:on_give(tool)
+end
+
 local function ConnectBackpack(backpack)
 	print("[ToolService] ConnectBackpack called on:", backpack:GetFullName())
 
@@ -44,6 +64,13 @@ local function ConnectBackpack(backpack)
 			print("[ToolService] Skipping non-tool:", child.Name)
 			return
 		end
+		if child.Name == "TrenchWhistleTool" then
+			RegisterWhistleTool(child)
+			return
+		end
+		-- The whistle's physical Tool has a different runtime name. Its controller
+		-- is still responsible for loading its local animation tracks.
+		local controllerName = child.Name == "TrenchWhistleTool" and "TrenchWhistle" or child.Name
 
 		-- // Yield one frame so the tool's properties finish replicating
 		task.wait()
@@ -60,8 +87,8 @@ local function ConnectBackpack(backpack)
 
 		print("[ToolService] Looking up class for:", child.Name)
 		local moduleScript =
-			GunClasses:FindFirstChild(child.Name, true)
-			or ToolClasses:FindFirstChild(child.Name, true)
+			GunClasses:FindFirstChild(controllerName, true)
+			or ToolClasses:FindFirstChild(controllerName, true)
 
 		if not moduleScript then
 			warn("[ToolService] No class found for item:", child.Name)
@@ -74,7 +101,7 @@ local function ConnectBackpack(backpack)
 		local instance = class.new({ name = child.Name })
 		instance:on_give(child)
 		Module.RegisteredTools[child] = instance
-		InventoryService.AssignTool(instance)
+		if child.Name ~= "TrenchWhistleTool" then InventoryService.AssignTool(instance) end
 		print("[ToolService] Successfully registered tool:", child.Name)
 	end)
 
@@ -95,7 +122,7 @@ local function ConnectBackpack(backpack)
 			return
 		end
 
-		InventoryService.RemoveTool(instance)
+		if child.Name ~= "TrenchWhistleTool" then InventoryService.RemoveTool(instance) end
 		DestroyToolInstance(instance)
 		Module.RegisteredTools[child] = nil
 		print("[ToolService] Removed tool from registry:", child.Name)
@@ -111,6 +138,10 @@ local function ConnectBackpack(backpack)
 		if not child:IsA("Tool") then
 			continue
 		end
+		if child.Name == "TrenchWhistleTool" then
+			RegisterWhistleTool(child)
+			continue
+		end
 		if Module.RegisteredTools[child] then
 			print("[ToolService] Already registered (scan):", child.Name)
 			continue
@@ -119,8 +150,8 @@ local function ConnectBackpack(backpack)
 		print("[ToolService] Registering existing tool (scan):", child.Name)
 
 		local moduleScript =
-			GunClasses:FindFirstChild(child.Name, true)
-			or ToolClasses:FindFirstChild(child.Name, true)
+			GunClasses:FindFirstChild(child.Name == "TrenchWhistleTool" and "TrenchWhistle" or child.Name, true)
+			or ToolClasses:FindFirstChild(child.Name == "TrenchWhistleTool" and "TrenchWhistle" or child.Name, true)
 
 		if not moduleScript then
 			warn("[ToolService] No class found for item (scan):", child.Name)
@@ -131,7 +162,7 @@ local function ConnectBackpack(backpack)
 		local instance = class.new({ name = child.Name })
 		instance:on_give(child)
 		Module.RegisteredTools[child] = instance
-		InventoryService.AssignTool(instance)
+		if child.Name ~= "TrenchWhistleTool" then InventoryService.AssignTool(instance) end
 		print("[ToolService] Registered existing tool (scan):", child.Name)
 	end
 
@@ -160,6 +191,15 @@ function Module.start_module()
 		WaitForInventoryReady(LocalPlayer.Character)
 	end
 	ConnectBackpack(LocalPlayer:WaitForChild("Backpack"))
+	local function watchCharacter(character)
+		character.ChildAdded:Connect(function(child)
+			if child:IsA("Tool") then RegisterWhistleTool(child) end
+		end)
+		for _, child in ipairs(character:GetChildren()) do
+			if child:IsA("Tool") then RegisterWhistleTool(child) end
+		end
+	end
+	if LocalPlayer.Character then watchCharacter(LocalPlayer.Character) end
 
 	LocalPlayer.CharacterAdded:Connect(function(character)
 		print("[ToolService] CharacterAdded fired, resetting registered tools")
@@ -173,6 +213,7 @@ function Module.start_module()
 		local backpack = LocalPlayer:WaitForChild("Backpack")
 		print("[ToolService] Connecting to backpack:", backpack:GetFullName())
 		ConnectBackpack(backpack)
+		watchCharacter(character)
 	end)
 
 	print("[ToolService] StartModule finished, waiting for tools...")

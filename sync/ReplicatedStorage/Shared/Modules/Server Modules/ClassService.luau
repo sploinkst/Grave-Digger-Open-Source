@@ -13,7 +13,9 @@ local function hasPerk(player, name)
 	local data = root and root:FindFirstChild("PlayerData")
 	local equipment = data and data:FindFirstChild("Equipment")
 	local perks = equipment and equipment:FindFirstChild("Perks")
-	return perks and perks:FindFirstChild(name) ~= nil
+	local perk = perks and perks:FindFirstChild(name)
+	if not perk then return false end
+	return not perk:IsA("BoolValue") or perk.Value
 end
 
 local lastSelection = setmetatable({}, {__mode = "k"})
@@ -45,6 +47,18 @@ local function setValue(parent: Instance, className: string, name: string, value
 	return object
 end
 
+local function setPlayerClassTag(player: Player, className: string)
+	local tag = player:FindFirstChild("Class")
+	if not tag or not tag:IsA("StringValue") then
+		if tag then tag:Destroy() end
+		tag = Instance.new("StringValue")
+		tag.Name = "Class"
+		tag.Parent = player
+	end
+	tag.Value = className
+	player:SetAttribute("SelectedClass", className)
+end
+
 local function publishCharacterData(player: Player, character: Model, className: string, equipment: Folder)
 	local characterData = character:FindFirstChild("CharacterData")
 	if not characterData then return end
@@ -55,11 +69,17 @@ local function publishCharacterData(player: Player, character: Model, className:
 	if not perks then perks = Instance.new("Folder"); perks.Name = "Perks"; perks.Parent = characterData end
 	perks:ClearAllChildren()
 	local selectedPerks = equipment:FindFirstChild("Perks")
+	local runtimePerk = character:FindFirstChild("perk")
+	local activePerkNames = {}
 	if selectedPerks then
 		for _, perk in selectedPerks:GetChildren() do
 			local enabled = if perk:IsA("BoolValue") then perk.Value else true
 			setValue(perks, "BoolValue", perk.Name, enabled)
+			if enabled then table.insert(activePerkNames, perk.Name) end
 		end
+	end
+	if runtimePerk and runtimePerk:IsA("StringValue") then
+		runtimePerk.Value = table.concat(activePerkNames, ",")
 	end
 
 	local state = characterData:FindFirstChild("State")
@@ -81,14 +101,20 @@ function Service.Select(player, name)
 	if not selected or not selected:IsA("StringValue") then return false end
 	lastSelection[player] = now
 	local definition = Classes.Get(name)
-	local primary = equipment:FindFirstChild("Primary")
-	local secondary = equipment:FindFirstChild("Secondary")
+	local loadout = Classes.GetLoadout(player, name)
+	local primary = loadout and loadout:FindFirstChild("Primary")
+	local secondary = loadout and loadout:FindFirstChild("Secondary")
 	-- Keep the stored editable firearm selection valid for the new capacity.
 	if not definition.NoFirearms and primary and secondary then
 		if weight(primary.Value) > definition.MaxWeight then primary.Value = "" end
 		if weight(primary.Value) + weight(secondary.Value) > definition.MaxWeight then secondary.Value = "" end
 	end
 	selected.Value = name
+	local legacyPrimary = equipment:FindFirstChild("Primary")
+	local legacySecondary = equipment:FindFirstChild("Secondary")
+	if legacyPrimary and primary then legacyPrimary.Value = primary.Value end
+	if legacySecondary and secondary then legacySecondary.Value = secondary.Value end
+	setPlayerClassTag(player, name)
 	-- This is the next deployment's selection, never a mid-life passive swap.
 	return true
 end
@@ -99,21 +125,26 @@ function Service.ApplySpawn(player, character)
 	local equipment = data and data:WaitForChild("Equipment", 30)
 	if player.Character ~= character or character:GetAttribute("ClassSnapshotReady") then return end
 	local name = Classes.Selected(player)
+	setPlayerClassTag(player, name)
 	local definition = Classes.Get(name)
 	local eliteName = player:GetAttribute("ShockTrooper")
 	local elite = type(eliteName) == "string" and Classes.GetElite(eliteName) or nil
 	character:SetAttribute("Class", name)
+	local runtimeClass = character:FindFirstChild("class")
+	if runtimeClass and runtimeClass:IsA("StringValue") then runtimeClass.Value = name end
 	character:SetAttribute("EliteClass", eliteName)
 	character:SetAttribute("IsShockTrooper", elite ~= nil)
 	publishCharacterData(player, character, name, equipment)
 	character:SetAttribute("InventoryWeight", definition.MaxWeight)
+	character:SetAttribute("OfficerOrderCapacity", if name == "Officer" and hasPerk(player, "Survivalist") then 2 else 1)
 	for _, attribute in {"DrawSpeed", "AimSpeed", "SpreadMultiplier", "CaptureWeight", "AllyHealHealth",
 		"SurgerySpeed", "MobileSurgery", "SuppressionImmune", "MeleeDamageMultiplier"} do
 		character:SetAttribute(attribute, definition[attribute])
 	end
 	-- Snapshot weapons with the class; menu edits cannot alter a spawning life.
-	local primary = equipment and equipment:FindFirstChild("Primary")
-	local secondary = equipment and equipment:FindFirstChild("Secondary")
+	local loadout = Classes.GetLoadout(player, name)
+	local primary = loadout and loadout:FindFirstChild("Primary")
+	local secondary = loadout and loadout:FindFirstChild("Secondary")
 	local primaryName = if elite then elite.Primary else definition.FixedPrimary or (primary and primary.Value or "PrinceRifle")
 	local secondaryName = if elite then elite.Secondary else if definition.NoFirearms then "" else (secondary and secondary.Value or "")
 	if not elite then
@@ -133,6 +164,11 @@ function Service.SetShockTrooper(player: Player, eliteName: string): (boolean, s
 	player:SetAttribute("ShockTrooper", canonicalName)
 	if player.Character then player:LoadCharacter() end
 	return true, canonicalName
+end
+
+function Service.ClearShockTrooper(player: Player)
+	player:SetAttribute("ShockTrooper", nil)
+	if player.Character then player:LoadCharacter() end
 end
 
 function Service.GiveLoadout(player, character)
@@ -166,6 +202,8 @@ function Service.GiveLoadout(player, character)
 			end
 		end
 	end
+	local toolsLoaded = character:FindFirstChild("tools_loaded")
+	if toolsLoaded and toolsLoaded:IsA("BoolValue") then toolsLoaded.Value = true end
 	local equipment = definition.Equipment
 	local equipmentValue = character:FindFirstChild("CharacterData")
 		and character.CharacterData:FindFirstChild("State")
@@ -219,7 +257,36 @@ function Service.RecordMining(player)
 end
 
 function Service.start_module()
-	
+	local lastMark = setmetatable({}, {__mode = "k"})
+	intel.OnServerEvent:Connect(function(player, kind, target)
+		if kind ~= "ReconMark" or typeof(target) ~= "Instance" or not target:IsA("Model") then return end
+		local character = player.Character
+		local head = character and character:FindFirstChild("Head")
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local enemy = Players:GetPlayerFromCharacter(target)
+		local enemyHead = target:FindFirstChild("Head")
+		local enemyHumanoid = target:FindFirstChildOfClass("Humanoid")
+		if not head or not humanoid or humanoid.Health <= 0 or character:GetAttribute("Class") ~= "Officer"
+			or not character:FindFirstChild("ReconKit") or not player.Team
+			or not enemy or enemy == player or enemy.Team == player.Team
+			or not enemyHead or not enemyHumanoid or enemyHumanoid.Health <= 0 then return end
+		local now = os.clock()
+		if now - (lastMark[player] or -math.huge) < 1 then return end
+		lastMark[player] = now
+		local direction = enemyHead.Position - head.Position
+		if direction.Magnitude > 1000 then return end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = {character}
+		local hit = workspace:Raycast(head.Position, direction, params)
+		if hit and not hit.Instance:IsDescendantOf(target) then return end
+		for _, ally in Players:GetPlayers() do
+			local root = ally.Character and ally.Character:FindFirstChild("HumanoidRootPart")
+			if ally.Team == player.Team and root and (root.Position - head.Position).Magnitude <= 200 then
+				intel:FireClient(ally, "Mark", target, 10)
+			end
+		end
+	end)
 end
 
 return Service

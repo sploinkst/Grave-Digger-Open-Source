@@ -269,7 +269,7 @@ function JesseRifle:_fireGrenade()
 	self.GrenadeLoaded = false
 	local grenadePart = self.actual_model and self.actual_model:FindFirstChild("riflegrenade", true)
 	if grenadePart and grenadePart:IsA("BasePart") then grenadePart.Transparency = 1 end
-	task.wait(self.FireInterval)
+	task.wait(self:getFireDelay(self.FireInterval))
 	self.Firing = false
 	self:_restoreBaseDeferred()
 end

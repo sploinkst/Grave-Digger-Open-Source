@@ -35,7 +35,60 @@ local function SetupGameData(player: Player)
 	hatsFolder.Parent = accessorysFolder
 end
 
-local function SetupCharacterData(character: Model)
+local function SetupCharacterData(character: Model, player: Player)
+	-- Runtime values live on the character rather than in the saved profile.  They
+	-- are deliberately ordinary Value objects: perk/equipment code can inspect
+	-- them, and they remain visible while debugging a live character.
+	local function value(className: string, name: string, default: any)
+		local object = character:FindFirstChild(name)
+		if not object or object.ClassName ~= className then
+			if object then object:Destroy() end
+			object = Instance.new(className)
+			object.Name = name
+			object.Parent = character
+		end
+		object.Value = default
+		return object
+	end
+
+	local function folder(name: string)
+		local object = character:FindFirstChild(name)
+		if not object or not object:IsA("Folder") then
+			if object then object:Destroy() end
+			object = Instance.new("Folder")
+			object.Name = name
+			object.Parent = character
+		end
+		return object
+	end
+
+	-- Keep these names compatible with the original character-data layout.
+	-- `class` and `perk` are populated by ClassService when the spawn snapshot is
+	-- applied; the rest describe this particular life only.
+	value("BoolValue", "action", false)
+	value("CFrameValue", "charPos", character:GetPivot())
+	value("StringValue", "class", "")
+	value("BoolValue", "crouching", false)
+	folder("equipment")
+	value("NumberValue", "extra_ammo", 0)
+	value("BoolValue", "full_ammo", true)
+	value("StringValue", "gender", "")
+	value("StringValue", "language", "")
+	value("StringValue", "last_equip", "")
+	value("BoolValue", "leaning", false)
+	value("StringValue", "perk", "")
+	value("StringValue", "spawnanim", "")
+	value("BoolValue", "tools_loaded", false)
+	value("BoolValue", "turret_mounted", false)
+	value("StringValue", "team", player.Team and player.Team.Name or "")
+	folder("wounds")
+	local animSaves = character:FindFirstChild("AnimSaves")
+	if not animSaves then
+		animSaves = Instance.new("ObjectValue")
+		animSaves.Name = "AnimSaves"
+		animSaves.Parent = character
+	end
+
 	local folder = Instance.new("Folder")
 	folder.Name = "CharacterData"
 	folder.Parent = character
@@ -86,6 +139,13 @@ local function FetchHairAccessories(player: Player)
 end
 
 local function HandleAccessory(player, child)
+	-- Class hats are no longer generic accessories. They are mounted exclusively
+	-- by ClassAppearance from Assets/outfits/<team>/<class> (or elite/...).
+	-- Ignoring old saved helmet entries prevents Assets.Accessories from adding a
+	-- second, stale class helmet after the correct outfit has been applied.
+	if string.find(string.lower(child.Name), "helmet", 1, true) then
+		return
+	end
 	if child:IsA("Model") then
 		print("[PLAYERSERVICE] Accessory is a model:", child.Name)
 		return
@@ -377,7 +437,7 @@ end
 
 local function HandleCharacter(player: Player, character: Model, ragdollObject)
 	CopyRespawnUI(player)
-	SetupCharacterData(character)
+	SetupCharacterData(character, player)
 	ClassService.ApplySpawn(player, character)
 
 	local humanoid: Humanoid = character:WaitForChild("Humanoid")
@@ -468,6 +528,8 @@ local function SetupPlayer(player: Player)
 
 	player:GetPropertyChangedSignal("Team"):Connect(function()
 		local characterData = player.Character and player.Character:FindFirstChild("CharacterData")
+		local teamValue = player.Character and player.Character:FindFirstChild("team")
+		if teamValue and teamValue:IsA("StringValue") then teamValue.Value = player.Team and player.Team.Name or "" end
 		local teamSide = characterData and characterData:FindFirstChild("TeamSide")
 		if teamSide and teamSide:IsA("StringValue") then
 			teamSide.Value = player.Team and player.Team.Name or ""

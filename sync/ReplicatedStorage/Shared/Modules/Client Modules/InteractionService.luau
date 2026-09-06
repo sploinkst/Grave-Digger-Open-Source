@@ -76,9 +76,13 @@ function Module.start_module()
 		if character and character:GetAttribute("GunEquipped") == true then return end
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-		local folder = ReplicatedStorage.Shared:FindFirstChild("InteractionAnimations")
 		local name = "cache_restock"
-		local source = folder and folder:FindFirstChild(name)
+		-- New authored interaction clips live with character animations.  Keep
+		-- the old folder as a fallback so older places still run.
+		local legacyFolder = ReplicatedStorage.Shared:FindFirstChild("InteractionAnimations")
+		local characterAnimations = ReplicatedStorage.Shared.Assets:FindFirstChild("Animations")
+		local source = characterAnimations and characterAnimations:FindFirstChild(name, true)
+			or legacyFolder and legacyFolder:FindFirstChild(name)
 		if not animator or not source then return end
 		local success, err = pcall(function()
 			local animation = animations[source]

@@ -33,10 +33,17 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 	local player_data = player:FindFirstChild("PlayerData")
 	local data = player_data and player_data:FindFirstChild("PlayerData")
 	local equipment = data and data:FindFirstChild("Equipment")
-	local slot = equipment and equipment:FindFirstChild(slot_name)
+	local loadout = Classes.GetLoadout(player, Classes.Selected(player))
+	local slot = loadout and loadout:FindFirstChild(slot_name)
 	if not slot or not slot:IsA("StringValue") then return end
 
-	if weapon_name == "" then slot.Value = ""; return end
+	if weapon_name == "" then
+		slot.Value = ""
+		local legacy = equipment:FindFirstChild(slot_name)
+		if legacy and legacy:IsA("StringValue") then legacy.Value = "" end
+		return
+	end
+	if Classes.IsEliteWeapon(weapon_name) then return end
 	local weapon_script = gun_classes:FindFirstChild(weapon_name) or tool_classes:FindFirstChild(weapon_name)
 	if not weapon_script or not weapon_script:IsA("ModuleScript") then return end
 
@@ -48,7 +55,7 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 	if definition.NoFirearms and weapon_script.Parent == gun_classes then return end
 	if definition.FixedPrimary and slot_name == "Primary" then return end
 	local other_name = slot_name == "Primary" and "Secondary" or "Primary"
-	local other_slot = equipment:FindFirstChild(other_name)
+	local other_slot = loadout:FindFirstChild(other_name)
 	local other_weight = 0
 	if other_slot and other_slot:IsA("StringValue") and other_slot.Value ~= "" then
 		local other_script = gun_classes:FindFirstChild(other_slot.Value) or tool_classes:FindFirstChild(other_slot.Value)
@@ -62,6 +69,8 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 
 	if weapon_class.Weight + other_weight > definition.MaxWeight then return end
 	slot.Value = weapon_name
+	local legacy = equipment:FindFirstChild(slot_name)
+	if legacy and legacy:IsA("StringValue") then legacy.Value = weapon_name end
 end
 
 function module.start_module()

@@ -486,6 +486,15 @@ return {
 			["Class"] = "Soldat",
 			["Primary"] = "PrinceRifle",
 			["Secondary"] = "GraceRevolver",
+			["ClassLoadouts"] = {
+				["Soldat"] = { ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
+				["Rook"] = { ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
+				["Mortician"] = { ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
+				["Officer"] = { ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
+				["Jaeger"] = { ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
+				["Lancer"] = { ["Primary"] = "", ["Secondary"] = "" },
+				["Vanguard"] = { ["Primary"] = "", ["Secondary"] = "" },
+			},
 			["Perks"] = {},
 		}
 	},

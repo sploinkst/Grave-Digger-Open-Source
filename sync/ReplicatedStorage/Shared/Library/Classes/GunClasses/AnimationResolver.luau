@@ -18,7 +18,7 @@ local function normalize(name: string): string
 end
 
 local function fallbackSequence(
-	wrapper: Animation,
+	wrapper: Instance,
 	gunType: string?,
 	bindingName: string?
 ): KeyframeSequence?
@@ -48,15 +48,15 @@ local function fallbackSequence(
 		return exact
 	end
 
-	return wrapper:FindFirstChildWhichIsA("KeyframeSequence")
+	return wrapper:FindFirstChildWhichIsA("KeyframeSequence", true)
 end
 
-local function resolve(wrapper: Animation, gunType: string?, bindingName: string?): Animation?
-	if hasUploadedId(wrapper) then
+local function resolve(wrapper: Instance, gunType: string?, bindingName: string?): Animation?
+	if wrapper:IsA("Animation") and hasUploadedId(wrapper) then
 		return wrapper
 	end
 
-	local sequence = fallbackSequence(wrapper, gunType, bindingName)
+	local sequence = if wrapper:IsA("KeyframeSequence") then wrapper else fallbackSequence(wrapper, gunType, bindingName)
 	if not sequence then
 		return nil
 	end

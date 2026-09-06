@@ -104,6 +104,8 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 	local self = setmetatable(BaseRifle.new(info), JudgementRifle)
 
 	self.className = "JudgementRifle"
+	self.PostShotReloadDelay = 0.3
+	self.CanCancelReload = false
 	self.item_image = JudgementRifle.Tool_Image
 	self.Designation = "Primary"
 	self.ANIM_LAYERS = ANIM_LAYERS
@@ -349,7 +351,7 @@ function JudgementRifle:fire()
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
 
 	self.Cycling = true
-	task.wait(FIRE_INTERVAL)
+	task.wait(self:getFireDelay(FIRE_INTERVAL))
 	self.Cycling = false
 	self.Firing = false
 	self:_restoreBaseDeferred()
@@ -383,7 +385,9 @@ end
 
 function JudgementRifle:activate()
 	if self.Reloading then
-		self._reloadCancelled = true
+		-- Judgement reloads as a single committed action. M1 is ignored until
+		-- the reload clip finishes; shell-by-shell weapons retain cancellation.
+		if self.CanCancelReload then self._reloadCancelled = true end
 		return
 	end
 	if not self.actual_model or self:_isBusy() then return end

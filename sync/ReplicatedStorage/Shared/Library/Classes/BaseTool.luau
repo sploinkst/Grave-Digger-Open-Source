@@ -85,6 +85,7 @@ export type BaseTool = typeof(setmetatable({} :: {
 	_inputBeganConn: RBXScriptConnection?,
 	_inputEndedConn: RBXScriptConnection?,
 	_shoulderChangedConn: RBXScriptConnection?,
+	_setLeftAiming: ((boolean) -> ())?,
 	character_connection: RBXScriptConnection?,
 	Caster: any?,
 	CasterBehavior: any?,
@@ -145,6 +146,19 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 	if self._prepareAnimations then self:_prepareAnimations() end
 	self.tool = tool
 
+	-- These are replicated server-created values.  Update the local aim/equip
+	-- view immediately whenever the controller changes state.
+	local weaponName = tool:FindFirstChild("weapon")
+	if weaponName and weaponName:IsA("StringValue") then weaponName.Value = self.className end
+
+	local function setLeftAiming(enabled: boolean)
+		local state = tool:FindFirstChild("left_aiming")
+		if state and state:IsA("BoolValue") then state.Value = enabled end
+		local event = tool:FindFirstChild("event")
+		if event and event:IsA("RemoteEvent") then event:FireServer("left_aiming", enabled) end
+	end
+	self._setLeftAiming = setLeftAiming
+
 	if self.animations then
 		self.RegisteredAnimations = utilities_module.register_animations(LOCAL_PLAYER, self.animations, self.AnimationGunType)
 		if not self.RegisteredAnimations then
@@ -199,6 +213,12 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 	end
 	self._activationConnection = tool.Activated:Connect(function()
 		self:activate()
+		-- Reload input is shared by every firearm controller.  Gate it here,
+		-- immediately after an attempted shot, so custom gun reload methods
+		-- cannot bypass the universal post-shot reload delay.
+		if self.IsFirearm then
+			self._reloadBlockedUntil = os.clock() + (self.PostShotReloadDelay or 0.1)
+		end
 	end)
 
 	if self._on_give then
@@ -288,7 +308,9 @@ function BaseTool:_findModelPart(partName: string?): BasePart?
 end
 
 function BaseTool:init_short_mechanic()
-	if not self.RegisteredAnimations.Short then
+	-- Melee/class tools often have no animation table at all. The obstruction
+	-- mechanic belongs to firearms and must not run for those tools.
+	if not self.RegisteredAnimations or not self.RegisteredAnimations.Short then
 		return
 	end
 
@@ -475,6 +497,8 @@ function BaseTool:equip()
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
+	local lastEquip = character:FindFirstChild("last_equip")
+	if lastEquip and lastEquip:IsA("StringValue") then lastEquip.Value = self.className end
 
 	if not self.actual_holster and self.holster_reference then
 		self.actual_holster = utilities_module.reverse_search_holster(LOCAL_PLAYER, self.holster_reference.Name)
@@ -526,6 +550,7 @@ function BaseTool:equip()
 	end
 
 	self:_startAimTracking()
+	self:_initShoulderTracking()
 
 	self.sprint_connection = character:GetAttributeChangedSignal("Sprinting"):Connect(function()
 		if not self.Equipped then return end
@@ -536,7 +561,7 @@ function BaseTool:equip()
 	end)
 
 	-- Keyframe dispatch
-	for _, track in pairs(self.RegisteredAnimations) do
+	for _, track in pairs(self.RegisteredAnimations or {}) do
 		if not track:IsA("AnimationTrack") then continue end
 
 		table.insert(self.keyframe_connections, track.KeyframeReached:Connect(function(keyframe)
@@ -644,6 +669,7 @@ function BaseTool:unequip()
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
+	if self._setLeftAiming then self._setLeftAiming(false) end
 
 	LOCAL_PLAYER:SetAttribute("CantUnequip", false)
 	character:SetAttribute("GunEquipped", nil)
@@ -717,6 +743,11 @@ function BaseTool:get_spread(muzzle, shootDir)
 	local spread = isMoving and self.Moving_Accuracy or self.Accuracy
 
 	local spreadMultiplier = if self.IsFirearm and character then character:GetAttribute("SpreadMultiplier") or 1 else 1
+	-- Focus is an Officer aura.  It improves normal aim and compounds with
+	-- hold-breath's already-perfect aim rather than replacing it.
+	if self.IsFirearm and character then
+		spreadMultiplier /= character:GetAttribute("OrderFocusMultiplier") or 1
+	end
 	local hOffset = math.random(-spread, spread) / 1000 * spreadMultiplier
 	local vOffset = math.random(-spread, spread) / 1000 * spreadMultiplier
 
@@ -737,6 +768,12 @@ function BaseTool:_isBusy(): boolean
 	return self.Firing or self.Reloading or self.Cycling or self.Alting or self.Spinning
 		or self.Checking or self.Meleeing or self.Mining
 		or (drawTrack ~= nil and drawTrack.IsPlaying) or false
+end
+
+function BaseTool:getFireDelay(baseDelay: number): number
+	local character = LOCAL_PLAYER.Character
+	local multiplier = character and character:GetAttribute("OrderFireRateMultiplier") or 1
+	return baseDelay / math.max(multiplier, 0.01)
 end
 
 function BaseTool:_if_sprinting(): boolean
@@ -804,6 +841,9 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean): AnimationTra
 
 	if name == "Draw" and self.IsFirearm and LOCAL_PLAYER.Character then
 		speed *= LOCAL_PLAYER.Character:GetAttribute("DrawSpeed") or 1
+	end
+	if self.IsFirearm and name:find("Reload") and LOCAL_PLAYER.Character then
+		speed *= LOCAL_PLAYER.Character:GetAttribute("OrderReloadMultiplier") or 1
 	end
 	track:Play(CUT)
 	track:AdjustSpeed(speed)
@@ -929,7 +969,15 @@ function BaseTool:_set_sprint_arms(enabled: boolean)
 end
 
 function BaseTool:_damageMeleeTarget(targetCharacter: Model, meleeRange: number, damage: number)
-	melee_communication.Melee_Connection:FireServer(targetCharacter, meleeRange, damage, self.className)
+	-- Current places expose Events.Melee directly as the RemoteEvent. Older
+	-- places used a folder with a child named Melee_Connection; support both.
+	local remote = if melee_communication:IsA("RemoteEvent") then melee_communication
+		else melee_communication:FindFirstChild("Melee_Connection")
+	if remote and remote:IsA("RemoteEvent") then
+		remote:FireServer(targetCharacter, meleeRange, damage, self.className)
+	else
+		warn("[BaseTool] Melee RemoteEvent is missing")
+	end
 end
 
 -- // Melee (shared)
@@ -1127,6 +1175,14 @@ function BaseTool:aim()
 
 	local character = LOCAL_PLAYER.Character
 	if character then character:SetAttribute("Aiming", true) end
+	-- A firearm with a real alternate stance/mode is the established movement
+	-- exception.  Individual classes may also opt in explicitly with
+	-- ADSMovementExempt = true.
+	local hasAltMovementMode = self.WeaponCategory == "Firearm" and self.Alt_Mode ~= nil
+	if character and (self.ADSMovementExempt == true or hasAltMovementMode) then
+		character:SetAttribute("ADSMovementExempt", true)
+	end
+	if self._setLeftAiming then self._setLeftAiming(self.current_shoulder == "Left") end
 
 	self:_enable_aiming_ui(self.Aiming_Number or 50)
 	self:_startTransparencyTracking()
@@ -1175,7 +1231,11 @@ function BaseTool:endAiming()
 	end
 
 	local char = LOCAL_PLAYER.Character
-	if char then char:SetAttribute("Aiming", nil) end
+	if char then
+		char:SetAttribute("Aiming", nil)
+		char:SetAttribute("ADSMovementExempt", nil)
+	end
+	if self._setLeftAiming then self._setLeftAiming(false) end
 	self:_disable_aiming_ui()
 	self:_resetBodyTransparency()
 end
@@ -1246,6 +1306,9 @@ function BaseTool:_connectInput()
 
 	self._reloadHook = function(_, pressed)
 		if pressed then
+			if self.IsFirearm and os.clock() < (self._reloadBlockedUntil or 0) then
+				return
+			end
 			self:reload()
 		end
 	end
@@ -1305,11 +1368,13 @@ end
 function BaseTool:_initShoulderTracking()
 	if not RunService:IsClient() then return end
 	self.current_shoulder = LOCAL_PLAYER:GetAttribute("Current_Shoulder") or "Right"
+	if self._setLeftAiming then self._setLeftAiming(self.Aiming and self.current_shoulder == "Left") end
 
 	if self._shoulderChangedConn then self._shoulderChangedConn:Disconnect() end
 
 	self._shoulderChangedConn = LOCAL_PLAYER:GetAttributeChangedSignal("Current_Shoulder"):Connect(function()
 		self.current_shoulder = LOCAL_PLAYER:GetAttribute("Current_Shoulder") or "Right"
+		if self._setLeftAiming then self._setLeftAiming(self.Aiming and self.current_shoulder == "Left") end
 		self:_onShoulderChanged()
 	end)
 end
@@ -1336,8 +1401,6 @@ function BaseTool:_startAimTracking()
 	local rightShoulder = torso:FindFirstChild("Right Shoulder")
 	if not (leftShoulder and rightShoulder) then return end
 
-	self._restLeftC0  = self._restLeftC0  or leftShoulder.C0
-	self._restRightC0 = self._restRightC0 or rightShoulder.C0
 
 	self._wasFreeLook  = self._wasFreeLook  or false
 	self._freeLookYaw  = self._freeLookYaw  or 0
@@ -1347,31 +1410,36 @@ function BaseTool:_startAimTracking()
 	local lerpAlpha = 0.15
 
 	self._aimConnection = RunService.RenderStepped:Connect(function()
-		if not self.Equipped then return end
-		if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
+		if not self.Equipped then
+			return
+		end
 
 		local char = LOCAL_PLAYER.Character
 		local r = char and char:FindFirstChild("HumanoidRootPart")
 		local t = char and char:FindFirstChild("Torso")
-		if not (char and r and t) then return end
+
+		if not (char and r and t) then
+			return
+		end
 
 		local ls = t:FindFirstChild("Left Shoulder")
 		local rs = t:FindFirstChild("Right Shoulder")
-		if not (ls and rs) then return end
 
-		if not self.Aiming then
-			if self._restLeftC0  then ls.C0 = ls.C0:Lerp(self._restLeftC0,  lerpAlpha) end
-			if self._restRightC0 then rs.C0 = rs.C0:Lerp(self._restRightC0, lerpAlpha) end
+		if not (ls and rs) then
 			return
 		end
 
 		local leftArmCF
 		local rightArmCF
 
-		if LOCAL_PLAYER:GetAttribute("FirstPerson") then
+		local isFreeLook = LOCAL_PLAYER:GetAttribute("FreeLook") == true
+		local isFirstPerson = LOCAL_PLAYER:GetAttribute("FirstPerson") == true
+
+		if isFirstPerson then
 			local camCF = CAMERA.CFrame
 
 			local shoulderOffset = CFrame.new()
+
 			if self.current_shoulder == "Left" then
 				shoulderOffset = CFrame.new(-0.4, -1.75, 0)
 			elseif self.current_shoulder == "Right" then
@@ -1393,12 +1461,15 @@ function BaseTool:_startAimTracking()
 					* CFrame.new(1, 0.5, 0)
 					* CFrame.Angles(0, math.pi / 2, 0)
 			)
+
 		else
 			local currentLookDir = CAMERA.CFrame.LookVector
-			local cameraPitch    = math.asin(math.clamp(currentLookDir.Y, -1, 1))
+			local cameraPitch = math.asin(
+				math.clamp(currentLookDir.Y, -1, 1)
+			)
 
 			local relativeCF = r.CFrame:ToObjectSpace(CAMERA.CFrame)
-			local lookDir    = relativeCF.LookVector
+			local lookDir = relativeCF.LookVector
 
 			local rawYaw = math.atan2(-lookDir.X, -lookDir.Z)
 
@@ -1406,30 +1477,48 @@ function BaseTool:_startAimTracking()
 				self._smoothedYaw = rawYaw
 			end
 
-			while self._smoothedYaw >  math.pi do self._smoothedYaw -= math.pi * 2 end
-			while self._smoothedYaw < -math.pi do self._smoothedYaw += math.pi * 2 end
+			while self._smoothedYaw > math.pi do
+				self._smoothedYaw -= math.pi * 2
+			end
+
+			while self._smoothedYaw < -math.pi do
+				self._smoothedYaw += math.pi * 2
+			end
 
 			local deltaYaw = rawYaw - self._smoothedYaw
-			while deltaYaw >  math.pi do deltaYaw -= math.pi * 2 end
-			while deltaYaw < -math.pi do deltaYaw += math.pi * 2 end
+
+			while deltaYaw > math.pi do
+				deltaYaw -= math.pi * 2
+			end
+
+			while deltaYaw < -math.pi do
+				deltaYaw += math.pi * 2
+			end
 
 			self._smoothedYaw = self._smoothedYaw + deltaYaw * 0.2
-			self._smoothedYaw = math.clamp(self._smoothedYaw, math.rad(-85), math.rad(85))
+
+			self._smoothedYaw = math.clamp(
+				self._smoothedYaw,
+				math.rad(-85),
+				math.rad(85)
+			)
 
 			local yaw = self._smoothedYaw
 
-			if not LOCAL_PLAYER:GetAttribute("FreeLook") then
-				self._wasFreeLook = false
-				self._freeLookYaw = yaw
+			local armRotation
+
+			if isFreeLook then
+				-- FreeLook:
+				-- Follow Camera Pitch
+				armRotation = CFrame.Angles(cameraPitch, 0, 0)
+			else
+				-- Normal third person:
+				-- Follow both yaw and pitch.
+				armRotation =
+					CFrame.Angles(0, yaw, 0)
+					* CFrame.Angles(cameraPitch, 0, 0)
+					* CFrame.Angles(0, r.RootJoint.CurrentAngle, 0)
 			end
-
-			local rotationCF =
-				CFrame.Angles(0, yaw, 0)
-				* CFrame.Angles(cameraPitch, 0, 0)
-
-			local armRotation =
-				rotationCF
-				* CFrame.Angles(0, r.RootJoint.CurrentAngle, 0)
 
 			leftArmCF = t.CFrame:ToObjectSpace(
 				r.CFrame
@@ -1446,17 +1535,22 @@ function BaseTool:_startAimTracking()
 			)
 		end
 
-		local leftRot  = leftArmCF.Rotation
+		local leftRot = leftArmCF.Rotation
 		local rightRot = rightArmCF.Rotation
 
-		self._fpLeftRot  = self._fpLeftRot  or leftRot
+		self._fpLeftRot = self._fpLeftRot or leftRot
 		self._fpRightRot = self._fpRightRot or rightRot
 
-		self._fpLeftRot  = self._fpLeftRot:Lerp(leftRot,  0.12)
+		self._fpLeftRot = self._fpLeftRot:Lerp(leftRot, 0.12)
 		self._fpRightRot = self._fpRightRot:Lerp(rightRot, 0.12)
 
-		ls.C0 = CFrame.new(leftArmCF.Position)  * self._fpLeftRot
-		rs.C0 = CFrame.new(rightArmCF.Position) * self._fpRightRot
+		ls.C0 =
+			CFrame.new(leftArmCF.Position)
+			* self._fpLeftRot
+
+		rs.C0 =
+			CFrame.new(rightArmCF.Position)
+			* self._fpRightRot
 	end)
 end
 
@@ -1583,6 +1677,7 @@ function BaseTool:drop()
 		character:SetAttribute("Sprint_Animation", nil)
 		character:SetAttribute("No_Sprint_Animation", nil)
 		character:SetAttribute("Aiming", nil)
+		character:SetAttribute("ADSMovementExempt", nil)
 		character:SetAttribute("CompassRight", nil)
 		character:SetAttribute("CompassDenied", nil)
 	end

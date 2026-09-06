@@ -365,8 +365,9 @@ function Crestfall:fire()
 		and self.RegisteredAnimations.Cycle
 		and self:_playAnim("Cycle")
 	local fireInterval = self.FireInterval or FIRE_INTERVAL
-	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / fireInterval, 0.01)) end
-	task.wait(fireInterval)
+	local effectiveInterval = self:getFireDelay(fireInterval)
+	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / effectiveInterval, 0.01)) end
+	task.wait(effectiveInterval)
 	self.Cycling = false
 	self.Firing = false
 	self:_restoreBaseDeferred()

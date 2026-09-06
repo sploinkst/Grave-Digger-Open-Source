@@ -331,9 +331,10 @@ function BaseFirearm:_enable_aiming_ui(max_aiming: number)
 			end
 
 			local breathHeldFor = tick() - self._breathStartTime
-			local windUp = math.clamp(breathHeldFor / 0.5, 0, 1)
+			local focusMultiplier = character:GetAttribute("OrderFocusMultiplier") or 1
+			local windUp = math.clamp(breathHeldFor / (0.5 / focusMultiplier), 0, 1)
 
-			local breathBonus = 5
+			local breathBonus = 5 * focusMultiplier
 
 			targetSpread = (self._spreadAtBreath or currentSpread)
 				+ ((-breathBonus) - (self._spreadAtBreath or currentSpread)) * windUp

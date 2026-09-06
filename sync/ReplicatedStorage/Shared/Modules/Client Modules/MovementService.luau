@@ -21,6 +21,7 @@ local Animator = nil
 local BaseSpeed          = 10
 local MaxSpeed           = 18
 local SprintRampTime     = 2
+local RestrictedSpeedMultiplier = 0.5
 
 -- // VAULT CONFIG
 local VAULT_RAYCAST_RANGE_1 = 2
@@ -163,10 +164,36 @@ local function resetSpeed()
 	SprintTicker = 0
 	setSprintAttribute(false)
 
+	local orderSpeed = Character:GetAttribute("OrderSpeedMultiplier") or 1
 	if Character:GetAttribute("Aiming") then
 		setHoldBreathe(false)
+
+		local exempt = Character:GetAttribute("ADSMovementExempt") == true
+
+		if not exempt then
+			Humanoid.WalkSpeed = BaseSpeed * RestrictedSpeedMultiplier * orderSpeed
+		else
+			Humanoid.WalkSpeed = BaseSpeed * orderSpeed
+		end
 	else
-		Humanoid.WalkSpeed = BaseSpeed
+		Humanoid.WalkSpeed = Character:GetAttribute("Crouching")
+			and (BaseSpeed * RestrictedSpeedMultiplier * orderSpeed)
+			or (BaseSpeed * orderSpeed)
+	end
+end
+
+local function applyRestrictedSpeed()
+	if not Character or not Humanoid then return end
+	local aiming = Character:GetAttribute("Aiming") == true
+	local crouching = Character:GetAttribute("Crouching") == true
+	-- Tools with an explicit alternate-movement mode opt out by setting this
+	-- attribute while aiming.  Every normal firearm remains restricted.
+	local exempt = aiming and Character:GetAttribute("ADSMovementExempt") == true
+	local orderSpeed = Character:GetAttribute("OrderSpeedMultiplier") or 1
+	if crouching or (aiming and not exempt) then
+		Humanoid.WalkSpeed = BaseSpeed * RestrictedSpeedMultiplier * orderSpeed
+	else
+		Humanoid.WalkSpeed = BaseSpeed * orderSpeed
 	end
 end
 
@@ -339,9 +366,12 @@ local function sprintLoop()
 			local elapsed = tick() - SprintTicker
 			local t = math.clamp(elapsed / SprintRampTime, 0, 1)
 
-			local sprintSpeed = lerp(0, MaxSpeed - BaseSpeed, t)
-			Humanoid.WalkSpeed = BaseSpeed + sprintSpeed
+			if Character:GetAttribute("Aiming") then
+				break
+			end
 
+			local sprintSpeed = lerp(0, MaxSpeed - BaseSpeed, t)
+			Humanoid.WalkSpeed = (BaseSpeed + sprintSpeed) * (Character:GetAttribute("OrderSpeedMultiplier") or 1)
 			if t >= 0.8 then
 				setSprintAttribute(true)
 			end
@@ -489,46 +519,66 @@ local function bindCharacterConnections()
 		end)
 	end))
 
-	-- Aiming attribute (single connection, no duplicate)
+	-- // Aiming attribute
 	track(Character:GetAttributeChangedSignal("Aiming"):Connect(function()
-		local aiming = Character:GetAttribute("Aiming")
+		local aiming = Character:GetAttribute("Aiming") == true
 
 		if aiming then
-			local cancelledSprint = false
+			Sprinting = false
+			LastSprintCancelTime = tick()
 
-			if Sprinting or LoopRunning then
-				cancelledSprint = true
-				Sprinting = false
-				LoopRunning = false
-				LastSprintCancelTime = tick()
-				setSprintAttribute(false)
+			setSprintAttribute(false)
 
-				if Humanoid then
-					Humanoid.WalkSpeed = BaseSpeed
-				end
+			print("[Aiming] Sprint cancelled")
 
-				print("[Aiming] Sprint cancelled")
-			end
+			-- Restrict movement while aiming
+			applyRestrictedSpeed()
 
+			-- Disable jumping while aiming
 			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
 
-			if not cancelledSprint
-				and SprintKeyHeld
-				and Character.Humanoid.MoveDirection.Magnitude <= 0
-				and (tick() - LastSprintCancelTime) >= AimSprintCooldown then
+			-- Only allow hold-breath when stationary
+			if SprintKeyHeld
+				and Humanoid.MoveDirection.Magnitude <= 0
+				and (tick() - LastSprintCancelTime) >= AimSprintCooldown
+			then
 				setHoldBreathe(true)
 			else
 				setHoldBreathe(false)
 			end
 
 		else
+			-- Restore jumping
 			Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+
 			setHoldBreathe(false)
 
-			if SprintKeyHeld and (tick() - LastSprintCancelTime) >= AimSprintCooldown then
+			-- Restore normal movement speed
+			applyRestrictedSpeed()
+
+			-- Resume sprint if the sprint key is still held
+			if SprintKeyHeld
+				and (tick() - LastSprintCancelTime) >= AimSprintCooldown
+			then
 				tryStartSprint()
 			end
 		end
+	end))
+
+	track(Character:GetAttributeChangedSignal("Crouching"):Connect(function()
+		if Character:GetAttribute("Crouching") then
+			Sprinting = false
+			setSprintAttribute(false)
+		end
+		applyRestrictedSpeed()
+	end))
+
+	track(Character:GetAttributeChangedSignal("ADSMovementExempt"):Connect(function()
+		if Character:GetAttribute("Aiming") then applyRestrictedSpeed() end
+	end))
+
+	track(Character:GetAttributeChangedSignal("OrderSpeedMultiplier"):Connect(function()
+		if not Sprinting then applyRestrictedSpeed() end
 	end))
 
 	-- HoldBreathe force-cancel detection
@@ -563,7 +613,7 @@ local function bindCharacter(char)
 	VelocityHistory = {}
 	fall_time = tick()
 
-	Humanoid.WalkSpeed = BaseSpeed
+	Humanoid.WalkSpeed = BaseSpeed * (char:GetAttribute("OrderSpeedMultiplier") or 1)
 
 	bindCharacterConnections()
 end

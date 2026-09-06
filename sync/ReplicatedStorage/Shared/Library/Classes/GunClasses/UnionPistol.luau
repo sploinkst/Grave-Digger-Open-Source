@@ -77,14 +77,11 @@ local function loadSteyrAnimations(): { [string]: Animation }
 		end
 	end
 
-	-- The Union's ADS pose uses Grace's authored pistol-holding animation.
-	-- It has no shoulder-specific variant, so both shoulders intentionally use
-	-- the same clip.
-	local graceHold = findAnimation(graceFolder, { "GraceRevolver_Held" })
-	if graceHold then
-		result.Aim = graceHold
-		result.Aim_Left = graceHold
-	end
+	-- The Union's one-handed ADS pose uses Grace's authored pistol animations.
+	local graceAim = findAnimation(graceFolder, { "GraceRevolver_Aim" })
+	local graceAimLeft = findAnimation(graceFolder, { "GraceRevolver_Aim_left" })
+	if graceAim then result.Aim = graceAim end
+	if graceAimLeft then result.Aim_Left = graceAimLeft else result.Aim_Left = graceAim end
 
 	return result
 end
@@ -345,7 +342,7 @@ function UnionPistol:fire()
 	self:_bounce_scoped_ui()
 	self:_fireMuzzleFlash()
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
-	task.wait(self.FireInterval)
+	task.wait(self:getFireDelay(self.FireInterval))
 	self.Firing = false
 	self:_restoreBaseDeferred()
 end
@@ -403,6 +400,10 @@ end
 
 function UnionPistol:_on_equip()
 	self.Equipped = true
+	-- Union has no authored sprint overlay; use Grace's compatible one while
+	-- this single-handed pistol is equipped.
+	local character = LOCAL_PLAYER.Character
+	if character then character:SetAttribute("Sprint_Animation", "GraceRevolver") end
 	self:_cacheMotor6D()
 	self:_connectInput()
 	self:_initShoulderTracking()

@@ -311,7 +311,7 @@ function HellionShotgun:fire()
 	self:_bounce_scoped_ui()
 	self:_fireMuzzleFlash()
 	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
-	task.wait(self.FireInterval)
+	task.wait(self:getFireDelay(self.FireInterval))
 	self.Firing = false
 	self:_restoreBaseDeferred()
 end

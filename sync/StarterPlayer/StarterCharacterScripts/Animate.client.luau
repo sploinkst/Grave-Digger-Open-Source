@@ -6,6 +6,7 @@ local input_service             = game:GetService("UserInputService")
 local replicatedstorage_service = game:GetService("ReplicatedStorage")
 local run_service               = game:GetService("RunService")
 local player_service            = game:GetService("Players")
+local keyframe_sequence_provider = game:GetService("KeyframeSequenceProvider")
 
 local sound_module = require(script:WaitForChild("Sound"))
 
@@ -25,6 +26,11 @@ end
 local humanoid_root_part = character:WaitForChild("HumanoidRootPart")
 
 local animations_folder = replicatedstorage_service.Shared.Assets.Animations.Character
+local sprint_folder = animations_folder:FindFirstChild("Sprint")
+local function sprint_animation(name: string): Instance?
+	local candidate = sprint_folder and sprint_folder:FindFirstChild(name)
+	return candidate and (candidate:IsA("Animation") or candidate:IsA("KeyframeSequence")) and candidate or nil
+end
 
 local animations_table = {
 	animations_folder.Idles.Stand_Idle,
@@ -38,12 +44,14 @@ local animations_table = {
 
 	animations_folder.Jumping.Climb,
 
-	animations_folder.Sprint.Sprint,
-	animations_folder.Sprint.Sprint_Lean,
-	animations_folder.Sprint.Sprinting_Full,
-	animations_folder.Sprint.Sprint_Arms,
-	animations_folder.Sprint.PrinceRifle_Sprint,
-	animations_folder.Sprint.GraceRevolver_Sprint,
+	-- Sprint was restored without the old generic `Sprint` child.  Each entry
+	-- is optional so a renamed/missing overlay cannot stop Animate from loading.
+	sprint_animation("Sprint"),
+	sprint_animation("Sprint_Lean"),
+	sprint_animation("Sprinting_Full"),
+	sprint_animation("Sprint_Arms"),
+	sprint_animation("PrinceRifle_Sprint"),
+	sprint_animation("GraceRevolver_Sprint"),
 
 	animations_folder.Walking.Crouch.CrouchWalk_Forward,
 	animations_folder.Walking.Crouch.CrouchWalk_Left,
@@ -105,7 +113,19 @@ local function load_animations()
 			continue
 		end
 
-		local track = animator:LoadAnimation(animation)
+		local playable = animation
+		if animation:IsA("KeyframeSequence") then
+			playable = Instance.new("Animation")
+			playable.Name = animation.Name
+			playable.AnimationId = keyframe_sequence_provider:RegisterKeyframeSequence(animation)
+		end
+		-- Studio may retain an empty legacy Animation alongside newly authored
+		-- keyframe clips.  Ignore it rather than aborting all walking/sprinting.
+		if playable:IsA("Animation") and playable.AnimationId == "" then
+			warn("[Animate] Skipping empty animation:", animation.Name)
+			continue
+		end
+		local track = animator:LoadAnimation(playable)
 
 		-- PRIORITIES
 		if animation.Name == "Climb" then

@@ -215,7 +215,10 @@ function Util.register_animations(player: Player, animations_table: table, gunTy
 	local animationResolver=require(resolverScript)
 
 	for name, anim in pairs(animations_table) do
-		if typeof(anim) ~= "Instance" or not anim:IsA("Animation") then
+		if typeof(anim) == "Instance" and not anim:IsA("Animation") and not anim:IsA("KeyframeSequence") then
+			anim = anim:FindFirstChildWhichIsA("Animation", true) or anim:FindFirstChildWhichIsA("KeyframeSequence", true)
+		end
+		if typeof(anim) ~= "Instance" or not (anim:IsA("Animation") or anim:IsA("KeyframeSequence")) then
 			warn("Invalid animation for key:", name, "| Expected Animation, got:", typeof(anim))
 			continue
 		end
@@ -336,7 +339,7 @@ function Util.setupFastCast(config: {
 		if not cast.UserData then
 			cast.UserData = {}
 		end
-		
+
 		local shooter    = cast.UserData and cast.UserData.Shooter
 		print("UserData is:", table.concat(cast.UserData, ","))
 
@@ -353,7 +356,7 @@ function Util.setupFastCast(config: {
 				print("friendly fire guard passed", faction.Name, team.Name, shooter.Name)
 				return true
 			end
-			
+
 			print("friendly fire guard failed", faction.Name, team.Name, shooter.Name)
 			return false
 		end
@@ -569,6 +572,10 @@ function Util.applyRecoil(
 	local horizontalDegrees = horizontalDirection * (0.55 + recoil * horizontalVariation)
 	local vertical = math.rad(verticalDegrees)
 	local horizontal = math.rad(horizontalDegrees)
+	local character = game.Players.LocalPlayer.Character
+	local recoilMultiplier = character and character:GetAttribute("OrderRecoilMultiplier") or 1
+	vertical *= recoilMultiplier
+	horizontal *= recoilMultiplier
 
 	Camera_Service.ApplyRecoil(
 		vertical,
@@ -594,9 +601,9 @@ function Util.check_for_helmet(character)
 		local accessoryModel = part1.Parent
 		if not accessoryModel then continue end
 
-		if accessoryModel:FindFirstChild("Helmet") then
-			local unknockable = accessoryModel:GetAttribute("Unknockable")
-			return accessoryModel, not unknockable
+		if accessoryModel:FindFirstChild("Helmet") or part1:GetAttribute("ClassHelmet") then
+			local unknockable = accessoryModel:GetAttribute("Unknockable") or part1:GetAttribute("Unknockable")
+			return if part1:GetAttribute("ClassHelmet") then part1 else accessoryModel, not unknockable
 		end
 	end
 

@@ -534,6 +534,13 @@ function Module.AssignTool(tool)
 	AssignTool(tool)
 end
 
+function Module.UnequipCurrent()
+	if EquipTool(nil) then
+		selectedKey = nil
+		UpdateHighlight(nil)
+	end
+end
+
 function Module.RemoveTool(tool)
 	RemoveTool(tool)
 end

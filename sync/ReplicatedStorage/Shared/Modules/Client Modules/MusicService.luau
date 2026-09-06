@@ -10,6 +10,7 @@ local Assets = SharedFolder:WaitForChild("Assets")
 local Sounds = Assets:WaitForChild("Sounds")
 local Music = Sounds:WaitForChild("Music")
 local Game = Sounds:WaitForChild("Game")
+local Atmosphere = Sounds:WaitForChild("Atmosphere")
 
 -- // Variables
 local currentAtmosphere
@@ -44,6 +45,20 @@ function MusicService.PlayAdvance()
 end
 
 function MusicService.start_module()
+	-- Every client owns its own ambience track. Keeping the clone in
+	-- SoundService makes it non-positional and prevents character respawns from
+	-- stopping it.
+	if currentAtmosphere and currentAtmosphere.Parent then return end
+	local source = Atmosphere:WaitForChild("cave5")
+	if not source:IsA("Sound") then
+		warn("[MusicService] Atmosphere.cave5 is not a Sound")
+		return
+	end
+	currentAtmosphere = source:Clone()
+	currentAtmosphere.Name = "CaveAtmosphere"
+	currentAtmosphere.Looped = true
+	currentAtmosphere.Parent = SoundService
+	currentAtmosphere:Play()
 end
 
 return MusicService

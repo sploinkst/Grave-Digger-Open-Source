@@ -37,9 +37,27 @@ local stumble_animation = ReplicatedStorage:WaitForChild("Shared").Assets.Animat
 
 local AmmoPackEvent = replicant_folder:WaitForChild("AmmoPack")
 local AmmoPack = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Equipment"):WaitForChild("AmmoPack")
+local AmmoPouchSounds = ReplicatedStorage.Shared.Assets.Equipment.Sounds:FindFirstChild("ammopouch")
+local WhistleSounds = ReplicatedStorage.Shared.Assets.Equipment.Sounds:FindFirstChild("whistle")
+local EquipmentAssets = ReplicatedStorage.Shared.Assets:FindFirstChild("Equipment")
+local WhistleOrderEvent = replicant_folder:FindFirstChild("WhistleOrder") :: RemoteEvent?
+if not WhistleOrderEvent then
+	WhistleOrderEvent = Instance.new("RemoteEvent")
+	WhistleOrderEvent.Name = "WhistleOrder"
+	WhistleOrderEvent.Parent = replicant_folder
+end
+local WhistleEquipEvent = replicant_folder:FindFirstChild("WhistleEquip") :: RemoteEvent?
+if not WhistleEquipEvent then
+	WhistleEquipEvent = Instance.new("RemoteEvent")
+	WhistleEquipEvent.Name = "WhistleEquip"
+	WhistleEquipEvent.Parent = replicant_folder
+end
 local Helmet_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Helmet
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 local hellionHelmetHits = {}
+-- Replace this asset when the final helmet-pop sound is uploaded.  The shooter
+-- is recorded now so the client-only sound can be played for them later.
+local HELMET_POP_SOUND_ID = "rbxassetid://0"
 local jesseGrenadeEvent=replicant_folder:FindFirstChild("JesseGrenade")::RemoteEvent?
 if not jesseGrenadeEvent then jesseGrenadeEvent=Instance.new("RemoteEvent"); jesseGrenadeEvent.Name="JesseGrenade"; jesseGrenadeEvent.Parent=replicant_folder end
 local dualWieldEvent = replicant_folder:FindFirstChild("DualWield") :: RemoteEvent?
@@ -108,16 +126,33 @@ function module.stumble_player(character)
 	end)
 end
 
-function module.pop_helmet(character, helmet_model, knockable: boolean)
+function module.pop_helmet(character, helmet_model, knockable: boolean, shooter: Player?)
 	print("[POP_HELMET] Attempting to pop helmet for character:", character.Name, helmet_model.Name, knockable)
 
 	if knockable then
+		if shooter then shooter:SetAttribute("LastHelmetPopSound", HELMET_POP_SOUND_ID) end
 		print("[POP_HELMET] Helmet is knockable.")
 		local head_part = helmet_model:FindFirstChild("Head")
-		if not head_part then
-			warn("Helmet head part missing")
+		-- Outfit helmets mount directly to the character Head through an
+		-- AccessoryWeld and do not contain a duplicate part named Head.
+		local classWeld = character:FindFirstChild("Head") and character.Head:FindFirstChild("AccessoryWeld")
+		local isMountedClassHelmet = classWeld and classWeld.Part1 and (
+			classWeld.Part1 == helmet_model or classWeld.Part1:IsDescendantOf(helmet_model)
+		)
+		if not head_part and isMountedClassHelmet then
+			classWeld:Destroy()
+			helmet_model:PivotTo(CFrame.new(character.Head.Position))
+			helmet_model.Parent = workspace.Game_Details.Debris
+			helmet_model:SetAttribute("Knocked", true)
+			for _, part in character:GetDescendants() do
+				if part:IsA("BasePart") then
+					local original = part:GetAttribute("ClassHairTransparency")
+					if type(original) == "number" then part.Transparency = original; part:SetAttribute("ClassHairTransparency", nil) end
+				end
+			end
 			return
 		end
+		if not head_part then warn("Helmet head part missing"); return end
 
 		for _, child in helmet_model:GetChildren() do
 			if not child:GetAttribute("Knock") then
@@ -173,6 +208,16 @@ function module.pop_helmet(character, helmet_model, knockable: boolean)
 		end
 		
 		helmet_model:SetAttribute("Knocked", true)
+		-- ClassAppearance hides hair only while the helmet is actually worn.
+		for _, part in character:GetDescendants() do
+			if part:IsA("BasePart") then
+				local original = part:GetAttribute("ClassHairTransparency")
+				if type(original) == "number" then
+					part.Transparency = original
+					part:SetAttribute("ClassHairTransparency", nil)
+				end
+			end
+		end
 	else
 		print("[POP_HELMET] Helmet is unknockable.")
 		-- // force stumble character
@@ -224,6 +269,220 @@ local function getCompassData(player, arm)
 end
 
 function module.start_module()
+	-- A call is evaluated server-side every quarter second.  This keeps range,
+	-- team checks, death, and players walking out of the radius authoritative.
+	type OfficerCall = {order: string, expiresAt: number, character: Model, team: Team?}
+	local officerCalls: {[Player]: {OfficerCall}} = {}
+	local lastWhistleRequest = {}
+	player_service.PlayerRemoving:Connect(function(player)
+		officerCalls[player] = nil
+		lastWhistleRequest[player] = nil
+	end)
+	local rareCooldownMessages = {
+		"I'm just yapping right now.", "Who asked?", "Why is everyone so mean to me <.",
+		"I'm being ignored, this is un-acceptable.", "Why is no one listening to me?",
+	}
+	local callMultipliers = {
+		Advance = { speed = 1.15, reload = 1, fireRate = 1, focus = 1, recoil = 1 },
+		Defend = { speed = 1, reload = 1.15, fireRate = 1.15, focus = 1, recoil = 1 },
+		Focus = { speed = 1, reload = 1, fireRate = 1, focus = 1.15, recoil = 0.8 },
+	}
+	WhistleEquipEvent.OnServerEvent:Connect(function(player, equipped)
+		if type(equipped) ~= "boolean" then return end
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if character and humanoid and humanoid.Health > 0
+			and character:GetAttribute("Class") == "Officer"
+			and character:GetAttribute("Equipment") == "TrenchWhistle" then
+			local existingTool = character:FindFirstChild("TrenchWhistleTool")
+			if not equipped then
+				character:SetAttribute("WhistleEquipped", nil)
+				if existingTool then existingTool:Destroy() end
+				local backpackTool = player:FindFirstChildOfClass("Backpack")
+					and player.Backpack:FindFirstChild("TrenchWhistleTool")
+				if backpackTool then backpackTool:Destroy() end
+				return
+			end
+			if existingTool then return end
+			local source = EquipmentAssets and (EquipmentAssets:FindFirstChild("whistle") or EquipmentAssets:FindFirstChild("Whistle"))
+			if not source then warn("[TrenchWhistle] Missing Assets.Equipment.whistle"); return end
+			local tool = Instance.new("Tool")
+			tool.Name = "TrenchWhistleTool"
+			tool.CanBeDropped = false
+			tool.RequiresHandle = true
+			local model = source:Clone()
+			model.Parent = tool
+			local handle = if model:IsA("BasePart") then model
+				else model:FindFirstChild("hitbox", true) or model:FindFirstChild("Handle", true) or model:FindFirstChildWhichIsA("BasePart", true)
+			if not handle or not handle:IsA("BasePart") then tool:Destroy(); warn("[TrenchWhistle] whistle needs a BasePart handle"); return end
+			handle.Name = "Handle"
+			handle.Parent = tool
+			for _, part in tool:GetDescendants() do
+				if part:IsA("BasePart") then
+					part.Anchored = false
+					part.CanCollide = false
+					part.CanTouch = false
+					part.Massless = true
+					if part ~= handle then
+						local weld = Instance.new("WeldConstraint")
+						weld.Part0 = handle; weld.Part1 = part; weld.Parent = handle
+					end
+				end
+			end
+			tool.Grip = CFrame.new(0, -.8, -.2) * CFrame.Angles(math.rad(90), 0, math.rad(90))
+			-- This is a hidden hotbar Tool.  Unequip on the server first so every
+			-- gun/melee item is removed from the hands before the whistle equips.
+			local backpack = player:WaitForChild("Backpack")
+			for _, heldTool in ipairs(character:GetChildren()) do
+				if heldTool:IsA("Tool") then heldTool.Parent = backpack end
+			end
+			humanoid:UnequipTools()
+			-- Follow the normal Backpack -> EquipTool pipeline. ToolService leaves
+			-- this internal item to EquipmentClasses, so it never appears as a slot.
+			tool.Parent = backpack
+			character:SetAttribute("WhistleEquipped", true)
+			humanoid:EquipTool(tool)
+			local activeCalls = officerCalls[player] or {}
+			WhistleOrderEvent:FireClient(player, "State",
+				math.max(0, (character:GetAttribute("OfficerOrderCapacity") or 1) - #activeCalls))
+			-- Switching back to a weapon holsters and removes the temporary whistle.
+			tool.Unequipped:Connect(function()
+				task.defer(function()
+					if tool.Parent and tool.Parent ~= character then
+						character:SetAttribute("WhistleEquipped", nil)
+						tool:Destroy()
+					end
+				end)
+			end)
+		end
+	end)
+
+	WhistleOrderEvent.OnServerEvent:Connect(function(player, order, duration)
+		if type(order) ~= "string" or not callMultipliers[order]
+			or (duration ~= 30 and duration ~= 60) then return end
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not character or not humanoid or humanoid.Health <= 0 or not root
+			or character:GetAttribute("Class") ~= "Officer"
+			or character:GetAttribute("WhistleEquipped") ~= true
+			or not character:FindFirstChild("TrenchWhistleTool") then return end
+		local now = os.clock()
+		if now - (lastWhistleRequest[player] or -math.huge) < .3 then return end
+		lastWhistleRequest[player] = now
+		local calls = officerCalls[player] or {}
+		for index = #calls, 1, -1 do
+			if calls[index].expiresAt <= now or calls[index].character ~= character then table.remove(calls, index) end
+		end
+		local capacity = math.clamp(character:GetAttribute("OfficerOrderCapacity") or 1, 1, 2)
+		for _, call in calls do
+			if call.order == order then
+				local message = "That order is already active."
+				if math.random(1, 20) == 1 then
+					message = rareCooldownMessages[math.random(1, #rareCooldownMessages)]
+				end
+				WhistleOrderEvent:FireClient(player, "Rejected", message)
+				return
+			end
+		end
+		if #calls >= capacity then
+			local message = "Your active order must expire before issuing another."
+			if math.random(1, 20) == 1 then
+				message = rareCooldownMessages[math.random(1, #rareCooldownMessages)]
+			end
+			WhistleOrderEvent:FireClient(player, "Rejected", message)
+			return
+		end
+		table.insert(calls, { order = order, expiresAt = now + duration, character = character, team = player.Team })
+		officerCalls[player] = calls
+		character:SetAttribute("OfficerOrderCharges", capacity - #calls)
+		WhistleOrderEvent:FireClient(player, "Accepted", capacity - #calls, order)
+		task.delay(duration, function()
+			if not player.Parent or player.Character ~= character then return end
+			local current = officerCalls[player]
+			if not current then return end
+			for index = #current, 1, -1 do
+				if current[index].expiresAt <= os.clock() then table.remove(current, index) end
+			end
+			WhistleOrderEvent:FireClient(player, "State", capacity - #current)
+		end)
+
+		local sound = WhistleSounds and WhistleSounds:FindFirstChild("whistle_" .. string.lower(order))
+		if sound and sound:IsA("Sound") then
+			local clone = sound:Clone()
+			clone.PlaybackSpeed = 1.15
+			clone.Volume *= 5
+			clone.Parent = root
+			clone:Play()
+			Debris:AddItem(clone, math.max(clone.TimeLength + 0.25, 2))
+		end
+	end)
+
+	local auraElapsed = 0
+	RunService.Heartbeat:Connect(function(deltaTime)
+		auraElapsed += deltaTime
+		if auraElapsed < 0.25 then return end
+		auraElapsed = 0
+		local now = os.clock()
+		-- Prune independently of recipients, including when everybody is dead.
+		for officer, calls in officerCalls do
+			local character = officer.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			for index = #calls, 1, -1 do
+				local call = calls[index]
+				if call.expiresAt <= now or call.character ~= character or call.team ~= officer.Team
+					or not humanoid or humanoid.Health <= 0 or character:GetAttribute("Class") ~= "Officer" then
+					table.remove(calls, index)
+				end
+			end
+			if #calls == 0 then officerCalls[officer] = nil end
+		end
+		for _, player in player_service:GetPlayers() do
+			local character = player.Character
+			if character then
+				character:SetAttribute("OfficerOrderCharges", math.max(0,
+					(character:GetAttribute("OfficerOrderCapacity") or 1) - #(officerCalls[player] or {})))
+			end
+		end
+		for _, recipient in player_service:GetPlayers() do
+			local character = recipient.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if character and root and humanoid then
+				local speed, reload, fireRate, focus, recoil = 1, 1, 1, 1, 1
+				local applied = {}
+				for officer, calls in pairs(officerCalls) do
+					local officerCharacter = officer.Character
+					local officerRoot = officerCharacter and officerCharacter:FindFirstChild("HumanoidRootPart")
+					local officerHumanoid = officerCharacter and officerCharacter:FindFirstChildOfClass("Humanoid")
+					for index = #calls, 1, -1 do
+						if calls[index].expiresAt <= now then table.remove(calls, index) end
+					end
+					if not officerRoot or not officerHumanoid or officerHumanoid.Health <= 0 then
+						officerCalls[officer] = nil
+					elseif #calls == 0 then
+						officerCalls[officer] = nil
+					elseif humanoid.Health > 0 and (officer == recipient or (officer.Team ~= nil and officer.Team == recipient.Team))
+						and (officerRoot.Position - root.Position).Magnitude <= 80 then
+						for _, call in calls do
+							if not applied[call.order] then
+								-- Same-name orders from several Officers never stack.
+								applied[call.order] = true
+								local bonus = callMultipliers[call.order]
+								speed *= bonus.speed; reload *= bonus.reload; fireRate *= bonus.fireRate
+								focus *= bonus.focus; recoil *= bonus.recoil
+							end
+						end
+					end
+				end
+				character:SetAttribute("OrderSpeedMultiplier", speed)
+				character:SetAttribute("OrderReloadMultiplier", reload)
+				character:SetAttribute("OrderFireRateMultiplier", fireRate)
+				character:SetAttribute("OrderFocusMultiplier", focus)
+				character:SetAttribute("OrderRecoilMultiplier", recoil)
+			end
+		end
+	end)
 	jesseGrenadeEvent.OnServerEvent:Connect(function(player,origin,direction)
 		if typeof(origin)~="Vector3" or typeof(direction)~="Vector3" or direction.Magnitude<.9 then return end
 		local character=player.Character; local root=character and character:FindFirstChild("HumanoidRootPart")
@@ -304,6 +563,8 @@ function module.start_module()
 		local weaponName = hitData.WeaponName
 		local isJudgement = weaponName == "JudgementRifle"
 			and character:FindFirstChild("JudgementRifle") ~= nil
+		local isAMR = weaponName == "AntiMaterialRifle"
+			and character:FindFirstChild("AntiMaterialRifle") ~= nil
 		local isHellion = weaponName == "HellionShotgun"
 			and character:FindFirstChild("HellionShotgun") ~= nil
 		local isUnion = weaponName == "UnionPistol"
@@ -341,13 +602,23 @@ function module.start_module()
 
 		if isHeadshot then
 			local helmet, knockable = Util.check_for_helmet(hitCharacter)
+			-- A helmet absorbs only its first non-penetrating headshot. It may remain
+			-- visibly attached, but no longer protects a second hit.
+			if helmet and helmet:GetAttribute("HelmetSpent") then helmet = nil end
 
 			if helmet then
+				-- AMR defeats every helmet at every distance. Judgement does the same
+				-- inside its close-range penetration band.
+				if isAMR then
+					if not helmet:GetAttribute("Knocked") then module.pop_helmet(hitCharacter, helmet, true, player) end
+					humanoid:TakeDamage(humanoid.MaxHealth)
+					return
+				end
 				-- Union's weak 9mm knocks ordinary helmets only at point-blank range.
 				-- At 30 studs and beyond, the helmet deflects the shot untouched.
 				if isUnion then
 					if distance < 30 and knockable and not helmet:GetAttribute("Knocked") then
-						module.pop_helmet(hitCharacter, helmet, true)
+						module.pop_helmet(hitCharacter, helmet, true, player)
 					end
 					return
 				end
@@ -364,7 +635,7 @@ function module.start_module()
 						-- Four close pellets strip a resistant Shock Trooper helmet. At
 						-- long range ordinary helmets deflect the pattern and stay on.
 						if not knockable and distance <= 35 and not helmet:GetAttribute("Knocked") then
-							module.pop_helmet(hitCharacter, helmet, true)
+							module.pop_helmet(hitCharacter, helmet, true, player)
 						end
 						humanoid:TakeDamage(100)
 						if hitPlayer then
@@ -377,26 +648,20 @@ function module.start_module()
 					return
 				end
 
-				-- Judgement's .577 Alloy round punches through ordinary helmets
-				-- inside 60 studs. Unknockable helmets are the Lancer exception.
+				-- Judgement's .577 Alloy round punches through any helmet inside 60 studs.
 				if isJudgement and distance < 60 then
-					if knockable then
-						if not helmet:GetAttribute("Knocked") then
-							module.pop_helmet(hitCharacter, helmet, true)
-						end
-						humanoid:TakeDamage(damage or 199)
-						if humanoid.Health <= 0 then
-							player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
-						end
-					else
-						humanoid.Health = math.min(humanoid.Health, 100)
-					end
+					if not helmet:GetAttribute("Knocked") then module.pop_helmet(hitCharacter, helmet, true, player) end
+					humanoid:TakeDamage(humanoid.MaxHealth)
+					player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
 					return
 				end
 
-				-- Only pop if not already knocked
-				if not helmet:GetAttribute("Knocked") then
-					module.pop_helmet(hitCharacter, helmet, knockable)
+				-- Standard rounds are absorbed once. Close/high-energy hits are more
+				-- likely to knock it off, while a distant shot can leave it visibly on.
+				helmet:SetAttribute("HelmetSpent", true)
+				local popChance = math.clamp(0.8 - (distance / 250), 0.2, 0.8)
+				if knockable and not helmet:GetAttribute("Knocked") and math.random() < popChance then
+					module.pop_helmet(hitCharacter, helmet, true, player)
 				end
 
 				if hitPlayer then
@@ -637,6 +902,21 @@ function module.start_module()
 		clone.Anchored = false; clone.CanCollide = true; clone.CanTouch = true
 		clone.Parent = workspace
 		clone.AssemblyLinearVelocity = root.CFrame.LookVector * 20 + Vector3.new(0, 8, 0)
+		-- Soldat's thrown pouch gets one of the authored ammo-pouch throw sounds.
+		local choices = {}
+		if AmmoPouchSounds then
+			for _, sound in AmmoPouchSounds:GetChildren() do
+				if sound:IsA("Sound") then table.insert(choices, sound) end
+			end
+		end
+		if #choices > 0 then
+			local sound = choices[math.random(1, #choices)]:Clone()
+			sound.Parent = clone
+			sound:Play()
+			Debris:AddItem(sound, math.max(sound.TimeLength + 0.25, 2))
+		else
+			warn("[AmmoPack] Missing Assets.Equipment.Sounds.ammopouch ammo1/ammo2/ammo3")
+		end
 		local consumed = false
 		local team = player.Team
 		clone.Touched:Connect(function(hit)
