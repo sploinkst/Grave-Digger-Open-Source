@@ -70,11 +70,15 @@ end
 -- // funcs
 
 local function getModelFromInstance(instance: Instance)
-	if not instance then return nil end
-	if instance:IsA("Model") then
-		return instance
+	local nearestModel
+	while instance and instance ~= workspace do
+		if instance:IsA("Model") then
+			nearestModel = nearestModel or instance
+			if instance:FindFirstChildOfClass("Humanoid") then return instance end
+		end
+		instance = instance.Parent
 	end
-	return instance:FindFirstAncestorOfClass("Model")
+	return nearestModel
 end
 
 local function getHumanoid(model: Model)
@@ -559,6 +563,7 @@ function module.start_module()
 		if not humanoid or humanoid.Health <= 0 then return end
 
 		local hitCharacter = model
+		if require(script.Parent.ClassCombatService).Blocks(hitCharacter, hrp.Position) then return end
 		local hitPlayer    = game.Players:GetPlayerFromCharacter(hitCharacter)
 		local weaponName = hitData.WeaponName
 		local isJudgement = weaponName == "JudgementRifle"
@@ -777,7 +782,15 @@ function module.start_module()
 	end)
 	
 	melee_connection.OnServerEvent:Connect(function(player, targetCharacter, meleeRange, damage, weaponName)
-		print("Received melee_connection from", player.Name, "target:", targetCharacter.Name, "range:", meleeRange, "damage:", damage)
+		local character = player.Character
+		if not character or typeof(targetCharacter) ~= "Instance" or not targetCharacter:IsA("Model")
+			or not character:FindFirstChild("HumanoidRootPart") or not targetCharacter:FindFirstChild("HumanoidRootPart")
+			or type(meleeRange) ~= "number" or type(damage) ~= "number" or damage ~= damage or meleeRange ~= meleeRange
+			or type(weaponName) ~= "string" or not character:FindFirstChild(weaponName) then return end
+		-- Class melee uses ClassCombatService; never accept client damage/range for it.
+		if weaponName == "lance" or weaponName == "shield" or character:FindFirstChild("lance")
+			or character:FindFirstChild("shield") then return end
+		if require(script.Parent.ClassCombatService).Blocks(targetCharacter, character.HumanoidRootPart.Position) then return end
 		
 		if player.Name == targetCharacter.Name then
 			return

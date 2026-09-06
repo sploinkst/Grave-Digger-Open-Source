@@ -33,7 +33,7 @@ function Controller.Swing(self, mode)
 	self._meleeStep = (self._meleeStep or 0) % 2 + 1
 	self:_stopAllExcept()
 	local animation = (mode == "Stab" and "Stab" or "Melee") .. self._meleeStep
-	local track = self:_playAnim(animation)
+	local track = self.RegisteredAnimations and self:_playAnim(animation)
 	if track then track.Looped = false; track.Priority = Enum.AnimationPriority.Action3 end
 	Controller.Remote():FireServer(mode, Controller.Direction())
 	local tool = self.tool
@@ -42,7 +42,7 @@ function Controller.Swing(self, mode)
 		if track then track:Stop(.08) end
 		if self.Equipped and self.tool == tool and tool.Parent == character then
 			self:_restoreBase()
-			if mode == "ShieldSwing" and self.holding_aim_button then Controller.Remote():FireServer("Block", true) end
+			if mode == "ShieldSwing" and (self.holding_aim_button or self.FullGuard) then Controller.Remote():FireServer("Block", true) end
 		end
 	end)
 end

@@ -48,8 +48,8 @@ Classes.EliteDefinitions = {
 	-- Storm Trooper and Anti-Material Trooper, while the migrated assets are
 	-- The visual models are mpgun/pugsley; their weapon controllers are kept
 	-- with the standard firearm controllers in GunClasses.
-	["Storm Trooper"] = { Primary = "StormRifle", Secondary = "GraceRevolver", RequiredClass = "Soldat" },
-	["Anti-Material Trooper"] = { Primary = "AntiMaterialRifle", Secondary = "GraceRevolver", RequiredClass = "Rook" },
+	["Storm Trooper"] = { Primary = "StormRifle", Secondary = "GraceRevolver", RequiredClass = "Soldat", OutfitClass = "Soldat" },
+	["Anti-Material Trooper"] = { Primary = "AntiMaterialRifle", Secondary = "GraceRevolver", RequiredClass = "Rook", OutfitClass = "Rook" },
 }
 
 function Classes.Get(name)

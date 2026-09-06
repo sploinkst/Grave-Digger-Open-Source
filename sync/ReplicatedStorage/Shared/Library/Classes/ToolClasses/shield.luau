@@ -39,6 +39,8 @@ function Shield.new(info: Types.BaseToolCreateInfo): Shield
 		Aim = animations and (animations:FindFirstChild("shieldraised_aimed") or animations:FindFirstChild("aim_normal")),
 		Aim_Normal = animations and animations:FindFirstChild("aim_normal"),
 		Aim_Raised = animations and animations:FindFirstChild("shieldraised_aimed"),
+		FullGuardAim = animations and animations:FindFirstChild("sword_fullguard_aimed"),
+		FullGuardHold = animations and animations:FindFirstChild("sword_fullguard_idle"),
 		Draw = animations and animations:FindFirstChild("draw"),
 		Hold = animations and (animations:FindFirstChild("held") or animations:FindFirstChild("shieldraised_idle")),
 		Hold_Normal = animations and animations:FindFirstChild("held"),
@@ -75,6 +77,7 @@ function Shield:_on_equip()
 end
 
 function Shield:_on_unequip()
+	self.FullGuard = false
 	Combat.Remote():FireServer("Block", false)
 	self:_disconnectInput()
 	self:_stopAimTracking()
@@ -87,15 +90,44 @@ end
 function Shield:aim()
 	if not self.Equipped or self.Meleeing then return end
 	BaseTool.aim(self)
+	if self.FullGuard then self:_restoreBase() end
 	Combat.Remote():FireServer("Block", true)
 end
 
 function Shield:endAiming()
 	BaseTool.endAiming(self)
-	Combat.Remote():FireServer("Block", false)
+	Combat.Remote():FireServer("Block", self.FullGuard == true)
+	if self.FullGuard then self:_restoreBase() end
 end
 
-function Shield:setAltMode() end
+function Shield:_aimTrack()
+	local tracks = self.RegisteredAnimations
+	if self.FullGuard and tracks and tracks.FullGuardAim then return tracks.FullGuardAim end
+	return BaseTool._aimTrack(self)
+end
+
+function Shield:_restoreBase()
+	local tracks = self.RegisteredAnimations
+	if self.FullGuard and self.Equipped and not self:_isBusy() and tracks then
+		local track = self.Aiming and tracks.FullGuardAim or tracks.FullGuardHold
+		if track then
+			self:_stopAllExcept(track)
+			track.Looped = true
+			track.Priority = Enum.AnimationPriority.Action2
+			if not track.IsPlaying then track:Play(.1) end
+			return
+		end
+	end
+	BaseTool._restoreBase(self)
+end
+
+function Shield:setAltMode()
+	if not self.Equipped or self.Equipping or self:_isBusy() then return end
+	self.FullGuard = not self.FullGuard
+	self:_stopAllExcept()
+	Combat.Remote():FireServer("Block", self.FullGuard or self.Aiming == true)
+	self:_restoreBase()
+end
 
 Shield.Tool_Image = ""
 Shield.Weight = 2

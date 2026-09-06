@@ -499,7 +499,7 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 			character.elitekit.Value == "lancer"
 
 		if isCharging or isFallIntr then
-			if (perk == "butcher" or perk == "vet" or hasLancer) and class == "lancer" then
+			if character:GetAttribute("ImprovedCharge") or ((perk == "butcher" or perk == "vet" or hasLancer) and class == "lancer") then
 				maxRate = math.rad(6)
 			else
 				maxRate = math.rad(2)

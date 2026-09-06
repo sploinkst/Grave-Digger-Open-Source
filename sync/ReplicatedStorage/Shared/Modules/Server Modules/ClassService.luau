@@ -134,6 +134,7 @@ function Service.ApplySpawn(player, character)
 	if runtimeClass and runtimeClass:IsA("StringValue") then runtimeClass.Value = name end
 	character:SetAttribute("EliteClass", eliteName)
 	character:SetAttribute("IsShockTrooper", elite ~= nil)
+	character:SetAttribute("ClassOutfit", if elite then elite.OutfitClass or elite.RequiredClass else name)
 	publishCharacterData(player, character, name, equipment)
 	character:SetAttribute("InventoryWeight", definition.MaxWeight)
 	character:SetAttribute("OfficerOrderCapacity", if name == "Officer" and hasPerk(player, "Survivalist") then 2 else 1)

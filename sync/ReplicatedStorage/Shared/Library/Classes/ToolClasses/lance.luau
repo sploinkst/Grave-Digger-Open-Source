@@ -2,7 +2,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local Combat = require(script.Parent.Parent.MeleeController)
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseTool = require(script.Parent.Parent.BaseTool)
@@ -17,7 +17,7 @@ export type Lance = typeof(setmetatable({} :: any, Lance))
 local function faction(character: Model?): string
 	local team = character and character:FindFirstChild("team")
 	if team and team:IsA("StringValue") and team.Value ~= "" then return team.Value end
-	return (Players.LocalPlayer.Team and Players.LocalPlayer.Team.Name) or "Royal Nation"
+	return (Players.LocalPlayer and Players.LocalPlayer.Team and Players.LocalPlayer.Team.Name) or "Royal Nation"
 end
 
 local function modelForFaction(character: Model?): Model?
@@ -31,7 +31,7 @@ function Lance.new(info: Types.BaseToolCreateInfo): Lance
 	local owner = (info :: any).player or Players.LocalPlayer
 	self.className = "lance"
 	self.name = "lance"
-	self.AnimationGunType = "Lance"
+	self.AnimationGunType = "lance"
 	self.Designation = "Primary"
 	self.WeaponCategory = "Melee"
 	self.model_reference = modelForFaction(owner and owner.Character)
@@ -51,12 +51,12 @@ function Lance.new(info: Types.BaseToolCreateInfo): Lance
 		Stab2 = animations and animations:FindFirstChild("stab2"),
 		Sprint = animations and animations:FindFirstChild("sprint"),
 		Unequip = animations and animations:FindFirstChild("unequip"),
+		RaiseFlag = animations and animations:FindFirstChild("raise_flag"),
 	}
-	self.Melee_Damage = 135
+	self.Melee_Damage = 130
 	self.MeleeRange = 7
-	self.ChargeDamage = 220
-	self.ChargeRange = 24
-	self.ChargeRecovery = 0.8
+	self.StabDamage = 190
+	self.StabRange = 10
 	self.Charging = false
 	self._meleeStep = 0
 	local grip = self.model_reference and self.model_reference:FindFirstChild("hitbox", true)
@@ -68,13 +68,37 @@ function Lance.new(info: Types.BaseToolCreateInfo): Lance
 end
 
 function Lance:activate()
-	if not self.Charging then self:melee() end
+	Combat.Swing(self, self.Aiming and "Stab" or "Sweep")
 end
 
-function Lance:_getMeleeAnimationName(_randomIndex: number): string
-	-- Lance attacks are a fixed two-hit chain, never random.
-	self._meleeStep = (self._meleeStep % 2) + 1
-	return (if self.Aiming then "Stab" else "Melee") .. self._meleeStep
+function Lance:melee()
+	self:activate()
+end
+
+function Lance:_on_give()
+	self._combatConnection = Combat.Remote().OnClientEvent:Connect(function(kind)
+		if not self.Equipped then return end
+		if kind == "Charge" then
+			self.Charging = true; self.ForceBlockFire = true
+			self:endAiming(); self:_stopAllExcept()
+			local track = self:_playAnim("Charge")
+			if track then track.Looped = true end
+		elseif kind == "ChargeStop" then
+			self.Charging = false; self.ForceBlockFire = false
+			self:_stopAllExcept(); self:_playAnim("Charge_Stop")
+			task.delay(1, function() if self.Equipped then self:_restoreBase() end end)
+		elseif kind == "CloseSweep" then
+			self:_stopAllExcept(); self:_playAnim("Melee1")
+		elseif kind == "Inspire" then
+			self.Inspiring = true
+			self:_stopAllExcept()
+			local track = self:_playAnim("RaiseFlag")
+			task.delay(track and math.max(track.Length, 1) or 1, function()
+				self.Inspiring = false
+				if self.Equipped then self:_restoreBase() end
+			end)
+		end
+	end)
 end
 
 function Lance:_on_equip()
@@ -89,67 +113,18 @@ function Lance:_on_unequip()
 end
 
 function Lance:setAltMode()
-	if self.Charging or not self.Equipped or self:_isBusy() then return end
-	local character = Players.LocalPlayer.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not character or not humanoid or not root or humanoid.Health <= 0 then return end
-	if character:GetAttribute("Sprinting") ~= true then
-		self:notify("Sprint before charging")
-		return
-	end
+	if not self.Equipped or self.Meleeing or self.Inspiring or self.Charging then return end
+	Combat.Remote():FireServer("Charge", Combat.Direction())
+end
 
-	self.Charging = true
-	self.ForceBlockFire = true
-	self:_stopAllExcept()
-	local charge = self:_playAnim("Charge")
-	local attachment = Instance.new("Attachment")
-	attachment.Name = "LanceChargeAttachment"
-	attachment.Parent = root
-	local velocity = Instance.new("LinearVelocity")
-	velocity.Name = "LanceChargeVelocity"
-	velocity.Attachment0 = attachment
-	velocity.RelativeTo = Enum.ActuatorRelativeTo.World
-	velocity.MaxForce = math.huge
-	velocity.Parent = root
+-- T is the existing Check Ammo binding; on the lance it waves the flag.
+function Lance:ammo_check()
+	if self.Equipped and not self.Meleeing and not self.Charging then Combat.Remote():FireServer("Inspire") end
+end
 
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { character }
-	local expiresAt = os.clock() + 2.5
-	local hitTarget: Model? = nil
-	while self.Equipped and humanoid.Health > 0 and os.clock() < expiresAt do
-		local direction = root.CFrame.LookVector
-		velocity.VectorVelocity = direction * 23
-		local result = workspace:Raycast(root.Position, direction * self.ChargeRange, params)
-		local target = result and result.Instance:FindFirstAncestorOfClass("Model")
-		local targetHumanoid = target and target:FindFirstChildOfClass("Humanoid")
-		if target and targetHumanoid and targetHumanoid.Health > 0 and target ~= character then
-			hitTarget = target
-			break
-		end
-		RunService.Heartbeat:Wait()
-	end
-	velocity:Destroy()
-	attachment:Destroy()
-	if charge and charge.IsPlaying then charge:Stop(0.08) end
-	if hitTarget then self:_damageMeleeTarget(hitTarget, self.ChargeRange, self.ChargeDamage) end
-	local stop = self:_playAnim("Charge_Stop")
-	if stop then stop.Stopped:Wait() end
-	-- A lance charge has recovery whether it hits, kills, or simply runs out.
-	-- Freeze the same humanoid we charged with, then restore its live settings.
-	local walkSpeed = humanoid.WalkSpeed
-	local autoRotate = humanoid.AutoRotate
-	humanoid.WalkSpeed = 0
-	humanoid.AutoRotate = false
-	task.wait(self.ChargeRecovery)
-	if humanoid.Parent and humanoid.Health > 0 then
-		humanoid.WalkSpeed = walkSpeed
-		humanoid.AutoRotate = autoRotate
-	end
-	self.Charging = false
-	self.ForceBlockFire = false
-	self:_restoreBaseDeferred()
+function Lance:destroy()
+	if self._combatConnection then self._combatConnection:Disconnect() end
+	BaseTool.destroy(self)
 end
 
 Lance.Tool_Image = ""

@@ -141,4 +141,23 @@ remote.OnServerEvent.callback(charger,"Charge",facing)
 charger.Character.children.lance.Parent = nil
 RunService.Heartbeat.callback(.05)
 equal(charger.Character:GetAttribute("charging"),nil,"unequip cancels charge")
+RunService.Heartbeat.callback = regenTick
+advance(5)
+attacker.children.lance.Parent = attacker
+attacker:SetAttribute("CombatStunned", nil)
+castResult = {Instance = wall}
+parts = {a.children.Head}
+local health = a.children.Humanoid.Health
+remote.OnServerEvent.callback(p,"Sweep",facing); advance(.15)
+equal(a.children.Humanoid.Health,health,"wall blocks sweep damage")
+advance(1); castResult = nil
+attacker.children.Humanoid.Health = 0
+remote.OnServerEvent.callback(p,"Sweep",facing); advance(.15)
+equal(a.children.Humanoid.Health,health,"dead attackers cannot swing")
+attacker.children.Humanoid.Health = 500
+advance(1)
+remote.OnServerEvent.callback(p,"Sweep",facing)
+attacker.children.Humanoid.Health = 0
+advance(.15)
+equal(a.children.Humanoid.Health,health,"death during windup cancels damage")
 print("Class combat behavior checks passed")

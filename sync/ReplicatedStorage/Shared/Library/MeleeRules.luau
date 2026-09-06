@@ -1,10 +1,9 @@
 -- Shared timing and server damage rules. Ranges are measured from the attacker.
--- Mainly for lancer right now.
 local Rules = {
 	Lance = {SweepDamage = 130, StabDamage = 190, SweepRange = 7, StabRange = 10,
 		Windup = .15, Interval = .85, SweepDot = .25, ChargeTime = 3, ChargeCooldown = 3},
 	Shield = {Damage = 90, Range = 5, Windup = .15, Interval = .85, BlockDot = .35},
-	Axes = {Damage = 130, Speed = 120, Count = 2, Windup = .35, Interval = 1, Lifetime = 5},
+	Axes = {Damage = 199, Speed = 120, Count = 4, Windup = .2, Interval = .4, Lifetime = 5},
 }
 
 function Rules.IsInSweep(distance, dot)

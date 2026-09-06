@@ -94,7 +94,8 @@ local function attachModel(character: Model, clone: Model, helmet: boolean)
 end
 
 local function attachPart(character: Model, clone: BasePart, helmet: boolean): boolean
-	local anchor = if helmet then character:FindFirstChild("Head") else character:FindFirstChild("Torso")
+	local headAttachment = helmet or string.lower(clone.Name) == "extralift"
+	local anchor = if headAttachment then character:FindFirstChild("Head") else character:FindFirstChild("Torso")
 	if not anchor or not anchor:IsA("BasePart") then
 		helmetDebug("FAILED: no anchor for part", clone.Name)
 		clone:Destroy()
@@ -117,18 +118,49 @@ local function attachPart(character: Model, clone: BasePart, helmet: boolean): b
 	-- Direct-part helmet kits are authored around their own part origin, so
 	-- welding that origin to Head is the intended attachment.
 	clone.CFrame = anchor.CFrame
+	local adjacency = {[clone] = {}}
 	for child, offset in childOffsets do
 		child.Anchored = false
 		child.CanCollide = false
 		child.CanQuery = false
+		child.CanTouch = false
 		child.Massless = true
-		local childWeld = Instance.new("Weld")
-		childWeld.Name = "HelmetAccessoryWeld"
-		childWeld.Part0 = clone
-		childWeld.Part1 = child
-		childWeld.C0 = offset
-		childWeld.Parent = clone
-		childWeld:SetAttribute("ClassAppearance", true)
+		child.CFrame = anchor.CFrame * offset
+		adjacency[child] = {}
+	end
+	-- Keep helmetfly/extrajoint and internal mesh welds. Welding every mesh
+	-- directly to the root overconstrains those articulated assemblies.
+	for _, joint in clone:GetDescendants() do
+		if joint:IsA("JointInstance") or joint:IsA("WeldConstraint") then
+			local part0, part1 = joint.Part0, joint.Part1
+			if adjacency[part1] and not adjacency[part0] then
+				joint.Part0 = clone
+				part0 = clone
+			end
+			if adjacency[part0] and adjacency[part1] then
+				table.insert(adjacency[part0], part1)
+				table.insert(adjacency[part1], part0)
+			end
+		end
+	end
+	local connected = {}
+	local function visit(part)
+		if connected[part] then return end
+		connected[part] = true
+		for _, neighbor in adjacency[part] do visit(neighbor) end
+	end
+	visit(clone)
+	for child, offset in childOffsets do
+		if not connected[child] then
+			local childWeld = Instance.new("Weld")
+			childWeld.Name = "HelmetAccessoryWeld"
+			childWeld.Part0 = clone
+			childWeld.Part1 = child
+			childWeld.C0 = offset
+			childWeld.Parent = clone
+			childWeld:SetAttribute("ClassAppearance", true)
+			visit(child)
+		end
 	end
 	local weld = Instance.new("Weld")
 	weld.Name = "AccessoryWeld"
@@ -139,6 +171,28 @@ local function attachPart(character: Model, clone: BasePart, helmet: boolean): b
 	if helmet then
 		helmetDebug("mounted part helmet", clone.Name, "anchor=", anchor.Name, "parent=", clone.Parent:GetFullName())
 	end
+	return true
+end
+
+-- Some exported kits (Nation Soldat) keep their head rig as sibling parts.
+-- Clone the folder together before regrouping so cross-part weld references
+-- point at cloned parts, never at the source outfit or separate loose clones.
+local function attachFlatHelmet(character: Model, outfit: Folder): boolean
+	local sourceHead = outfit:FindFirstChild("Head")
+	local sourceShell = outfit:FindFirstChild("knock")
+	if not sourceHead or not sourceHead:IsA("BasePart") or not sourceShell or not sourceShell:IsA("BasePart") then return false end
+	local copied = outfit:Clone()
+	local assembly = Instance.new("Model")
+	assembly.Name = "ClassHelmet"
+	assembly:SetAttribute("ClassAppearance", true)
+	for _, child in copied:GetChildren() do
+		if child:IsA("BasePart") or child:IsA("JointInstance") or child:IsA("Constraint") then
+			child.Parent = assembly
+		end
+	end
+	assembly.PrimaryPart = assembly:FindFirstChild("Head")
+	copied:Destroy()
+	attachModel(character, assembly, true)
 	return true
 end
 
@@ -186,6 +240,11 @@ end
 
 function Appearance.Apply(character: Model, teamName: string?, className: string?)
 	local elite = character:GetAttribute("IsShockTrooper") == true
+	if elite then
+		local definitions = require(ReplicatedStorage.Shared.Library.ClassDefinitions)
+		local kit = definitions.GetElite(character:GetAttribute("EliteClass"))
+		className = kit and (kit.OutfitClass or kit.RequiredClass) or character:GetAttribute("ClassOutfit") or className
+	end
 	local outfit = Appearance.GetOutfit(teamName, className, elite)
 	if not outfit then
 		warn(("[ClassAppearance] Missing %soutfit: outfits/%s/%s")
@@ -200,12 +259,14 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 	restoreHair(character)
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local helmetEquipped = false
+	local flatHelmet = attachFlatHelmet(character, outfit)
+	local helmetEquipped = flatHelmet
 	-- Class kits are deliberately flat: pants, shirt, helmet and any class
 	-- accessories live directly under outfits/<team>/<class>.  Walking every
 	-- descendant made model kits unreliable because their internal mesh/weld
 	-- hierarchy could be mistaken for a second outfit item.
 	for _, source in outfit:GetChildren() do
+		if flatHelmet and (source:IsA("BasePart") or source:IsA("JointInstance") or source:IsA("Constraint")) then continue end
 		if Appearance.DebugHelmets then helmetDebug("outfit child", source.Name, source.ClassName, "isHelmet=", isHelmet(source)) end
 		if source:IsA("Shirt") or source:IsA("Pants") or source:IsA("ShirtGraphic") then
 			for _, existing in character:GetChildren() do

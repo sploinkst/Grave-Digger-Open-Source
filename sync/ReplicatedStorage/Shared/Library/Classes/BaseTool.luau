@@ -1131,7 +1131,7 @@ end
 function BaseTool:aim()
 	if not self.Equipped then return end 
 	if self.Aiming or self:_isBusy() then return end
-	if not self.RegisteredAnimations.Aim then return end
+	if not self.RegisteredAnimations or not self.RegisteredAnimations.Aim then return end
 	if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
 	if self.Equipping or self.IsShorted then return end
 	if self:_if_jumping() then return end

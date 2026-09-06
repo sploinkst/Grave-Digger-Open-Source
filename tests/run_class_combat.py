@@ -12,7 +12,7 @@ rules = (root / "sync/ReplicatedStorage/Shared/Library/MeleeRules.luau").read_te
 rules = "local Rules = (function()\n" + rules + "\nend)()\n"
 fixture = (root / "tests/combat_fixture.luau").read_text()
 spec = (root / "tests/class_combat.spec.luau").read_text()
-source = source.removesuffix("return Service\n")
+source = source.rstrip().removesuffix("return Service")
 with tempfile.TemporaryDirectory(prefix="class-combat-tests-") as directory:
     script = Path(directory) / "combat.luau"
     script.write_text(fixture + "\n" + rules + source + "\n" + spec)
