@@ -6,6 +6,16 @@ local MarketPlaceService = game:GetService("MarketplaceService")
 
 local modules_folder = ReplicatedStorage.Shared.Modules["Server Modules"]
 
+-- Client modules may be required before DataService depending on Explorer
+-- child order. Publish core remotes before any service starts so requiring a
+-- client module can never hang waiting for a service-owned RemoteEvent.
+local eventsFolder = ReplicatedStorage.Shared.Library:WaitForChild("Events")
+if not eventsFolder:FindFirstChild("Datapush") then
+	local datapush = Instance.new("RemoteEvent")
+	datapush.Name = "Datapush"
+	datapush.Parent = eventsFolder
+end
+
 -- Publish the authored tool folders once; clients register sequences on demand.
 local authoredAnimations = ServerStorage:FindFirstChild("animations")
 local authoredTools = authoredAnimations and authoredAnimations:FindFirstChild("tools")
@@ -37,33 +47,35 @@ if previousMovement then previousMovement:Destroy() end
 movementAnimations.Parent = ReplicatedStorage
 
 for _, child in ipairs(modules_folder:GetChildren()) do
-	if not child:IsA("ModuleScript") then
-		continue
-	end
+	task.spawn(function()
+		if not child:IsA("ModuleScript") then
+			return
+		end
 
-	print(("Loading module: %s"):format(child.Name))
+		print(("Loading module: %s"):format(child.Name))
 
-	local success, module = pcall(require, child)
+		local success, module = pcall(require, child)
 
-	if not success then
-		warn(("Failed to require '%s':\n%s"):format(child.Name, tostring(module)))
-		continue
-	end
+		if not success then
+			warn(("Failed to require '%s':\n%s"):format(child.Name, tostring(module)))
+			return
+		end
 
-	if type(module.start_module) ~= "function" then
-		warn(("Module '%s' does not have a start_module() function."):format(child.Name))
-		continue
-	end
+		if type(module.start_module) ~= "function" then
+			warn(("Module '%s' does not have a start_module() function."):format(child.Name))
+			return
+		end
 
-	local started, err = pcall(function()
-		module:start_module()
+		local started, err = pcall(function()
+			module:start_module()
+		end)
+
+		if started then
+			print(("Loaded module: %s"):format(child.Name))
+		else
+			warn(("Error while starting '%s':\n%s"):format(child.Name, tostring(err)))
+		end
 	end)
-
-	if started then
-		print(("Loaded module: %s"):format(child.Name))
-	else
-		warn(("Error while starting '%s':\n%s"):format(child.Name, tostring(err)))
-	end
 end
 
 print("[ServerStarter] All modules loaded")

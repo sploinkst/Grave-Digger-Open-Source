@@ -113,6 +113,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.item_image  = "rbxassetid://17601078078"
 	self.Designation = "Secondary"
 	self.ANIM_LAYERS = ANIM_LAYERS
+	self.AnimationGunType = "saa"
 
 	self.holster_reference = Holster_Folder and Holster_Folder:FindFirstChild("GraceRevolverHolster")
 	self.model_reference   = Tool_Folder:FindFirstChild("GraceRevolver")
@@ -292,15 +293,16 @@ function GraceRevolver:fire()
 
 	-- Dry fire
 	if self.Capacity <= 0 then
-		local emptyAnim = (self.current_shoulder == "Right") and "Fire_Empty" or "Fire_Empty_Left"
-		self:_playFireAnimation(emptyAnim, false).Stopped:Wait()
+		self:_dryFire()
 		self.Firing = false
-		self:_restoreBaseDeferred()
 		return
 	end
 
 	local muzzle = self:_findModelPart(self.MuzzlePartName)
-	if not muzzle or self:_if_sprinting() then self.Firing = false; return end
+	if not muzzle or self:_if_sprinting() then
+		self.Firing = false
+		return
+	end
 
 	local camera = workspace.CurrentCamera
 

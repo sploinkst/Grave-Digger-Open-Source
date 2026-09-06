@@ -7,15 +7,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local CrestfallRifle = require(script.Parent.CrestfallRifle)
-local createAnimationResolver = require(script.Parent.AnimationResolver)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 local rifleFallback = Assets.Animations.Tools.Guns:FindFirstChild("PrinceRifle")
-local legacyAnimations = Assets.Animations.Tools.Guns:FindFirstChild("rsc")
-local animation = createAnimationResolver("rsc")
+local Animations = Assets.Animations.Tools.Guns.AdjudicatorRifle
+
 local assetSounds = Assets:FindFirstChild("Sounds")
 local toolSounds = assetSounds and assetSounds:FindFirstChild("tools")
 local SoundFolder = (toolSounds and toolSounds:FindFirstChild("rsc"))
@@ -121,25 +120,25 @@ function AdjudicatorRifle.new(info: Types.BaseToolCreateInfo): AdjudicatorRifle
 
 	self.AnimationGunType = "rsc"
 	self.animations = {
-		Hold = animation({"held", "locked"}, "held"),
-		Draw = animation({ "draw" }, "PrinceRifle_Draw"),
-		Unequip = animation({ "unequip" }, "PrinceRifle_Unequip"),
-		Aim = animation({ "aim" }, "PrinceRifle_Aim"),
-		Aim_Left = animation({ "aim_left" }, "PrinceRifle_Aim_Left"),
-		Fire = animation({ "fire" }, "PrinceRifle_Fire"),
-		Fire_Left = animation({ "fire_left" }, "PrinceRifle_Fire_Left"),
-		Hip_Hold = animation({ "locked" }, "PrinceRifle_Held"),
-		Hip_Aim = animation({ "alt_changeaim" }, "PrinceRifle_Aim"),
-		Hip_Aim_Left = animation({ "alt_changeaim_left" }, "PrinceRifle_Aim_Left"),
-		Hip_Fire = animation({ "alt_changefire" }, "PrinceRifle_Fire"),
-		Hip_Fire_Left = animation({ "alt_changefire_left" }, "PrinceRifle_Fire_Left"),
-		Reload_Start = animation({ veteran and "reload_start_vet" or "reload_start" }, "PrinceRifle_Reload_Start"),
-		Reload_End = animation({ "reload_end" }, "PrinceRifle_Reload_End"),
-		Reload_End_Locked = animation({ "reload_end_locked" }, "PrinceRifle_Reload_End"),
-		Check = animation({ "check" }, "PrinceRifle_Check"),
-		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
-		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
-		Short = animation("Short", "PrinceRifle_Short"),
+		Hold = Animations.Parent.PrinceRifle.PrinceRifle_Held,
+		Draw = Animations.Parent.PrinceRifle.PrinceRifle_Draw,
+		Unequip = Animations.Parent.PrinceRifle.PrinceRifle_Unequip,
+		Aim = Animations.aim,
+		Aim_Left = Animations.aim_left,
+		Fire = Animations.fire,
+		Fire_Left = Animations.fire_left,
+		Hip_Hold = Animations.locked,
+		Hip_Aim = Animations.alt_changeaim,
+		Hip_Aim_Left = Animations.aim_left,
+		Hip_Fire = Animations.alt_changefire,
+		Hip_Fire_Left = Animations.alt_changefire_left,
+		Reload_Start = veteran and Animations.reload_start_vet or Animations.reload_start,
+		Reload_End = Animations.reload_end,
+		Reload_End_Locked = Animations.reload_end_locked,
+		Check = Animations.check,
+		Melee1 = Animations.Parent.PrinceRifle.PrinceRifle_Melee1,
+		Melee2 = Animations.Parent.PrinceRifle.PrinceRifle_Melee2,
+		Short = Animations.Parent.PrinceRifle.PrinceRifle_Short,
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 
@@ -255,7 +254,7 @@ function AdjudicatorRifle:_on_equip()
 	end
 end
 
-AdjudicatorRifle.Tool_Image = "rbxassetid://17496049645"
+AdjudicatorRifle.Tool_Image = "rbxassetid://109119172425763"
 AdjudicatorRifle.Medal_Cost = 0
 AdjudicatorRifle.Weight = 2
 AdjudicatorRifle.Designation = "Primary"

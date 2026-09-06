@@ -20,6 +20,10 @@ local CLASS_ALIASES = {
 	mosin = "VolkRifle",
 	volk = "VolkRifle",
 	volkrifle = "VolkRifle",
+	union = "UnionPistol",
+	unionpistol = "UnionPistol",
+	steyr = "UnionPistol",
+	steyrm1912 = "UnionPistol",
 }
 
 -- collect all class modules

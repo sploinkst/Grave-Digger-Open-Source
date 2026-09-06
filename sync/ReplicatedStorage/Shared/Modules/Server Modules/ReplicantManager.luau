@@ -35,11 +35,13 @@ local item_service = require(script.Parent.ItemsService)
 
 local stumble_animation = ReplicatedStorage:WaitForChild("Shared").Assets.Animations.Character.Miscellanous.Stumble
 
-local AmmoPackEvent = replicant_folder.Ammo
+local AmmoPackEvent = replicant_folder:WaitForChild("AmmoPack")
 local AmmoPack = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Equipment"):WaitForChild("AmmoPack")
 local Helmet_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Helmet
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 local hellionHelmetHits = {}
+local jesseGrenadeEvent=replicant_folder:FindFirstChild("JesseGrenade")::RemoteEvent?
+if not jesseGrenadeEvent then jesseGrenadeEvent=Instance.new("RemoteEvent"); jesseGrenadeEvent.Name="JesseGrenade"; jesseGrenadeEvent.Parent=replicant_folder end
 local dualWieldEvent = replicant_folder:FindFirstChild("DualWield") :: RemoteEvent?
 if not dualWieldEvent then
 	dualWieldEvent = Instance.new("RemoteEvent")
@@ -222,6 +224,27 @@ local function getCompassData(player, arm)
 end
 
 function module.start_module()
+	jesseGrenadeEvent.OnServerEvent:Connect(function(player,origin,direction)
+		if typeof(origin)~="Vector3" or typeof(direction)~="Vector3" or direction.Magnitude<.9 then return end
+		local character=player.Character; local root=character and character:FindFirstChild("HumanoidRootPart")
+		local tool=character and character:FindFirstChild("JesseRifle"); local grenades=tool and tool:FindFirstChild("Grenades")
+		if not root or not grenades or not grenades:IsA("NumberValue") or grenades.Value<=0 or (root.Position-origin).Magnitude>15 then return end
+		grenades.Value-=1; local params=RaycastParams.new(); params.FilterType=Enum.RaycastFilterType.Exclude; params.FilterDescendantsInstances={character}
+		local result=workspace:Raycast(origin,direction.Unit*1000,params); local position=result and result.Position or origin+direction.Unit*1000
+		local distance=(position-origin).Magnitude
+		task.delay(distance/180,function()
+			if distance<30 then local model=result and getModelFromInstance(result.Instance); local humanoid=model and getHumanoid(model); if humanoid then humanoid:TakeDamage(199) end; return end
+			for _,target in player_service:GetPlayers() do
+				if target~=player and target.Team~=player.Team then
+					local c=target.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); local r=c and c:FindFirstChild("HumanoidRootPart")
+					if h and r and h.Health>0 and (r.Position-position).Magnitude<=18 then
+						h:TakeDamage(99*(c:GetAttribute("ExplosiveDamageMultiplier") or 1))
+						if result and result.Instance:IsDescendantOf(c) then h:TakeDamage(5); status_service.GiveStatus(target,"RagdollStatus",direction); task.delay(2,function() if target.Parent then status_service.RemoveStatus(target,"RagdollStatus") end end) end
+					end
+				end
+			end
+		end)
+	end)
 
 	fastcast_replicant.OnServerEvent:Connect(function(...)
 		fastcast_replicant:FireAllClients(...)
@@ -283,6 +306,8 @@ function module.start_module()
 			and character:FindFirstChild("JudgementRifle") ~= nil
 		local isHellion = weaponName == "HellionShotgun"
 			and character:FindFirstChild("HellionShotgun") ~= nil
+		local isUnion = weaponName == "UnionPistol"
+			and character:FindFirstChild("UnionPistol") ~= nil
 
 		-- Prevent self-damage
 		if hitPlayer and player.Team == hitPlayer.Team then return end
@@ -290,6 +315,7 @@ function module.start_module()
 
 		if hitPlayer then
 			hitPlayer:SetAttribute("LastTagged", player.Name)
+			require(script.Parent.ClassService).RecordHit(player, hitPlayer, weaponName)
 		end
 		
 		-- Knockback
@@ -317,6 +343,14 @@ function module.start_module()
 			local helmet, knockable = Util.check_for_helmet(hitCharacter)
 
 			if helmet then
+				-- Union's weak 9mm knocks ordinary helmets only at point-blank range.
+				-- At 30 studs and beyond, the helmet deflects the shot untouched.
+				if isUnion then
+					if distance < 30 and knockable and not helmet:GetAttribute("Knocked") then
+						module.pop_helmet(hitCharacter, helmet, true)
+					end
+					return
+				end
 				local hellionCannotPenetrate = isHellion and (not knockable or distance > 35)
 				if hellionCannotPenetrate and type(hitData.ShotId) == "string" then
 					local shotKey = tostring(player.UserId) .. ":" .. hitData.ShotId .. ":" .. tostring(hitCharacter)
@@ -403,18 +437,23 @@ function module.start_module()
 	end)
 	
 	heal_connection.OnServerEvent:Connect(function(sender, healed, wound)
-		if not healed:IsA("Player") then
-			local player = game.Players:GetPlayerFromCharacter(healed)
-			if not player then return end
-			healed = player
-		end
-		
-		
+		if typeof(healed) ~= "Instance" then return end
+		if not healed:IsA("Player") then healed = player_service:GetPlayerFromCharacter(healed) end
+		if not healed or not sender.Team or sender.Team ~= healed.Team then return end
+		local character, target = sender.Character, healed.Character
+		local medic = character and character:FindFirstChildOfClass("Humanoid")
+		local humanoid = target and target:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local targetRoot = target and target:FindFirstChild("HumanoidRootPart")
+		if not medic or medic.Health <= 0 or not humanoid or humanoid.Health <= 0
+			or not root or not targetRoot or not character:FindFirstChild("Medkit")
+			or (root.Position - targetRoot.Position).Magnitude > 12 then return end
 		status_service.RemoveStatus(healed, "WoundStatus")
 		status_service.RemoveStatus(healed, "ConcussionStatus")
-		healed.Character.Humanoid.Health = 100
+		local health = if sender ~= healed then character:GetAttribute("AllyHealHealth") or 100 else 100
+		humanoid.Health = math.max(humanoid.Health, math.min(humanoid.MaxHealth, health))
 	end)
-	
+
 	healnotify_connection.OnServerEvent:Connect(function(healer, healee:Player)
 		print("Received healnotify_connection from", healer.Name, "for healee:", healee.Name)
 		local notify_ui = require(healee.PlayerGui.Notifications.Utils)
@@ -501,6 +540,10 @@ function module.start_module()
 		if not humanoid then return end
 		local healthBefore = humanoid.Health
 		local appliedDamage = if isCavalrySword then math.min(120, damage or 0) else (damage or 0)
+		-- Instant kills retain their behavior; normal melee receives class armor.
+		if not fromBehind and appliedDamage < humanoid.MaxHealth then
+			appliedDamage *= targetCharacter:GetAttribute("MeleeDamageMultiplier") or 1
+		end
 		humanoid:TakeDamage(fromBehind and humanoid.MaxHealth or appliedDamage)
 		if isCavalrySword and healthBefore > 0 and humanoid.Health <= 0 then
 			local factionName = targetPlayer and targetPlayer.Team and targetPlayer.Team.Name or "Unknown"
@@ -562,90 +605,51 @@ function module.start_module()
 		tool.Reserve_Ammo.Value -= count
 	end)
 	
+	local ammoCharges = setmetatable({}, {__mode = "k"})
 	AmmoPackEvent.OnServerEvent:Connect(function(player, target)
-		print("Received AmmoPackEvent from", player.Name)
-		if not target then
-			local character = player.Character
-			if not character then
-				return
-			end
-
-			local hrp = character:FindFirstChild("HumanoidRootPart")
-			if not hrp then
-				return
-			end
-
-			local clone = AmmoPack:Clone()
-			clone.Position = hrp.Position + hrp.CFrame.LookVector * 4
-			clone.CanCollide = false
-			clone.Parent = workspace
-
-			local velocity = Instance.new("BodyVelocity")
-			velocity.Velocity = hrp.CFrame.LookVector * 20 + Vector3.new(0, 8, 0)
-			velocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-			velocity.Parent = clone
-			
-
-			clone.Touched:Connect(function(hit)
-				if not hit.Parent:FindFirstChild("Humanoid") then return end
-				local player = game.Players:GetPlayerFromCharacter(hit.Parent)
-				if Util.hasfullammo(player) then return end
-				
-				Util.setammo(player)
-				print("AmmoPackEvent destroyed")
-				clone:Destroy()
-			end)
-			task.delay(0.1, function()
-				velocity:Destroy()
-				clone.CanCollide = true
-				clone.CanTouch = true
-			end)
-			
-			task.delay(0.5, function()
-				clone.CanCollide = true
-			end)
-			
-			task.delay(30, function()
-				if clone then
-					clone:Destroy()
-				end
-			end)
-		else
-			local clone = AmmoPack:Clone()
-			clone.Parent = workspace
-			clone.Position = player.Character.Torso.Position
-			clone.Anchored = true
-			-- // lerp towards the target.Torso
-			local connection
-
-			connection = RunService.Heartbeat:Connect(function()
-				if not target:FindFirstChild("Torso") then
-					connection:Disconnect()
-					clone:Destroy()
-					return
-				end
-
-				local torso = target:FindFirstChild("Torso")
-					or target:FindFirstChild("HumanoidRootPart")
-
-				if not torso then
-					connection:Disconnect()
-					clone:Destroy()
-					return
-				end
-
-				clone.Position = clone.Position:Lerp(torso.Position, 0.1)
-
-				if (clone.Position - torso.Position).Magnitude < 2 then
-					connection:Disconnect()
-
-					Util.setammo(game.Players:GetPlayerFromCharacter(target))
-					clone:Destroy()
-				end
-			end)
-			
-			
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not root or not humanoid or humanoid.Health <= 0 or not player.Team
+			or character:GetAttribute("Class") ~= "Soldat" or character:GetAttribute("Equipment") ~= "AmmoPack" then return end
+		local recipient
+		if target ~= nil then
+			if typeof(target) ~= "Instance" or not target:IsA("Model") then return end
+			recipient = player_service:GetPlayerFromCharacter(target)
+			local targetRoot = target:FindFirstChild("HumanoidRootPart")
+			local targetHumanoid = target:FindFirstChildOfClass("Humanoid")
+			if not recipient or recipient.Team ~= player.Team or not targetRoot
+				or not targetHumanoid or targetHumanoid.Health <= 0
+				or (root.Position - targetRoot.Position).Magnitude > 30 or Util.hasfullammo(recipient) then return end
 		end
+		local now = os.clock()
+		local state = ammoCharges[character]
+		if not state then state = {count = 2, time = now}; ammoCharges[character] = state end
+		local restored = math.floor((now - state.time) / 30)
+		if restored > 0 then state.count = math.min(2, state.count + restored); state.time += restored * 30 end
+		if state.count <= 0 then return end
+		if state.count == 2 then state.time = now end
+		state.count -= 1
+		if recipient then Util.setammo(recipient); return end
+		-- Untargeted pouch can be collected by its owner or any living ally.
+		local clone = AmmoPack:Clone()
+		clone.CFrame = root.CFrame * CFrame.new(0, 0, -4)
+		clone.Anchored = false; clone.CanCollide = true; clone.CanTouch = true
+		clone.Parent = workspace
+		clone.AssemblyLinearVelocity = root.CFrame.LookVector * 20 + Vector3.new(0, 8, 0)
+		local consumed = false
+		local team = player.Team
+		clone.Touched:Connect(function(hit)
+			if consumed then return end
+			local targetCharacter = hit:FindFirstAncestorOfClass("Model")
+			local ally = targetCharacter and player_service:GetPlayerFromCharacter(targetCharacter)
+			local health = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+			if not ally or ally.Team ~= team or not health or health.Health <= 0 or Util.hasfullammo(ally) then return end
+			consumed = true
+			Util.setammo(ally)
+			clone:Destroy()
+		end)
+		Debris:AddItem(clone, 30)
 	end)
 
 	GiveCompassEvent.OnServerEvent:Connect(function(player, arm)

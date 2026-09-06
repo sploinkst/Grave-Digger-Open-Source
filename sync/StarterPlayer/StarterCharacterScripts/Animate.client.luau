@@ -7,7 +7,7 @@ local replicatedstorage_service = game:GetService("ReplicatedStorage")
 local run_service               = game:GetService("RunService")
 local player_service            = game:GetService("Players")
 
-local sound_module = require(script.Sound)
+-- local sound_module = require(script.Sound)
 
 -- // (Variables)
 local local_player = player_service.LocalPlayer
@@ -62,6 +62,19 @@ local animations_table = {
 }
 
 local loaded_animations: {[string]: AnimationTrack} = {}
+local default_priorities = {}
+local function gun_equipped()
+	return character:GetAttribute("GunEquipped") == true
+end
+
+-- These overlays move the arms/torso away from the equipped gun.
+local function blocked_gun_overlay(name: string): boolean
+	return name == "Crouch_Arms" or name == "Jump_Arms"
+		or name == "Jump_MidAir" or name == "Jump_Land"
+		or name == "Sprint_Arms" or name == "Sprint_Lean"
+		or name == "PrinceRifle_Sprint" or name == "GraceRevolver_Sprint"
+		or string.find(name, "Flinch") ~= nil
+end
 
 local directional_table = { Forward = false, Left = false, Right = false }
 
@@ -164,6 +177,11 @@ local function load_animations()
 			track.Looped = name == "Leg_Aiming" or name == "Jump_MidAir" or name == "Climb"
 				or string.find(name, "Walk") ~= nil or string.find(name, "Sprint") ~= nil
 				or string.find(name, "Idle") ~= nil or name == "Crouch_Arms"
+			default_priorities[name] = track.Priority
+			-- Priority is evaluated per joint: gun arms win, unkeyed legs move.
+			if gun_equipped() and name ~= "Leg_Aiming" then
+				track.Priority = Enum.AnimationPriority.Action
+			end
 			loaded_animations[name] = track
 			track:GetMarkerReachedSignal("Footstep"):Connect(function() sound_module.Play_WalkSFX() end)
 		end)
@@ -312,6 +330,7 @@ local function play_base(name: string, fade: number?, reversed: boolean?, speed:
 end
 
 local function play_overlay(name: string, fade: number?, speed: number?, weight: number?)
+	if gun_equipped() and blocked_gun_overlay(name) then return end
 	local track = loaded_animations[name]
 	if not track then return end
 
@@ -358,6 +377,20 @@ local function clear_sprint_overlays(fade: number?)
 		active_overlays[name] = nil
 	end
 end
+
+-- Also handle equipping mid-crouch, mid-sprint, or during an active flinch.
+character:GetAttributeChangedSignal("GunEquipped"):Connect(function()
+	local equipped = gun_equipped()
+	for name, track in loaded_animations do
+		if name ~= "Leg_Aiming" then
+			track.Priority = if equipped then Enum.AnimationPriority.Action
+				else default_priorities[name] or Enum.AnimationPriority.Movement
+		end
+		if equipped and blocked_gun_overlay(name) then stop_overlay(name, 0) end
+	end
+	-- Re-evaluate unchanged movement states so unarmed overlays return on unequip.
+	current_state = nil
+end)
 
 -- // (Movement)
 local function update_movement(speed: number)

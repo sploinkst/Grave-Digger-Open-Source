@@ -113,6 +113,7 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	local self = setmetatable(BaseRifle.new(info), PrinceRifle)
 
 	self.className   = "PrinceRifle"
+	self.AnimationGunType = "lebel"
 	self.item_image  = "rbxassetid://17496049645"
 	self.Designation = "Primary"
 	self.ANIM_LAYERS = ANIM_LAYERS
@@ -277,7 +278,10 @@ end
 
 function PrinceRifle:fire()
 	if self.Checking then return end
-	if self.Alt_Mode and self.Capacity <= 0 then return end
+	if self.Capacity <= 0 then
+		self:_dryFire()
+		return
+	end
 	if self.Firing then return end
 	if not self.Aiming then return end
 	if self.CantFire then return end
@@ -385,7 +389,10 @@ function PrinceRifle:_autoCycle()
 	self.Cycling = true
 	self.Cycled  = false
 
-	if not self.RegisteredAnimations then self.Cycling = false; return end
+	if not self.RegisteredAnimations then
+		self.Cycling = false
+		return
+	end
 
 	self:_stopAllExcept()
 	self:_playAnim("Reload_Alt").Stopped:Wait()

@@ -162,7 +162,7 @@ function Medkit:_play_heal_sequence(wound_value: StringValue, is_last_wound: boo
 	local humanoid         = self.Character:FindFirstChildOfClass("Humanoid")
 
 	local function set_leg_slow()
-		if target then return end
+		if target or self.Character:GetAttribute("MobileSurgery") then return end
 		if is_leg_wound and humanoid then
 			if self.original_walkspeed == nil then
 				self.original_walkspeed = humanoid.WalkSpeed
@@ -267,7 +267,7 @@ function Medkit:_play_heal_sequence(wound_value: StringValue, is_last_wound: boo
 			end
 		end)
 
-		track:Play()
+		track:Play(0.1, 1, self.Character:GetAttribute("SurgerySpeed") or 1)
 
 		while track.IsPlaying do
 			if can_cancel() and (not self.HoldingM1 or not self.Equipped) then

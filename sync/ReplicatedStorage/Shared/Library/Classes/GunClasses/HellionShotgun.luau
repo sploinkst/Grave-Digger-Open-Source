@@ -9,15 +9,13 @@ local UserInputService = game:GetService("UserInputService")
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseShotgun = require(script.Parent.Parent.BaseShotgun)
 local Util = require(script.Parent.Parent.Parent.Util)
-local createAnimationResolver = require(script.Parent.AnimationResolver)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
 local FxFolder = GunAssets.Effects
 local rifleFallback = Assets.Animations.Tools.Guns:FindFirstChild("PrinceRifle")
-local legacyAnimations = Assets.Animations.Tools.Guns:FindFirstChild("autosg")
-local animation, loadAnimations = createAnimationResolver("autosg")
+local hellionAnimations = Assets.Animations.Tools.Guns:FindFirstChild("HellionShotgun")
 local assetSounds = Assets:FindFirstChild("Sounds")
 local toolSounds = assetSounds and assetSounds:FindFirstChild("tools")
 local SoundFolder = (toolSounds and toolSounds:FindFirstChild("autosg"))
@@ -31,14 +29,37 @@ local STANDARD_FULL_RELOAD = 7.75
 local VETERAN_FULL_RELOAD = 5.5
 local SHOULDER_WALK_MULTIPLIER = 0.7
 
+local function animation(name: string, fallback: Animation?): Animation?
+	local found = hellionAnimations and hellionAnimations:FindFirstChild(name, true)
+	if found and found:IsA("Animation") then return found end
+	return fallback
+end
+
 local ANIM_LAYERS: { [string]: number } = {
-	Hold = 0, Aim = 0, Aim_Left = 0,
-	Shoulder_Hold = 0, Shoulder_Aim = 0, Shoulder_Aim_Left = 0,
-	Fire = 1, Fire_Left = 1, Fire_Last = 1, Fire_Last_Left = 1,
-	Shoulder_Fire = 1, Shoulder_Fire_Left = 1,
-	Shoulder_Fire_Last = 1, Shoulder_Fire_Last_Left = 1,
-	Draw = 2, Unequip = 2, Reload_Start = 2, Reload_Loop = 2,
-	Reload_End = 2, Check = 2, Check_Empty = 2, Melee1 = 2, Melee2 = 2, Short = 2,
+	Hold = 0,
+	Aim = 0,
+	Aim_Left = 0,
+	Shoulder_Hold = 0,
+	Shoulder_Aim = 0,
+	Shoulder_Aim_Left = 0,
+	Fire = 1,
+	Fire_Left = 1,
+	Fire_Last = 1,
+	Fire_Last_Left = 1,
+	Shoulder_Fire = 1,
+	Shoulder_Fire_Left = 1,
+	Shoulder_Fire_Last = 1,
+	Shoulder_Fire_Last_Left = 1,
+	Draw = 2,
+	Unequip = 2,
+	Reload_Start = 2,
+	Reload_Loop = 2,
+	Reload_End = 2,
+	Check = 2,
+	Check_Empty = 2,
+	Melee1 = 2,
+	Melee2 = 2,
+	Short = 2,
 }
 
 local HellionShotgun = {}
@@ -101,24 +122,42 @@ function HellionShotgun.new(info: Types.BaseToolCreateInfo): HellionShotgun
 	self.holster_reference = GunAssets.Holsters:FindFirstChild("autosgHolster")
 		or GunAssets.Holsters:FindFirstChild("HellionShotgunHolster")
 	self.motor_6d_data = {
-		Parent = "Left Arm", Part0 = "Left Arm",
+		Parent = "Left Arm",
+		Part0 = "Left Arm",
 		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
 		C0 = self.DefaultGripC0,
 		C1 = CFrame.identity,
 	}
 
 	self.AnimationGunType = "autosg"
-	self.animations = loadAnimations({
-		Hold = animation({"held", "locked"}, "held"),
-		Shoulder_Hold = animation({ "locked" }, "PrinceRifle_Held"),
-		Shoulder_Aim = animation({ "alt_changeaim" }, "PrinceRifle_Aim"),
-		Shoulder_Aim_Left = animation({ "alt_changeaim_left" }, "PrinceRifle_Aim_Left"),
-		Shoulder_Fire = animation({ "alt_changefire" }, "PrinceRifle_Fire"),
-		Shoulder_Fire_Left = animation({ "alt_changefire_left" }, "PrinceRifle_Fire_Left"),
-		Shoulder_Fire_Last = animation({ "alt_changefire_last" }, "PrinceRifle_Fire"),
-		Shoulder_Fire_Last_Left = animation({ "alt_changefire_last_left" }, "PrinceRifle_Fire_Left"),
+	self.animations = {
+		Hold = animation("locked", rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Held") :: Animation?),
+		Aim = animation("aim"),
+		Aim_Left = animation("aim_left"),
+		Fire = animation("fire"),
+		Fire_Left = animation("fire_left"),
+		Fire_Last = animation("fire_last"),
+		Fire_Last_Left = animation("fire_last_left"),
+		Shoulder_Hold = animation("locked"),
+		Shoulder_Aim = animation("alt_changeaim"),
+		Shoulder_Aim_Left = animation("alt_changeaim_left"),
+		Shoulder_Fire = animation("alt_changefire"),
+		Shoulder_Fire_Left = animation("alt_changefire_left"),
+		Shoulder_Fire_Last = animation("alt_changefire_last"),
+		Shoulder_Fire_Last_Left = animation("alt_changefire_last_left"),
+		Reload_Start = animation("reload_start"),
+		Reload_Empty = animation("reload_empty"),
+		Reload_Empty_Vet = animation("reload_empty_vet"),
+		Reload_Loop = animation("reload_loop"),
+		Check = animation("check"),
+		Check_Empty = animation("check_empty"),
+		Draw = rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Draw") :: Animation?,
+		Unequip = rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Unequip") :: Animation?,
+		Melee1 = rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Melee1") :: Animation?,
+		Melee2 = rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Melee2") :: Animation?,
+		Short = rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Short") :: Animation?,
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
-	})
+	}
 	self.animation_speeds = {
 		Draw = 1 / (blackHand and 0.6 or 1),
 		Aim = 1 / (blackHand and 0.3 or 0.35),
@@ -244,7 +283,7 @@ function HellionShotgun:fire()
 	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
 	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
 	if self.Capacity <= 0 then
-		self:_playFireAnimation(self.current_shoulder == "Right" and "Fire" or "Fire_Left", false)
+		self:_dryFire()
 		return
 	end
 	local muzzle = self:_findModelPart(self.MuzzlePartName)
@@ -299,16 +338,32 @@ function HellionShotgun:reload()
 		+ (finish and finish.Length or 0)
 	local targetDuration = self.FullReloadTime * (shellsNeeded / self.Max_Capacity)
 	local speed = authored > 0 and authored / math.max(targetDuration, 0.1) or 1
-	if start then local t = self:_playAnim("Reload_Start"); if t then t:AdjustSpeed(speed); t.Stopped:Wait() end end
+	if start then
+		local track = self:_playAnim("Reload_Start")
+		if track then
+			track:AdjustSpeed(speed)
+			track.Stopped:Wait()
+		end
+	end
 	for _ = 1, shellsNeeded do
 		if not self.Equipped or self._reloadCancelled or reserve.Value <= 0 then break end
-		if loop then local t = self:_playAnim("Reload_Loop"); if t then t:AdjustSpeed(speed); t.Stopped:Wait() end end
+		if loop then
+			local track = self:_playAnim("Reload_Loop")
+			if track then
+				track:AdjustSpeed(speed)
+				track.Stopped:Wait()
+			end
+		end
 		if self._reloadCancelled then break end
 		self.Capacity += 1
 		self:_fire_ammo(1)
 	end
 	if self.Equipped and not self._reloadCancelled and finish then
-		local t = self:_playAnim("Reload_End"); if t then t:AdjustSpeed(speed); t.Stopped:Wait() end
+		local track = self:_playAnim("Reload_End")
+		if track then
+			track:AdjustSpeed(speed)
+			track.Stopped:Wait()
+		end
 	end
 	self.Reloading = false
 	self._reloadCancelled = false
@@ -317,7 +372,10 @@ function HellionShotgun:reload()
 end
 
 function HellionShotgun:activate()
-	if self.Reloading then self._reloadCancelled = true; return end
+	if self.Reloading then
+		self._reloadCancelled = true
+		return
+	end
 	if not self.actual_model or self:_isBusy() then return end
 	if self.Aiming then self:fire() else self:melee() end
 end

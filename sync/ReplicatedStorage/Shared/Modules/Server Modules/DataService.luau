@@ -194,6 +194,9 @@ local function LoadProfile(player: Player)
 
 	UtilitiesModule.visualize_table(player, profile.Data)
 	UpdateTableData(player)
+	-- PlayerData and every reconciled value now exist and are replicated. The
+	-- client bootstrap uses this separately from PlayerService's UI readiness.
+	player:SetAttribute("PlayerDataReady", true)
 
 	local restores = RetrieveRestores()
 	if typeof(restores) == "table" then
@@ -208,6 +211,7 @@ local function LoadProfile(player: Player)
 end
 
 local function ReleaseProfile(player: Player)
+	player:SetAttribute("PlayerDataReady", nil)
 	local profile = activeProfiles[player]
 
 	if profile then

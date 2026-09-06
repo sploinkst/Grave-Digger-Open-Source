@@ -10,6 +10,8 @@ local StatusService = require(script.Parent.StatusService)
 
 local UtilModule = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 local AccessoryService = require(script.Parent.AccessoryService)
+local ClassService = require(script.Parent.ClassService)
+local ClassAppearance = require(ReplicatedStorage.Shared.Library.ClassAppearance)
 
 local function SetupGameData(player: Player)
 	local playerDataFolder = Instance.new("Folder")
@@ -49,6 +51,22 @@ local function SetupCharacterData(character: Model)
 	local woundFolder = Instance.new("Folder")
 	woundFolder.Name = "Wounds"
 	woundFolder.Parent = folder
+
+	-- Explicit state instances make the current character state inspectable and
+	-- give clients a stable replicated signal to subscribe to after respawn.
+	local stateFolder = Instance.new("Folder")
+	stateFolder.Name = "State"
+	stateFolder.Parent = folder
+	for _, name in { "Sprinting", "Crouching", "HoldBreathe", "Vaulting" } do
+		local value = Instance.new("BoolValue")
+		value.Name = name
+		value.Value = false
+		value.Parent = stateFolder
+	end
+	local equipment = Instance.new("StringValue")
+	equipment.Name = "Equipment"
+	equipment.Value = ""
+	equipment.Parent = stateFolder
 end
 
 local function FetchHairAccessories(player: Player)
@@ -160,6 +178,7 @@ local function ApplyUniform(character: Model, player: Player)
 	shirt.Parent = character
 	local pants = pantsTemplate:Clone()
 	pants.Parent = character
+	ClassAppearance.Apply(character, player.Team and player.Team.Name, character:GetAttribute("Class") or "Soldat")
 end
 
 local function ApplyFullAppearance(character: Model, player: Player)
@@ -169,6 +188,7 @@ local function ApplyFullAppearance(character: Model, player: Player)
 	-- failed or throttled avatar lookup cannot leave the character undressed.
 	ApplyUniform(character, player)
 	if player.Character ~= character then return end
+	character:SetAttribute("AppearanceReady", true)
 
 	local success, avatarDescription = pcall(function()
 		return Players:GetHumanoidDescriptionFromUserIdAsync(player.UserId)
@@ -304,15 +324,45 @@ end
 
 local function CopyUI(player)
 	for _, child in pairs(game:GetService("ReplicatedStorage").Shared:WaitForChild("Library"):WaitForChild("UI"):GetChildren()) do
-		if player.PlayerGui:FindFirstChild(child.Name) then
+		local existing = player.PlayerGui:FindFirstChild(child.Name)
+		if existing then
+			-- Menu modules start once and retain references to these two trees.
+			-- Preserve them across respawns instead of replacing their instances.
+			if child.Name == "Menu" or child.Name == "Menu_Scenes" then
+				for _, gui in ipairs(existing:GetDescendants()) do
+					if gui:IsA("ScreenGui") then gui.ResetOnSpawn = false end
+				end
+				if existing:IsA("ScreenGui") then existing.ResetOnSpawn = false end
+			end
 			continue
 		end
-		child:Clone().Parent = player:WaitForChild("PlayerGui")
+		local clone = child:Clone()
+		if clone.Name == "Menu" or clone.Name == "Menu_Scenes" then
+			for _, gui in ipairs(clone:GetDescendants()) do
+				if gui:IsA("ScreenGui") then gui.ResetOnSpawn = false end
+			end
+			if clone:IsA("ScreenGui") then clone.ResetOnSpawn = false end
+		end
+		clone.Parent = player:WaitForChild("PlayerGui")
 	end
 end
 
 local function CopyRespawnUI(player)
 	for _, child: ScreenGui in pairs(game:GetService("ReplicatedStorage").Shared:WaitForChild("Library"):WaitForChild("UI"):GetChildren()) do
+		if child.Name == "Menu" or child.Name == "Menu_Scenes" then
+			-- These are normally persistent, but Roblox can still remove their
+			-- ScreenGui descendants during a respawn. Restore the authored tree
+			-- if it is absent instead of leaving MenuService with no UI to show.
+			if not player.PlayerGui:FindFirstChild(child.Name) then
+				local clone = child:Clone()
+				for _, gui in ipairs(clone:GetDescendants()) do
+					if gui:IsA("ScreenGui") then gui.ResetOnSpawn = false end
+				end
+				if clone:IsA("ScreenGui") then clone.ResetOnSpawn = false end
+				clone.Parent = player:WaitForChild("PlayerGui")
+			end
+			continue
+		end
 		if player.PlayerGui:FindFirstChild(child.Name) then
 			continue
 		end
@@ -328,12 +378,14 @@ end
 local function HandleCharacter(player: Player, character: Model, ragdollObject)
 	CopyRespawnUI(player)
 	SetupCharacterData(character)
+	ClassService.ApplySpawn(player, character)
 
 	local humanoid: Humanoid = character:WaitForChild("Humanoid")
 	humanoid.BreakJointsOnDeath = false
 
-	humanoid.MaxHealth = 200
-	humanoid.Health = 200
+	local maxHealth = character:GetAttribute("IsShockTrooper") and 300 or 200
+	humanoid.MaxHealth = maxHealth
+	humanoid.Health = maxHealth
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
 
@@ -404,19 +456,23 @@ local function SetupPlayer(player: Player)
 
 	if player.Team.Name == "Golden Empire" then
 		print("Setting up empire player")
-		AccessoryService.GiveAccessory(player, "Empire_Soldat_Helmet", true, true, false)
 		AccessoryService.GiveAccessory(player, "Empire_Belt", false, true, false)
 		AccessoryService.GiveAccessory(player, "Empire_Lantern", false, true, false)
 		AccessoryService.GiveAccessory(player, "Empire_Dogtag", false, true, false)
 	else
 		print("Setting up nation player")
-		AccessoryService.GiveAccessory(player, "Nation_Soldat_Helmet", true, true, false)
 		AccessoryService.GiveAccessory(player, "Nation_Belt", false, true, false)
 		AccessoryService.GiveAccessory(player, "Nation_Lantern", false, true, false)
 		AccessoryService.GiveAccessory(player, "Nation_Dogtag", false, true, false)
 	end
 
 	player:GetPropertyChangedSignal("Team"):Connect(function()
+		local characterData = player.Character and player.Character:FindFirstChild("CharacterData")
+		local teamSide = characterData and characterData:FindFirstChild("TeamSide")
+		if teamSide and teamSide:IsA("StringValue") then
+			teamSide.Value = player.Team and player.Team.Name or ""
+		end
+		if player.Character then task.spawn(ApplyUniform, player.Character, player) end
 		for _, child in pairs(player.GameData.Accessorys:GetChildren()) do
 			if child.Name == "Empire_Soldat_Helmet" or child.Name == "Nation_Soldat_Helmet"
 				or child.Name == "Empire_Belt" or child.Name == "Nation_Belt"
@@ -426,12 +482,10 @@ local function SetupPlayer(player: Player)
 		end
 
 		if player.Team.Name == "Golden Empire" then
-			AccessoryService.GiveAccessory(player, "Empire_Soldat_Helmet", true, true, false)
 			AccessoryService.GiveAccessory(player, "Empire_Belt", false, true, false)
 			AccessoryService.GiveAccessory(player, "Empire_Lantern", false, true, false)
 			print("Gave Empire helmet")
 		else
-			AccessoryService.GiveAccessory(player, "Nation_Soldat_Helmet", true, true, false)
 			AccessoryService.GiveAccessory(player, "Nation_Belt", false, true, false)
 			AccessoryService.GiveAccessory(player, "Nation_Lantern", false, true, false)
 			print("Gave Nation helmet")

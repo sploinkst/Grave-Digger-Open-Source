@@ -223,6 +223,7 @@ local function HandleDeleteTerrain(player, direction)
 	local center = hit.Position + unit * (TUNNEL_SIZE.Z / 2 - 2)
 	TerrainService:FillBlock(CFrame.lookAt(center, center + unit), TUNNEL_SIZE, Enum.Material.Air)
 	playRockImpact(hit.Position, hit.Normal)
+	require(script.Parent.Parent.ClassService).RecordMining(player)
 end
 
 -- // Start

@@ -483,6 +483,7 @@ return {
 		},
 		
 		["Equipment"] = {
+			["Class"] = "Soldat",
 			["Primary"] = "PrinceRifle",
 			["Secondary"] = "GraceRevolver",
 			["Perks"] = {},

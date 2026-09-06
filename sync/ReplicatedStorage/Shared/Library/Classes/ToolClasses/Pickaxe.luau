@@ -44,7 +44,8 @@ export type Pickaxe = typeof(setmetatable({} :: {
 	animations: {[string]: Animation},
 	RegisteredAnimations: {[string]: AnimationTrack}?,
 
-	_activationConnection: RBXScriptConnection?
+	_activationConnection: RBXScriptConnection?,
+	_deactivationConnection: RBXScriptConnection?
 }, {} :: typeof(Pickaxe)))
 
 function Pickaxe.new(PickaxeCreateInfo: Types.BaseToolCreateInfo): Pickaxe
@@ -79,7 +80,11 @@ function Pickaxe.new(PickaxeCreateInfo: Types.BaseToolCreateInfo): Pickaxe
 	self.mining_power = 12
 	self.ANIM_LAYERS = {Hold = 0, Draw = 2, Unequip = 2, Mine = 2, Melee1 = 2, Melee2 = 2}
 	self.Mining = false
+	self._miningHeld = false
+	self._miningLoopRunning = false
+	self._nextMiningMelee = 1
 	self._activationConnection = nil
+	self._deactivationConnection = nil
 	self.CompassDisabled = false
 
 	return self
@@ -90,24 +95,35 @@ end
 function Pickaxe:_on_unequip()
 	self._miningSwing = (self._miningSwing or 0) + 1
 	self.Mining = false
+	self._miningHeld = false
 end
 
-function Pickaxe:activate()
-	if not self.Equipped or self.Equipping or self:_isBusy() then return end
+function Pickaxe:_on_give(tool: Tool)
+	if self._deactivationConnection then self._deactivationConnection:Disconnect() end
+	self._deactivationConnection = tool.Deactivated:Connect(function()
+		self._miningHeld = false
+	end)
+end
+
+function Pickaxe:_mineSwing(): boolean
+	if not self.Equipped or self.Equipping then return false end
 	local animations = self.RegisteredAnimations
-	local track = animations and animations.Mine
-	if not track then return end
+	local animationName = self._nextMiningMelee == 1 and "Melee1" or "Melee2"
+	self._nextMiningMelee = self._nextMiningMelee == 1 and 2 or 1
+	local track = animations and animations[animationName]
+	if not track then return false end
 	local character = LOCAL_PLAYER.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 then return end
+	if not humanoid or humanoid.Health <= 0 then return false end
 
 	self.Mining = true
 	self._miningSwing = (self._miningSwing or 0) + 1
 	local swing = self._miningSwing
 	local impacted = false
+	local finished = false
 	local connections = {}
 	local function hitRock()
-		if impacted or swing ~= self._miningSwing or not self.Mining then return end
+		if finished or impacted or swing ~= self._miningSwing or not self.Mining then return end
 		impacted = true
 		if not self.Equipped or not self.tool or self.tool.Parent ~= character or humanoid.Health <= 0 then return end
 		local camera = workspace.CurrentCamera
@@ -117,10 +133,8 @@ function Pickaxe:activate()
 		delete_terrain:FireServer(camera.CFrame.LookVector * MINING_REACH)
 	end
 	local function finishSwing()
+		finished = true
 		for _, connection in connections do connection:Disconnect() end
-		if swing ~= self._miningSwing then return end
-		self.Mining = false
-		self:_restoreBase()
 	end
 	for _, marker in {"Hit", "Mine", "Impact", "hit", "mine", "impact"} do
 		table.insert(connections, track:GetMarkerReachedSignal(marker):Connect(hitRock))
@@ -130,10 +144,29 @@ function Pickaxe:activate()
 	end))
 	table.insert(connections, track.Stopped:Once(finishSwing))
 	self:_stopAllExcept(track)
-	self:_playAnim("Mine")
+	self:_playAnim(animationName)
 	-- Legacy published clips may have no impact marker. Submit at mid-swing
 	-- once; a marker and this fallback can never mine twice.
 	task.delay(IMPACT_FALLBACK_TIME, hitRock)
+	track.Stopped:Wait()
+	return swing == self._miningSwing and self.Equipped
+end
+
+function Pickaxe:activate()
+	if not self.Equipped or self.Equipping then return end
+	self._miningHeld = true
+	if self._miningLoopRunning then return end
+
+	self._miningLoopRunning = true
+	task.spawn(function()
+		while self._miningHeld and self.Equipped do
+			self.Mining = true
+			if not self:_mineSwing() then break end
+		end
+		self.Mining = false
+		self._miningLoopRunning = false
+		if self.Equipped then self:_restoreBase() end
+	end)
 end
 
 return Pickaxe

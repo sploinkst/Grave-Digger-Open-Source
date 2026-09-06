@@ -188,7 +188,7 @@ function Util.GetNames(list)
 	return names
 end
 
-function Util.register_animations(player: Player, animations_table: table)
+function Util.register_animations(player: Player, animations_table: table, gunType: string?)
 	print("UTIL:: Received registering animations with:", player.Name, animations_table)
 	local character = player.Character
 	if not character then
@@ -211,6 +211,8 @@ function Util.register_animations(player: Player, animations_table: table)
 	end
 
 	local Animations = {}
+	local resolverScript=game:GetService("ReplicatedStorage").Shared.Library.Classes.GunClasses:WaitForChild("AnimationResolver")
+	local animationResolver=require(resolverScript)
 
 	for name, anim in pairs(animations_table) do
 		if typeof(anim) ~= "Instance" or not anim:IsA("Animation") then
@@ -218,13 +220,15 @@ function Util.register_animations(player: Player, animations_table: table)
 			continue
 		end
 
-		if not anim.AnimationId or anim.AnimationId == "" then
-			warn("Animation missing AnimationId:", name)
+		local loadableAnimation=animationResolver.Resolve(anim,gunType,name)
+		if not loadableAnimation then
+			warn(("Animation %q has no uploaded ID or fallback in ServerStorage.animations.tools.%s")
+				:format(name,gunType or "<unknown>"))
 			continue
 		end
 
 		local success, loadedAnim = pcall(function()
-			return animator:LoadAnimation(anim)
+			return animator:LoadAnimation(loadableAnimation)
 		end)
 
 		if success and loadedAnim then

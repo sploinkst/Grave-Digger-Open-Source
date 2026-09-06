@@ -1212,7 +1212,7 @@ local function UpdateConcussionState()
 end
 
 Module.FlinchLocalPlayer = function(direction)
-	if LocalPlayer:GetAttribute("CantFlinch") then
+	if LocalPlayer:GetAttribute("CantFlinch") or (LocalPlayer.Character and LocalPlayer.Character:GetAttribute("SuppressionImmune")) then
 		return
 	end
 	if tick() - lastFlinched < flinchCooldown then

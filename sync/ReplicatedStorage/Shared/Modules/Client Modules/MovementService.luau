@@ -95,8 +95,20 @@ end
 
 local function setSprintAttribute(state: boolean)
 	if Character then
+		local data = Character:FindFirstChild("CharacterData")
+		local value = data and data:FindFirstChild("State") and data.State:FindFirstChild("Sprinting")
+		if value and value:IsA("BoolValue") then value.Value = state end
+		-- Compatibility for tools that have not moved to CharacterData.State yet.
 		Character:SetAttribute("Sprinting", state and true or nil)
 	end
+end
+
+local function setCharacterBool(name: string, state: boolean)
+	if not Character then return end
+	local data = Character:FindFirstChild("CharacterData")
+	local value = data and data:FindFirstChild("State") and data.State:FindFirstChild(name)
+	if value and value:IsA("BoolValue") then value.Value = state end
+	Character:SetAttribute(name, state and true or nil)
 end
 
 local function setHoldBreathe(holding: boolean)
@@ -108,7 +120,7 @@ local function setHoldBreathe(holding: boolean)
 
 		HoldingBreath = true
 		HoldBreathStart = tick()
-		Character:SetAttribute("HoldBreathe", true)
+		setCharacterBool("HoldBreathe", true)
 
 		task.spawn(function()
 			while HoldingBreath do
@@ -124,7 +136,7 @@ local function setHoldBreathe(holding: boolean)
 				HoldingBreath = false
 				HoldBreathCooldownEnd = tick() + HoldBreathe_regen
 				if Character:GetAttribute("HoldBreathe") then
-					Character:SetAttribute("HoldBreathe", nil)
+					setCharacterBool("HoldBreathe", false)
 				end
 				print("[HoldBreath] Ended. Cooldown until:", HoldBreathCooldownEnd)
 			end
@@ -137,7 +149,7 @@ local function setHoldBreathe(holding: boolean)
 		HoldBreathCooldownEnd = tick() + HoldBreathe_regen
 
 		if Character:GetAttribute("HoldBreathe") then
-			Character:SetAttribute("HoldBreathe", nil)
+			setCharacterBool("HoldBreathe", false)
 		end
 
 		print("[HoldBreath] Ended manually. Cooldown until:", HoldBreathCooldownEnd)
@@ -239,12 +251,14 @@ local function executeVault()
 
 	VaultActive = true
 	VaultCooldown = true
-	Character:SetAttribute("Vaulting", true)
+	setCharacterBool("Vaulting", true)
 
 	local animator = Humanoid:FindFirstChildOfClass("Animator")
 	if animator then
 		pcall(function()
 			local track = animator:LoadAnimation(mantleAnim)
+			-- Gun arm poses also win when equipping during a vault.
+			track.Priority = Enum.AnimationPriority.Action
 			track:Play(0.05)
 			VaultAnimPlaying = true
 		end)
@@ -264,7 +278,7 @@ local function executeVault()
 		if bodyPosition and bodyPosition.Parent then
 			bodyPosition:Destroy()
 		end
-		Character:SetAttribute("Vaulting", nil)
+		setCharacterBool("Vaulting", false)
 		VaultActive = false
 		VaultAnimPlaying = false
 	end)
@@ -428,7 +442,7 @@ local function bindCharacterConnections()
 			LocalPlayer:SetAttribute("Climbing", nil)
 
 			if Character:GetAttribute("Crouching") then
-				Character:SetAttribute("Crouching", nil)
+				setCharacterBool("Crouching", false)
 			end
 
 			if Character:GetAttribute("Aiming") then return end
@@ -668,10 +682,10 @@ function module.start_module()
 	SettingsManager.HookInput("Crouch", function(Key, IsPressed)
 		if IsPressed then
 			if Character:GetAttribute("Crouching") then
-				Character:SetAttribute("Crouching", nil)
+				setCharacterBool("Crouching", false)
 				if SprintKeyHeld then tryStartSprint() end
 			else
-				Character:SetAttribute("Crouching", true)
+				setCharacterBool("Crouching", true)
 				resetSpeed()
 			end
 		end

@@ -9,15 +9,23 @@ local UserInputService = game:GetService("UserInputService")
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseTool = require(script.Parent.Parent.BaseTool)
 local Util = require(script.Parent.Parent.Parent.Util)
-local createAnimationResolver = require(script.Parent.Parent.GunClasses.AnimationResolver)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
 local FxFolder = GunAssets.Effects
 local legacyAnimations = Assets.Animations.Tools.Guns:FindFirstChild("cavsword")
-local animation = createAnimationResolver("cavsword")
 local Events = ReplicatedStorage.Shared.Library.Events
+
+local function animation(names: string | { string }, _fallbackName: string?): Animation?
+	if not legacyAnimations then return nil end
+	local candidates = if type(names) == "string" then { string.lower(names) } else names
+	for _, name in candidates do
+		local source = legacyAnimations:FindFirstChild(name, true)
+		if source and source:IsA("Animation") then return source end
+	end
+	return nil
+end
 
 local function getDualWieldEvent(): RemoteEvent
 	return Events:WaitForChild("DualWield") :: RemoteEvent
@@ -272,7 +280,7 @@ function CavalrySword:_on_unequip()
 	self:_resetMotor6D()
 end
 
-CavalrySword.Tool_Image = "rbxassetid://17496049645"
+CavalrySword.Tool_Image = "rbxassetid://103933996600580"
 CavalrySword.Medal_Cost = 0
 CavalrySword.Weight = 2
 CavalrySword.Designation = "Primary"

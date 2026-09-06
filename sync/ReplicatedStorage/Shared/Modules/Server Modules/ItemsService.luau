@@ -5,6 +5,7 @@ local type_checker_module = require(game:GetService("ReplicatedStorage").Shared.
 
 local item_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes.ToolClasses
 local gun_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes.GunClasses
+local elite_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes:FindFirstChild("EliteClasses")
 
 
 local function animatedMount(object, character, clone, part1)
@@ -51,22 +52,29 @@ end
 
 function module.give_item(player: Player, item: string, given_ammo: number)
 	print("Received with:", player.Name, item)
+	local stage = "waiting for character"
+	local function run()
 	
 	if not player.Character then
 		player.CharacterAdded:Wait()
 	end
 
-	local item_module = item_classes:FindFirstChild(item) or gun_classes:FindFirstChild(item)
+	stage = "finding item module"
+	local item_module = item_classes:FindFirstChild(item)
+		or gun_classes:FindFirstChild(item)
+		or (elite_classes and elite_classes:FindFirstChild(item))
     if not item_module then
         warn("ItemsService: Item class not found:", item)
         return "ItemService: Item Class not found.", item
     end
 
 	-- require class
+	stage = "requiring " .. item
 	print("ItemsService: Requiring item class", item)
     local class = require(item_module)
 
     -- create instance of the class
+	stage = "constructing " .. item
     local object = class.new({
         name = item
     })
@@ -102,6 +110,10 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 	number_value.Name = "Max_Ammo"
 	number_value.Parent = tool
 	number_value.Value = max_ammo or 0  -- default to 0 for tools with no ammo
+	if object.Starting_Grenades then
+		local grenades=Instance.new("NumberValue"); grenades.Name="Grenades"; grenades.Value=object.Starting_Grenades
+		grenades:SetAttribute("Maximum",object.Max_Grenades or object.Starting_Grenades); grenades.Parent=tool
+	end
 
     -- check instance property (not class property)
 	-- Models can be equipped even when a weapon does not have a separate holster model.
@@ -240,9 +252,17 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 
 	-- Parent the tool only after all of its values and connections are ready so
 	-- clients cannot equip a partially replicated tool.
+	stage = "parenting tool to Backpack"
 	tool.Parent = player:WaitForChild("Backpack")
 
     return "Successfully gave item."
+	end
+
+	local ok, result, extra = xpcall(run, debug.traceback)
+	if not ok then
+		error(("ItemsService failed while %s:\n%s"):format(stage, tostring(result)), 0)
+	end
+	return result, extra
 end
 
 function module.remove_item(player: Player, item: string, model_name: string?)

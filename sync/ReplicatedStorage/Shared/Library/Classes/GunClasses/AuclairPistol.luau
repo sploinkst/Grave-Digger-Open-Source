@@ -1,0 +1,3 @@
+local AuclairPistol = {}
+
+return AuclairPistol

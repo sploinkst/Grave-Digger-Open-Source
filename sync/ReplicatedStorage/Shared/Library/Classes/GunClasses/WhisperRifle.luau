@@ -7,13 +7,12 @@ local RunService = game:GetService("RunService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local VolkRifle = require(script.Parent.VolkRifle)
-local createAnimationResolver = require(script.Parent.AnimationResolver)
 
 local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 
-local animation = createAnimationResolver("springfield")
+local whisperAnimations = Assets.Animations.Tools.Guns:FindFirstChild("WhisperRifle")
 
 local whisperSounds = GunAssets.Sounds:FindFirstChild("springfield")
 		or GunAssets.Sounds:FindFirstChild("Springfield")
@@ -29,11 +28,27 @@ local PEDERSEN_JAM_CLEAR_TIME = 1
 local RELOAD_ROUND_TIME = 5.2 / 5
 
 local ANIM_LAYERS: { [string]: number } = {
-	Hold = 0, Aim = 0, Aim_Left = 0,
-	Fire = 1, Fire_Left = 1, Fire_Empty = 1, Fire_Empty_Left = 1,
-	Fire_Last = 1, Fire_Last_Left = 1, Recoil = 1, Recoil_Left = 1, Cycle = 1,
-	Draw = 2, Unequip = 2, Reload_Start = 2, Reload_Loop = 2,
-	Reload_End = 2, Check = 2, Melee1 = 2, Melee2 = 2, Short = 2,
+	Hold = 0,
+	Aim = 0,
+	Aim_Left = 0,
+	Fire = 1,
+	Fire_Left = 1,
+	Fire_Empty = 1,
+	Fire_Empty_Left = 1,
+	Fire_Last = 1,
+	Fire_Last_Left = 1,
+	Recoil = 1,
+	Recoil_Left = 1,
+	Cycle = 1,
+	Draw = 2,
+	Unequip = 2,
+	Reload_Start = 2,
+	Reload_Loop = 2,
+	Reload_End = 2,
+	Check = 2,
+	Melee1 = 2,
+	Melee2 = 2,
+	Short = 2,
 }
 
 local WhisperRifle = {}
@@ -81,30 +96,21 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 
 	self.AnimationGunType = "springfield"
 	self.animations = {
-		Hold = animation("Hold", "PrinceRifle_Held"),
-		Draw = animation("Draw", "PrinceRifle_Draw"),
-		Unequip = animation("Unequip", "PrinceRifle_Unequip"),
-		Aim = animation("Aim", "PrinceRifle_Aim"),
-		Aim_Left = animation("Aim_Left", "PrinceRifle_Aim_Left"),
-		Fire = animation("Fire", "PrinceRifle_Fire"),
-		Fire_Left = animation("Fire_Left", "PrinceRifle_Fire_Left"),
-		Fire_Empty = animation({ "fire_empty" }, "fire_empty"),
-		Fire_Empty_Left = animation({ "fire_empty_left" }, "fire_empty_left"),
-		Fire_Last = animation({ "fire_last" }, "fire_last"),
-		Fire_Last_Left = animation({ "fire_last_left" }, "fire_last_left"),
-		Recoil = animation({ "recoil" }, "recoil"),
-		Recoil_Left = animation({ "recoil_left" }, "recoil_left"),
-		Cycle = animation("Cycle", "PrinceRifle_Cycle"),
-		Reload_Start = animation("Reload_Start", "PrinceRifle_Reload_Start"),
-		Reload_Loop = animation("Reload_Loop", "PrinceRifle_Reload_Loop"),
-		Reload_End = animation("Reload_End", "PrinceRifle_Reload_End"),
-		Check = animation("Check", "PrinceRifle_Check"),
-		Melee1 = animation("Melee1", "PrinceRifle_Melee1"),
-		Melee2 = animation("Melee2", "PrinceRifle_Melee2"),
-		Short = animation("Short", "PrinceRifle_Short"),
-		Sprint = animation("Sprint", "sprint"),
-		Alt_Mode_On = animation({ "alt_mode_on" }, "alt_mode_on"),
-		Alt_Mode_Off = animation({ "alt_mode_off" }, "alt_mode_off"),
+		Hold = whisperAnimations.held,
+		Draw = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
+		Unequip = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
+		Aim = whisperAnimations.aim,
+		Aim_Left = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Aim_Left,
+		Fire = whisperAnimations.fire,
+		Fire_Left = whisperAnimations.fire_left,
+		Cycle = whisperAnimations.cycle,
+		Reload_Start = whisperAnimations.reload_start,
+		Reload_Loop =whisperAnimations.reload_loop,
+		Reload_End = whisperAnimations.reload_end,
+		Check = whisperAnimations.check,
+		Melee1 = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
+		Melee2 = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Melee2,
+		Short = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Short,
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 	self.animation_speeds.Draw = 1 / 0.75
@@ -194,7 +200,7 @@ function WhisperRifle:fire()
 	if self.Firing or self.Cycling or self.Reloading or self.Checking or self.Alting or not self.Aiming then return end
 	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
 	if self.Capacity <= 0 then
-		self:_playFireAnimation((self.current_shoulder == "Right") and "Fire_Empty" or "Fire_Empty_Left", false)
+		self:_dryFire()
 		return
 	end
 
@@ -259,7 +265,7 @@ function WhisperRifle:reload()
 	self:_restoreBaseDeferred()
 end
 
-WhisperRifle.Tool_Image = "rbxassetid://17496049645"
+WhisperRifle.Tool_Image = "rbxassetid://76707981179928"
 WhisperRifle.Medal_Cost = 0
 WhisperRifle.Weight = 2
 WhisperRifle.Designation = "Primary"

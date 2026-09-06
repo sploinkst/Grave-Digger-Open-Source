@@ -33,30 +33,42 @@ export type BaseFirearm = BaseTool.BaseTool
 function BaseFirearm.new(info): BaseFirearm
 	local self = BaseTool.new(info) :: any
 	self.AnimationDrivenGrip = false
+	self.IsFirearm = true
 	-- Shared rifle mount matches Prince's original scripted attachment.
 	self.DefaultGripC0 = CFrame.new(0.254, -1.703, -0.566)
 		* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
 	return setmetatable(self, BaseFirearm)
 end
 
--- Optional empty variants are shared behavior, even for guns with explicit
--- animation tables. Capacity is magazine ammo; reserves never select a pose.
-function BaseFirearm:_prepareAnimations()
-	local folders = ReplicatedStorage:FindFirstChild("ToolAnimations")
-	local source = folders and self.AnimationGunType and folders:FindFirstChild(self.AnimationGunType)
-	if not source or not self.animations then return end
-	local resolve = require(script.Parent.GunClasses.AnimationResolver)(self.AnimationGunType)
-	for key, clipName in {Draw = "draw", Reload_Empty = "reload_empty", Check_Empty = "check_empty"} do
-		if not self.animations[key] and source:FindFirstChild(clipName, true) then
-			self.animations[key] = resolve({clipName}, clipName)
+-- Empty firearms only make a mechanical click. Keep this in the firearm base so
+-- every controller follows the same rule and cannot accidentally play recoil.
+function BaseFirearm:_dryFire(): boolean
+	local now = os.clock()
+	if now < (self._nextDryFireAt or 0) then return false end
+	self._nextDryFireAt = now + math.max(self.FireInterval or 0.2, 0.15)
+
+	local folder = self.SoundFolder
+	local sound: Sound?
+	if folder then
+		for _, name in { "empty", "b_empty", "dryfire", "click" } do
+			local candidate = folder:FindFirstChild(name, true)
+			if candidate and candidate:IsA("Sound") then
+				sound = candidate
+				break
+			end
 		end
 	end
-	if self.ANIM_LAYERS then
-		self.ANIM_LAYERS = table.clone(self.ANIM_LAYERS)
-		self.ANIM_LAYERS.Reload_Empty = self.ANIM_LAYERS.Reload_Start or 2
-		self.ANIM_LAYERS.Check_Empty = self.ANIM_LAYERS.Check or 2
+	local origin = self:_findModelPart(self.MuzzlePartName or "muzzle")
+		or (self.actual_model and self.actual_model:FindFirstChildWhichIsA("BasePart", true))
+	if sound and origin and origin:IsA("BasePart") then
+		self:_play_sfx(sound, origin, nil, 0.1)
+	elseif not self._warnedMissingEmptySound then
+		self._warnedMissingEmptySound = true
+		warn(("[%s] Missing empty/dry-fire sound in its SoundFolder"):format(self.className))
 	end
+	return true
 end
+
 
 function BaseFirearm:_magazineAnimation(name: string): string
 	local emptyName = if name == "Reload_Start" or name == "Reload_Alt" then "Reload_Empty"

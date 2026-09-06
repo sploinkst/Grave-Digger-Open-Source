@@ -36,6 +36,7 @@ function BaseEquipment.new(info: { name: string }): BaseEquipment
 end
 
 function BaseEquipment:Start(character)
+	self.Stopped = false
 	self.Character = character
 	local characterHRP = character:WaitForChild("HumanoidRootPart")
 
@@ -43,6 +44,8 @@ function BaseEquipment:Start(character)
 	self.EquipmentBB = equipmentBB
 	local bb = equipmentBB:WaitForChild("bb")
 	local count = bb:WaitForChild("count")
+	if self.Stopped or character ~= game.Players.LocalPlayer.Character then return end
+	bb.Enabled = true
 	if count:IsA("TextLabel") then
 		count.Text = tostring(self.MaxEquipment)
 	end
@@ -65,7 +68,7 @@ function BaseEquipment:Start(character)
 		HoldingG = true
 
 		task.delay(0.5, function()
-			if HoldingG and not self.Activated then
+			if not self.Stopped and HoldingG and not self.Activated then
 				print("Held G for 3 seconds!")
 				self.Activated = true
 				self:Activate(character)
@@ -87,16 +90,20 @@ function BaseEquipment:Start(character)
 		print("Released G")
 	end)]]
 	
-	SettingsManager.HookInput("Class Equipment", function(_, Pressed)
+	self._inputHook = function(_, Pressed)
+		if self.Stopped or character ~= game.Players.LocalPlayer.Character
+			or character:GetAttribute("Equipment") ~= self.className
+			or game.Players.LocalPlayer:GetAttribute("MenuOpen") then return end
 		if Pressed then
 			if self.PlayerTarget then
+				self.Activated = true
 				self:Activate(character)
 			end
 
 			HoldingG = true
 
 			task.delay(0.5, function()
-				if HoldingG and not self.Activated then
+				if not self.Stopped and HoldingG and not self.Activated then
 					print("Held G for 3 seconds!")
 					self.Activated = true
 					self:Activate(character)
@@ -107,8 +114,12 @@ function BaseEquipment:Start(character)
 			self.Activated = false
 			print("Released G")
 		end
-	end)
-	
+	end
+	SettingsManager.HookInput("Class Equipment", self._inputHook)
+	if self.Stopped then
+		SettingsManager.UnhookInput("Class Equipment", self._inputHook)
+		return
+	end
 	if self.SpecialStart then
 		self:SpecialStart()
 	end
@@ -153,6 +164,7 @@ function BaseEquipment:CountDown(value: number)
 end
 
 function BaseEquipment:StartCount()
+	if self.Stopped then return end
 	local bb = self:_getEquipmentGui()
 	if not bb then return end
 
@@ -190,12 +202,15 @@ function BaseEquipment:StartCount()
 		{ Rotation = 0 }
 	)
 
+	self._reloadTweens = {tween1, tween2}
 	tween1:Play()
 
 	tween1.Completed:Once(function()
+		if self.Stopped then return end
 		tween2:Play()
 
 		tween2.Completed:Once(function()
+			if self.Stopped then return end
 			-- Allow another countdown cycle.
 			self.Counting = false
 
@@ -206,6 +221,15 @@ function BaseEquipment:StartCount()
 			frame2.Rotation = -180
 		end)
 	end)
+end
+
+function BaseEquipment:Stop()
+	self.Stopped = true
+	HoldingG = false
+	if self._inputHook then SettingsManager.UnhookInput("Class Equipment", self._inputHook) end
+	for _, tween in self._reloadTweens or {} do tween:Cancel() end
+	if self.SpecialStop then self:SpecialStop() end
+	if self.AssistClone then self.AssistClone:Destroy() end
 end
 
 return BaseEquipment

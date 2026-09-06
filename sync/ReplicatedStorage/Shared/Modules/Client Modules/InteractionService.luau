@@ -47,6 +47,11 @@ function Module.start_module()
 	-- Resolve hover continuously so removal, streaming, death and walking out of
 	-- range cannot leave a highlight enabled. Reuse the object's own Highlight.
 	RunService.RenderStepped:Connect(function()
+		if activeTrack and Player.Character and Player.Character:GetAttribute("GunEquipped") == true then
+			activeTrack:Stop(0)
+			activeTrack:Destroy()
+			activeTrack = nil
+		end
 		local target = Mouse.Target
 		local detector = target and target:FindFirstChild("clicker")
 		local character = Player.Character
@@ -68,6 +73,7 @@ function Module.start_module()
 	Interact.OnClientEvent:Connect(function(action)
 		if action ~= "AmmoRestock" then return end
 		local character = Player.Character
+		if character and character:GetAttribute("GunEquipped") == true then return end
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
 		local folder = ReplicatedStorage.Shared:FindFirstChild("InteractionAnimations")

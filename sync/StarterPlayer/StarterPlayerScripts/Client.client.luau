@@ -96,7 +96,8 @@ local function try_start_client()
 	local player = Players.LocalPlayer
 	if started
 		or not player:GetAttribute("Whitelisted")
-		or not player:GetAttribute("ClientDependenciesReady") then
+		or not player:GetAttribute("ClientDependenciesReady")
+		or not player:GetAttribute("PlayerDataReady") then
 		return
 	end
 
@@ -113,6 +114,7 @@ end
 try_start_client()
 Players.LocalPlayer:GetAttributeChangedSignal("Whitelisted"):Connect(try_start_client)
 Players.LocalPlayer:GetAttributeChangedSignal("ClientDependenciesReady"):Connect(try_start_client)
+Players.LocalPlayer:GetAttributeChangedSignal("PlayerDataReady"):Connect(try_start_client)
 
 game.Players.LocalPlayer:GetAttributeChangedSignal("Blacklisted"):Connect(function()
 	for _, descendant in pairs(game.Workspace:GetDescendants()) do

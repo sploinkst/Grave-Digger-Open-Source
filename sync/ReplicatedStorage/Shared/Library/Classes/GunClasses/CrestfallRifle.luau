@@ -10,7 +10,6 @@ local UserInputService = game:GetService("UserInputService")
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local Util = require(script.Parent.Parent.Parent.Util)
-local createAnimationResolver = require(script.Parent.AnimationResolver)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -18,8 +17,7 @@ local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
-local crestfallAnimations = Assets.Animations.Tools.Guns:FindFirstChild("lever")
-local animation, loadAnimations = createAnimationResolver("lever")
+local crestfallAnimations = Assets.Animations.Tools.Guns:FindFirstChild("CrestfallRifle")
 local crestfallSounds = GunAssets.Sounds:FindFirstChild("lever") or GunAssets.Sounds:FindFirstChild("CrestfallRifle")
 local SoundFolder = crestfallSounds or GunAssets.Sounds.CrestfallRifle
 
@@ -101,7 +99,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	local self = setmetatable(BaseRifle.new(info), Crestfall)
 
 	self.className = "CrestfallRifle"
-	self.item_image = "rbxthumb://type=Asset&id=14103121270&w=420&h=420"
+	self.item_image = Crestfall.Tool_Image
 	self.Designation = "Primary"
 	self.ANIM_LAYERS = ANIM_LAYERS
 
@@ -116,19 +114,39 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	}
 
 	self.AnimationGunType = "lever"
-	self.animations = loadAnimations({
-		Hip_Hold = animation({ "locked" }, "locked"),
-		Hip_Aim = animation({ "alt_changeaim" }, "alt_changeaim"),
-		Hip_Aim_Left = animation({ "alt_changeaim_left" }, "alt_changeaim_left"),
-		Hip_Fire = animation({ "alt_changefire" }, "alt_changefire"),
-		Hip_Fire_Left = animation({ "alt_changefire_left" }, "alt_changefire_left"),
-		Hip_Fire_Empty = animation({ "alt_changefire_empty" }, "alt_changefire_empty"),
-		Hip_Fire_Empty_Left = animation({ "alt_changefire_empty_left" }, "alt_changefire_empty_left"),
-		Hip_Fire_Last = animation({ "alt_changefire_last" }, "alt_changefire_last"),
-		Hip_Fire_Last_Left = animation({ "alt_changefire_last_left" }, "alt_changefire_last_left"),
-		Reload_Empty_Vet_Old = animation({ "reload_empty_vetOLD", "reload_empty_vet_old" }, "reload_empty_vetOLD"),
-		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
-	})
+	self.animations = {
+		Draw = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
+		Hold = crestfallAnimations.held,
+		Unequip = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
+
+		Aim      = crestfallAnimations.aim,
+		Aim_Left = crestfallAnimations.aim_left,
+
+		Fire      = crestfallAnimations.fire,
+		Fire_Left = crestfallAnimations.fire_left,
+
+		Reload_Empty = crestfallAnimations.reload_empty,
+		Reload_Start = crestfallAnimations.reload_start,
+		Reload_Loop  = crestfallAnimations.reload_loop,
+
+		Check  = crestfallAnimations.check,
+		Melee1 = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
+		Melee2 = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Melee2,
+
+		Drop  = crestfallAnimations.Parent.Parent.Misc.Drop_Rifle,
+		Short = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Short,
+
+		Hip_Hold = crestfallAnimations.locked,
+		Hip_Aim = crestfallAnimations.alt_changeaim,
+		Hip_Aim_Left = crestfallAnimations.alt_changeaim_left,
+		Hip_Fire = crestfallAnimations.alt_changefire,
+		Hip_Fire_Left = crestfallAnimations.alt_changeaim_left,
+		Hip_Fire_Empty = crestfallAnimations.alt_changefire_empty,
+		Hip_Fire_Empty_Left = crestfallAnimations.alt_changefire_empty_left,
+		Hip_Fire_Last = crestfallAnimations.alt_changefire_last,
+		Hip_Fire_Last_Left = crestfallAnimations.alt_changefire_last_left,
+		Reload_Empty_Vet_Old = crestfallAnimations.reload_empty_vet,
+	}
 
 	self.animation_speeds = {
 		Draw = 1 / 0.75,
@@ -290,14 +308,7 @@ function Crestfall:fire()
 	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
 	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
 	if self.Capacity <= 0 then
-		local left = self.current_shoulder ~= "Right"
-		local emptyAnimation
-		if self.HipBraced then
-			emptyAnimation = left and "Hip_Fire_Empty_Left" or "Hip_Fire_Empty"
-		else
-			emptyAnimation = left and "Fire_Empty_Left" or "Fire_Empty"
-		end
-		self:_playFireAnimation(emptyAnimation, false)
+		self:_dryFire()
 		return
 	end
 
@@ -447,7 +458,7 @@ function Crestfall:Destroy()
 	BaseRifle.destroy(self)
 end
 
-Crestfall.Tool_Image = "rbxthumb://type=Asset&id=14103121270&w=420&h=420"
+Crestfall.Tool_Image = "rbxthumb://type=Asset&id=118811623120292&w=420&h=420"
 Crestfall.Medal_Cost = 0
 Crestfall.Weight = 2
 Crestfall.Designation = "Primary"

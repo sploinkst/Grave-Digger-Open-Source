@@ -11,20 +11,14 @@ local UserInputService = game:GetService("UserInputService")
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local Util = require(script.Parent.Parent.Parent.Util)
-local createAnimationResolver = require(script.Parent.AnimationResolver)
-
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
-local volkAnimations = Assets.Animations.Tools.Guns:FindFirstChild("mosin_rig")
-	or Assets.Animations.Tools.Guns:FindFirstChild("mosin")
-	or Assets.Animations.Tools.Guns:FindFirstChild("Mosin")
-	or Assets.Animations.Tools.Guns:FindFirstChild("VolkRifle")
-	or Assets.Animations.Tools.Guns:FindFirstChild("Volk")
-local _, loadAnimations = createAnimationResolver("mosin")
+local volkAnimations = Assets.Animations.Tools.Guns:FindFirstChild("VolkRifle")
+
 local volkSounds = GunAssets.Sounds:FindFirstChild("mosin")
 	or GunAssets.Sounds:FindFirstChild("Mosin")
 	or GunAssets.Sounds:FindFirstChild("VolkRifle")
@@ -58,7 +52,7 @@ export type VolkRifle = typeof(setmetatable({} :: any, VolkRifle))
 
 local function findSound(...: string): Sound?
 	for _, name in ipairs({ ... }) do
-		local found = SoundFolder:FindFirstChild(name)
+		local found = SoundFolder:FindFirstChild(name, true)
 		if found and found:IsA("Sound") then return found end
 	end
 	return nil
@@ -100,7 +94,7 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 	local self = setmetatable(BaseRifle.new(info), VolkRifle)
 
 	self.className = "VolkRifle"
-	self.item_image = "rbxassetid://17496049645"
+	self.item_image = VolkRifle.Tool_Image
 	self.Designation = "Primary"
 	self.ANIM_LAYERS = ANIM_LAYERS
 
@@ -118,9 +112,31 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 	}
 
 	self.AnimationGunType = "mosin"
-	self.animations = loadAnimations({
-		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
-	})
+	self.animations = {
+		Draw = volkAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
+		Hold = volkAnimations.held,
+		Unequip = volkAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
+
+		Aim      = volkAnimations.aim,
+		Aim_Left = volkAnimations.Parent.PrinceRifle.PrinceRifle_Aim_Left,
+
+		Fire      = volkAnimations.fire,
+		Fire_Left = volkAnimations.Parent.PrinceRifle.PrinceRifle_Fire_Left,
+
+		Cycle = volkAnimations.cycle,
+
+		Reload_Empty = volkAnimations.reload_empty,
+		Reload_Start = volkAnimations.reload_start,
+		Reload_Loop  = volkAnimations.reload_loop,
+		Reload_End   = volkAnimations.reload_end,
+
+		Check  = volkAnimations.check,
+		Melee1 = volkAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
+		Melee2 = volkAnimations.Parent.PrinceRifle.PrinceRifle_Melee2,
+
+		Drop  = volkAnimations.Parent.Parent.Misc.Drop_Rifle,
+		Short = volkAnimations.Parent.PrinceRifle.PrinceRifle_Short,
+	}
 
 	self.animation_speeds = {
 		Aim = 1 / 0.35,
@@ -290,6 +306,7 @@ function VolkRifle:fire()
 		return
 	end
 	if self.Capacity <= 0 then
+		self:_dryFire()
 		return
 	end
 	if self:_if_sprinting() then
@@ -364,8 +381,7 @@ function VolkRifle:fire()
 		if cycleSound then self:_play_sfx(cycleSound, muzzle) end
 		if cycleTrack then cycleTrack.Stopped:Wait() end
 	end
-	local elapsedRest = math.max(0, FIRE_INTERVAL - 0.25)
-	if elapsedRest > 0 then task.wait(elapsedRest) end
+
 	self.Cycling = false
 	self.Firing = false
 	self:_restoreBaseDeferred()
@@ -438,6 +454,7 @@ function VolkRifle:_on_equip()
 		local muzzle = self:_findModelPart(self.MuzzlePartName)
 		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, damage, self.KnockBack_Force)
 	end)
+
 end
 
 function VolkRifle:_on_unequip()
@@ -465,7 +482,7 @@ function VolkRifle:Destroy()
 	BaseRifle.destroy(self)
 end
 
-VolkRifle.Tool_Image = "rbxassetid://17496049645"
+VolkRifle.Tool_Image = "rbxassetid://109461036497765"
 VolkRifle.Medal_Cost = 0
 VolkRifle.Weight = 2
 VolkRifle.Designation = "Primary"

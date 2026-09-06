@@ -1,0 +1,85 @@
+-- Central class contract. Names are controller IDs, not asset display names.
+local Classes = {}
+Classes.Default = "Soldat"
+Classes.Order = {"Soldat", "Rook", "Mortician", "Officer", "Jaeger", "Lancer", "Vanguard"}
+Classes.Definitions = {
+	Soldat = {
+		Passive = "Duty and Virtue", MaxWeight = 3, Equipment = "AmmoPack",
+		EquipmentName = "Ammunition Pouch", Tools = {"Pickaxe"},
+		DrawSpeed = 1.25, AimSpeed = 1.15, SpreadMultiplier = 0.9,
+	},
+	Rook = {
+		Passive = "Construct Hammer", MaxWeight = 2, Equipment = "MiningBombLauncher",
+		EquipmentName = "Mining Bomb Launcher", Tools = {"HeavyPickaxe", "ConstructHammer"},
+		ExplosiveKnockdownImmune = true,
+	},
+	Mortician = {
+		Passive = "Stimulant Compounds", MaxWeight = 2, Equipment = "MedicalSyrettes",
+		EquipmentName = "Medical Syrettes", Tools = {"Pickaxe", "StimulantCompounds"},
+		AllyHealHealth = 200, SurgerySpeed = 1.5, MobileSurgery = true, GasImmune = true,
+	},
+	Officer = {
+		Passive = "Recon Kit", MaxWeight = 2, Equipment = "TrenchWhistle",
+		EquipmentName = "Trench Whistle", Tools = {"Pickaxe", "ReconKit"},
+		NoHelmet = true, CaptureWeight = 2, IconRange = 200, MarkDuration = 10,
+	},
+	Jaeger = {
+		Passive = "Hunter Kit ", MaxWeight = 2, Equipment = "SmokescreenBombs",
+		EquipmentName = "Smokescreen Bombs", Tools = {"Pickaxe", "HunterKit"},
+		PoxPerShot = 20, HearingRange = 80,
+	},
+	Lancer = {
+		Passive = "Painkiller Injector", MaxWeight = 2, Equipment = "ThrowingAxes",
+		EquipmentName = "Throwing Axes", Tools = {"Pickaxe", "PainkillerInjector"},
+		FixedPrimary = "HeavyLance", NoFirearms = true, MeleeDamageMultiplier = 0.7,
+	},
+	Vanguard = {
+		Passive = "Bulwark's Hope", MaxWeight = 2, Equipment = "lebel",
+		EquipmentName = "Rally Banner", Tools = {"Pickaxe", "RallyBanner"},
+		FixedPrimary = "Shield", NoFirearms = true, SuppressionImmune = true,
+	}
+}
+
+-- Elite kits deliberately sit beside a player's selected class. This lets a
+-- conversion retain that class's tools/equipment while replacing only weapons.
+-- Weapon controller modules can be added later under these stable IDs.
+Classes.EliteDefinitions = {
+	-- Current first-wave controller/model IDs. The display lore names are
+	-- Storm Trooper and Anti-Material Trooper, while the migrated assets are
+	-- The visual models are mpgun/pugsley; their weapon controllers are kept
+	-- with the standard firearm controllers in GunClasses.
+	["Storm Trooper"] = { Primary = "StormRifle", Secondary = "GraceRevolver", RequiredClass = "Soldat" },
+	["Anti-Material Trooper"] = { Primary = "AntiMaterialRifle", Secondary = "GraceRevolver", RequiredClass = "Rook" },
+}
+
+function Classes.Get(name)
+	return Classes.Definitions[name] or Classes.Definitions[Classes.Default]
+end
+
+function Classes.Selected(player)
+	local root = player:FindFirstChild("PlayerData")
+	local data = root and root:FindFirstChild("PlayerData")
+	local equipment = data and data:FindFirstChild("Equipment")
+	local value = equipment and equipment:FindFirstChild("Class")
+	return value and Classes.Definitions[value.Value] and value.Value or Classes.Default
+end
+
+function Classes.Active(player)
+	local character = player.Character
+	local name = character and character:GetAttribute("Class")
+	return Classes.Get(name)
+end
+
+function Classes.GetElite(name)
+	if type(name) ~= "string" then return nil end
+	if Classes.EliteDefinitions[name] then return Classes.EliteDefinitions[name], name end
+	local normalized = name:lower():gsub("[^%w]", "")
+	for eliteName, definition in Classes.EliteDefinitions do
+		if eliteName:lower():gsub("[^%w]", "") == normalized then
+			return definition, eliteName
+		end
+	end
+	return nil
+end
+
+return Classes

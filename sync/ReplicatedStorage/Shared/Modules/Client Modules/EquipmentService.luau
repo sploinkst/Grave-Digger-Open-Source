@@ -19,26 +19,45 @@ local function FetchClasses()
 	end
 end
 
+local activeEquipment
+local equipmentConnection
+local trackedCharacter
+local function stopEquipment()
+	if activeEquipment then
+		if activeEquipment.Stop then activeEquipment:Stop() end
+		activeEquipment = nil
+	end
+end
 local function handleEquipment(character)
-	local value = character:GetAttribute("Equipment")
-	if value == "" then return end
-
-	local class = Classes[value]
-	if not class then print("Class not found for", value, Classes) return end
-
+	stopEquipment()
+	if character ~= LocalPlayer.Character then return end
+	local state = character:FindFirstChild("CharacterData") and character.CharacterData:FindFirstChild("State")
+	local equipmentValue = state and state:FindFirstChild("Equipment")
+	local value = equipmentValue and equipmentValue:IsA("StringValue") and equipmentValue.Value
+		or character:GetAttribute("Equipment") -- compatibility while remaining producers migrate
+	local class = value and Classes[value]
+	if not class then
+		local root = character:FindFirstChild("HumanoidRootPart")
+		local container = root and root:FindFirstChild("Equipment_BB")
+		local gui = container and container:FindFirstChild("bb")
+		if gui and gui:IsA("BillboardGui") then gui.Enabled = false end
+		return
+	end
 	local object = class.new()
+	activeEquipment = object
 	object:Start(character)
-	print("Started", object.className, "for", character.Name)
 end
 local function TrackEquipment(character)
-	if not character:GetAttribute("Equipment") then character:SetAttribute("Equipment", "") end
-	
-	if character:GetAttribute("Equipment") then
-		handleEquipment(character)
-	end
-	character:GetAttributeChangedSignal("Equipment"):Connect(function()
+	if trackedCharacter == character then return end
+	trackedCharacter = character
+	if equipmentConnection then equipmentConnection:Disconnect() end
+	stopEquipment()
+	local state = character:WaitForChild("CharacterData"):WaitForChild("State")
+	local equipmentValue = state:WaitForChild("Equipment") :: StringValue
+	equipmentConnection = equipmentValue:GetPropertyChangedSignal("Value"):Connect(function()
 		handleEquipment(character)
 	end)
+	handleEquipment(character)
 end
 
 
@@ -50,7 +69,12 @@ function EquipmentService.start_module()
 	end
 	
 	LocalPlayer.CharacterAdded:Connect(function(character)
-		TrackEquipment(LocalPlayer.Character)
+		TrackEquipment(character)
+	end)
+	LocalPlayer.CharacterRemoving:Connect(function()
+		if equipmentConnection then equipmentConnection:Disconnect(); equipmentConnection = nil end
+		trackedCharacter = nil
+		stopEquipment()
 	end)
 end
 

@@ -1,0 +1,3 @@
+local EquineShotgun = {}
+
+return EquineShotgun

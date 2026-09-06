@@ -21,7 +21,8 @@ local loadout_targets = {
 	LoadoutPrimary = "Primary",
 	LoadoutSecondary = "Secondary",
 }
-local MAX_LOADOUT_WEIGHT = 3
+local Classes = require(ReplicatedStorage.Shared.Library.ClassDefinitions)
+local ClassService = require(script.Parent.Parent.ClassService)
 
 local started = false
 
@@ -29,6 +30,13 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 	local slot_name = loadout_targets[target]
 	if not slot_name or type(weapon_name) ~= "string" then return end
 
+	local player_data = player:FindFirstChild("PlayerData")
+	local data = player_data and player_data:FindFirstChild("PlayerData")
+	local equipment = data and data:FindFirstChild("Equipment")
+	local slot = equipment and equipment:FindFirstChild(slot_name)
+	if not slot or not slot:IsA("StringValue") then return end
+
+	if weapon_name == "" then slot.Value = ""; return end
 	local weapon_script = gun_classes:FindFirstChild(weapon_name) or tool_classes:FindFirstChild(weapon_name)
 	if not weapon_script or not weapon_script:IsA("ModuleScript") then return end
 
@@ -36,12 +44,9 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 	if not success or type(weapon_class.Weight) ~= "number" then return end
 	if weapon_class.Designation ~= slot_name then return end
 
-	local player_data = player:FindFirstChild("PlayerData")
-	local data = player_data and player_data:FindFirstChild("PlayerData")
-	local equipment = data and data:FindFirstChild("Equipment")
-	local slot = equipment and equipment:FindFirstChild(slot_name)
-	if not slot or not slot:IsA("StringValue") then return end
-
+	local definition = Classes.Get(Classes.Selected(player))
+	if definition.NoFirearms and weapon_script.Parent == gun_classes then return end
+	if definition.FixedPrimary and slot_name == "Primary" then return end
 	local other_name = slot_name == "Primary" and "Secondary" or "Primary"
 	local other_slot = equipment:FindFirstChild(other_name)
 	local other_weight = 0
@@ -55,7 +60,7 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 		end
 	end
 
-	if weapon_class.Weight + other_weight > MAX_LOADOUT_WEIGHT then return end
+	if weapon_class.Weight + other_weight > definition.MaxWeight then return end
 	slot.Value = weapon_name
 end
 
@@ -64,6 +69,11 @@ function module.start_module()
 	started = true
 
 	datapush_remoteevent.OnServerEvent:Connect(function(player, target, value)
+		if type(target) ~= "string" then return end
+		if target == "LoadoutClass" then
+			ClassService.Select(player, value)
+			return
+		end
 		if loadout_targets[target] then
 			set_loadout(player, target, value)
 			return

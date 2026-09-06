@@ -10,7 +10,6 @@ local UserInputService = game:GetService("UserInputService")
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local Util = require(script.Parent.Parent.Parent.Util)
-local createAnimationResolver = require(script.Parent.AnimationResolver)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -18,11 +17,8 @@ local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
-local judgementAnimations = Assets.Animations.Tools.Guns:FindFirstChild("henry")
-	or Assets.Animations.Tools.Guns:FindFirstChild("JudgementRifle")
-	or Assets.Animations.Tools.Guns:FindFirstChild("Judgement")
-	or Assets.Animations.Tools.Guns:FindFirstChild("lever")
-local _, loadAnimations = createAnimationResolver("henry")
+local judgementAnimations = Assets.Animations.Tools.Guns:FindFirstChild("JudgementRifle")
+
 local judgementSounds = GunAssets.Sounds:FindFirstChild("henry")
 	or GunAssets.Sounds:FindFirstChild("JudgementRifle")
 	or GunAssets.Sounds:FindFirstChild("Judgement")
@@ -108,7 +104,7 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 	local self = setmetatable(BaseRifle.new(info), JudgementRifle)
 
 	self.className = "JudgementRifle"
-	self.item_image = "rbxthumb://type=Asset&id=14103121270&w=420&h=420"
+	self.item_image = JudgementRifle.Tool_Image
 	self.Designation = "Primary"
 	self.ANIM_LAYERS = ANIM_LAYERS
 
@@ -128,9 +124,22 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 	}
 
 	self.AnimationGunType = "henry"
-	self.animations = loadAnimations({
-		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
-	})
+	self.animations = {
+		Hold = judgementAnimations.held,
+		Aim = judgementAnimations.aim,
+		Aim_Left = judgementAnimations.aim_left,
+		Fire = judgementAnimations.fire,
+		Fire_Left = judgementAnimations.fire_left,
+		Draw = judgementAnimations.draw,
+		Unequip = judgementAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
+		Reload_Start = judgementAnimations.reload_start,
+		Check = judgementAnimations.check,
+		Melee1 = judgementAnimations.melee1,
+		Melee2 = judgementAnimations.melee2,
+		Short = judgementAnimations.short,
+		Charge = judgementAnimations.charge,
+		Charge_Stop = judgementAnimations.charge_stop,
+	}
 
 	self.animation_speeds = {
 		Draw = 1 / 1.2,
@@ -290,7 +299,7 @@ function JudgementRifle:fire()
 	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
 	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
 	if self.Capacity <= 0 then
-		self:_playFireAnimation((self.current_shoulder == "Right") and "Fire_Empty" or "Fire_Empty_Left", false)
+		self:_dryFire()
 		return
 	end
 
@@ -417,7 +426,7 @@ function JudgementRifle:Destroy()
 	BaseRifle.destroy(self)
 end
 
-JudgementRifle.Tool_Image = "rbxassetid://14103121270"
+JudgementRifle.Tool_Image = "rbxassetid://126433379345419"
 JudgementRifle.Medal_Cost = 0
 JudgementRifle.Weight = 2
 JudgementRifle.Designation = "Primary"

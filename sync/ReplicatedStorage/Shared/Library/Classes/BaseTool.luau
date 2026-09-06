@@ -49,6 +49,7 @@ export type BaseTool = typeof(setmetatable({} :: {
 	className: "BaseTool",
 	name: string,
 	tool: Tool?,
+	IsFirearm: boolean?,
 	model_reference: Model?,
 	actual_model: Model?,
 	holster_reference: Instance?,
@@ -145,7 +146,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 	self.tool = tool
 
 	if self.animations then
-		self.RegisteredAnimations = utilities_module.register_animations(LOCAL_PLAYER, self.animations)
+		self.RegisteredAnimations = utilities_module.register_animations(LOCAL_PLAYER, self.animations, self.AnimationGunType)
 		if not self.RegisteredAnimations then
 			warn("[" .. self.className .. "] Failed to register animations")
 		end
@@ -163,8 +164,8 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 				track.Looped = persistent
 
 				if animName == "Hold" then
-					-- Keep the authored held pose above the character's Action
-					-- sprint overlays instead of blending the gun into sprint arms.
+					-- Character animations stay below this pose while a gun is
+					-- equipped; weapon actions retain their higher priorities.
 					track.Priority = Enum.AnimationPriority.Action2
 				elseif animName == "Aim" or animName == "Aim_Left"
 					or animName == "Aim_Dual" or animName == "Aim_Normal"
@@ -479,6 +480,7 @@ function BaseTool:equip()
 		self.actual_holster = utilities_module.reverse_search_holster(LOCAL_PLAYER, self.holster_reference.Name)
 	end
 
+	character:SetAttribute("GunEquipped", self.IsFirearm == true)
 	character:SetAttribute("Sprint_Animation", self.className)
 	humanoid:EquipTool(self.tool)
 
@@ -539,25 +541,19 @@ function BaseTool:equip()
 
 		table.insert(self.keyframe_connections, track.KeyframeReached:Connect(function(keyframe)
 
-			local rightArm = LOCAL_PLAYER.Character:FindFirstChild("Right Arm")
-			if not rightArm then return end
-			local round
-
-
-			if self.Round_Target_Part then
-				if not self.Round then return end
-				round = LOCAL_PLAYER.Character:FindFirstChild(self.Round_Target_Part):FindFirstChild(self.Round.Name)
-			else
-				if not self.Round then return end
-				round = rightArm:FindFirstChild(self.Round.Name)
-			end
-			if not round then warn("No self.Round in Right_Arm") return end
-
 			if keyframe == "vfx_hand_shell_visible" then
-				round.Transparency = 0
+				local target = self.Round_Target_Part
+					and LOCAL_PLAYER.Character:FindFirstChild(self.Round_Target_Part)
+					or LOCAL_PLAYER.Character:FindFirstChild("Right Arm")
+				local round = self.Round and target and target:FindFirstChild(self.Round.Name)
+				if round and round:IsA("BasePart") then round.Transparency = 0 end
 
 			elseif keyframe == "vfx_hand_shell_invisible" then
-				round.Transparency = 1
+				local target = self.Round_Target_Part
+					and LOCAL_PLAYER.Character:FindFirstChild(self.Round_Target_Part)
+					or LOCAL_PLAYER.Character:FindFirstChild("Right Arm")
+				local round = self.Round and target and target:FindFirstChild(self.Round.Name)
+				if round and round:IsA("BasePart") then round.Transparency = 1 end
 			elseif keyframe == "vfx_eject_casing" then
 				local casing = self.actual_model:FindFirstChild(self.className .. "_Ejection")
 				if not casing then warn("[BASETOOL] vfx_eject_casing: no casing for " .. self.className) return end
@@ -601,8 +597,8 @@ function BaseTool:equip()
 				self.cylinder_rotation = 1
 
 			elseif keyframe:sub(1, 4) == "sfx_" then
-				if not self.SFXFolder then return end
-				local sound = self.SoundFolder:FindFirstChild(keyframe:sub(5))
+				if not self.SoundFolder then return end
+				local sound = self.SoundFolder:FindFirstChild(keyframe:sub(5), true)
 				if sound then
 					local muzzle = self:_findModelPart(self.MuzzlePartName)
 					if muzzle then self:_play_sfx(sound, muzzle, nil, 0.1) end
@@ -650,6 +646,7 @@ function BaseTool:unequip()
 	if not humanoid then return end
 
 	LOCAL_PLAYER:SetAttribute("CantUnequip", false)
+	character:SetAttribute("GunEquipped", nil)
 	character:SetAttribute("Sprint_Animation", nil)
 	if self._on_unequip then self:_on_unequip() end
 
@@ -719,8 +716,9 @@ function BaseTool:get_spread(muzzle, shootDir)
 
 	local spread = isMoving and self.Moving_Accuracy or self.Accuracy
 
-	local hOffset = math.random(-spread, spread) / 1000
-	local vOffset = math.random(-spread, spread) / 1000
+	local spreadMultiplier = if self.IsFirearm and character then character:GetAttribute("SpreadMultiplier") or 1 else 1
+	local hOffset = math.random(-spread, spread) / 1000 * spreadMultiplier
+	local vOffset = math.random(-spread, spread) / 1000 * spreadMultiplier
 
 	local muzzleCF = muzzle.CFrame
 
@@ -804,6 +802,9 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean): AnimationTra
 		speed = self.animation_speeds[name] or 1
 	end
 
+	if name == "Draw" and self.IsFirearm and LOCAL_PLAYER.Character then
+		speed *= LOCAL_PLAYER.Character:GetAttribute("DrawSpeed") or 1
+	end
 	track:Play(CUT)
 	track:AdjustSpeed(speed)
 
@@ -1108,7 +1109,7 @@ function BaseTool:aim()
 
 		local aimTrack = self:_aimTrack()
 		if aimTrack then
-			aimTrack:Play(CUT)
+			aimTrack:Play(CUT / (LOCAL_PLAYER.Character:GetAttribute("AimSpeed") or 1))
 			self.ForceBlockFire = false
 			self.Aiming = true
 		end
@@ -1578,6 +1579,7 @@ function BaseTool:drop()
 	-- that would otherwise keep the dropped weapon's animation overlays active.
 	local character = LOCAL_PLAYER.Character
 	if character then
+		character:SetAttribute("GunEquipped", nil)
 		character:SetAttribute("Sprint_Animation", nil)
 		character:SetAttribute("No_Sprint_Animation", nil)
 		character:SetAttribute("Aiming", nil)

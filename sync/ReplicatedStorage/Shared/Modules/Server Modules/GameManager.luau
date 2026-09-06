@@ -521,29 +521,7 @@ local function GiveStartingEquipment(player: Player, character: Model)
 		return
 	end
 
-	local primaryTool = equipment:WaitForChild("Primary")
-	local secondaryTool = equipment:WaitForChild("Secondary")
-
-	-- // Bail out early and loudly instead of silently handing out nothing.
-	if not primaryTool or primaryTool.Value == "" then
-		warn("[GameManager]", player.Name, "has no Primary tool set — skipping.")
-	else
-		ToolService.give_item(player, primaryTool.Value)
-	end
-
-	if not secondaryTool or secondaryTool.Value == "" then
-		warn("[GameManager]", player.Name, "has no Secondary tool set — skipping.")
-	else
-		ToolService.give_item(player, secondaryTool.Value)
-	end
-
-	ToolService.give_item(player, "Compass")
-	ToolService.give_item(player, "Medkit")
-	ToolService.give_item(player, "Pickaxe")
-
-	if character and character.Parent then
-		character:SetAttribute("Equipment", "AmmoPack")
-	end
+	require(script.Parent.ClassService).GiveLoadout(player, character)
 
 	print("[GameManager] Gave starting equipment to", player.Name)
 end
@@ -936,8 +914,18 @@ local function SetupCapturePoint(point: Instance, model: Model, myGeneration: nu
 				return
 			end
 
-			local empireN = empireCount.Value
-			local nationN = nationCount.Value
+			local empireN, nationN = 0, 0
+			for occupant in playersOnPoint do
+				local character = occupant.Character
+				local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+				if humanoid and humanoid.Health > 0 then
+					local contribution = character:GetAttribute("CaptureWeight") or 1
+					if occupant.Team == EmpireTeam then empireN += contribution
+					elseif occupant.Team == NationTeam then nationN += contribution end
+				end
+			end
+			 empireCount.Value = empireN
+			 nationCount.Value = nationN
 			local total = empireN + nationN
 
 			-- // Award ownership at full progress
