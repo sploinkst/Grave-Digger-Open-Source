@@ -115,6 +115,8 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		or ToolFolder:FindFirstChild("lever")
 		or ToolFolder:FindFirstChild("Lever")
 	self.holster_reference = get_holster_reference(self.model_reference)
+	
+	self.DefaultGripC0 = CFrame.new(0.254, -3.2, -0.5) * CFrame.fromOrientation(math.rad(0.979), math.rad(-80), math.rad(90))
 	self.motor_6d_data = {
 		Parent = "Left Arm",
 		Part0 = "Left Arm",

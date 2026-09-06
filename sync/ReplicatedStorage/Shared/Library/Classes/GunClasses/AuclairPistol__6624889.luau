@@ -1,3 +1,0 @@
-local AuclairPistol = {}
-
-return AuclairPistol

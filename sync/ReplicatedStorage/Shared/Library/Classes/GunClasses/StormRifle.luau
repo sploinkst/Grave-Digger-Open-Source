@@ -129,10 +129,8 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 
 		Fire      = crestfallAnimations.fire,
 		Fire_Left = crestfallAnimations.fire_left,
-
-		Reload_Empty = crestfallAnimations.reload_empty,
 		Reload_Start = crestfallAnimations.reload_start,
-		Reload_Loop  = crestfallAnimations.reload_loop,
+		Reload_Loop  = crestfallAnimations.reload_bolt,
 
 		Check  = crestfallAnimations.check,
 		Melee1 = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
@@ -142,15 +140,6 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 		Short = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Short,
 
 		Hip_Hold = crestfallAnimations.locked,
-		Hip_Aim = crestfallAnimations.alt_changeaim,
-		Hip_Aim_Left = crestfallAnimations.alt_changeaim_left,
-		Hip_Fire = crestfallAnimations.alt_changefire,
-		Hip_Fire_Left = crestfallAnimations.alt_changeaim_left,
-		Hip_Fire_Empty = crestfallAnimations.alt_changefire_empty,
-		Hip_Fire_Empty_Left = crestfallAnimations.alt_changefire_empty_left,
-		Hip_Fire_Last = crestfallAnimations.alt_changefire_last,
-		Hip_Fire_Last_Left = crestfallAnimations.alt_changefire_last_left,
-		Reload_Empty_Vet_Old = crestfallAnimations.reload_empty_vet,
 	}
 
 	self.animation_speeds = {

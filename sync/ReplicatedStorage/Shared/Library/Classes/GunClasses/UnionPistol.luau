@@ -22,10 +22,22 @@ local function findAnimation(folder: Instance?, names: { string }): Animation?
 	end
 
 	for _, name in names do
+		print("Searching for animation:", name)
 		local direct = folder:FindFirstChild(name, true)
+		print("Found direct:", direct and direct.Name)
 		if direct and direct:IsA("Animation") then
+			print("Found direct match:", direct.Name)
 			return direct
+		else
+			print("No direct match found, searching parent")
+			local search = folder.Parent:FindFirstChild(name, true)
+			if search and search:IsA("Animation") then
+				print("Found search match:", search.Name)
+				return search
+			end
 		end
+		
+		print("No match found for", name)
 	end
 
 	return nil
@@ -36,9 +48,9 @@ local function loadSteyrAnimations(): { [string]: Animation }
 	local folder = guns:FindFirstChild("steyr") or guns:FindFirstChild("UnionPistol")
 	local graceFolder = guns:FindFirstChild("GraceRevolver")
 	local bindings = {
-		Hold = { "locked" },
-		Aim = { "locked" },
-		Aim_Left = { "locked" },
+		Hold = { "GraceRevolver_Held" },
+		Aim = { "GraceRevolver_Aim" },
+		Aim_Left = { "GraceRevolver_Aim_left" },
 		TwoHand_Hold = { "alt_changeaim" },
 		TwoHand_Aim = { "alt_changeaim" },
 		TwoHand_Aim_Left = { "alt_changeaim_left" },

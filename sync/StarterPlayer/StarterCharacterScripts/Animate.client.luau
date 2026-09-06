@@ -7,12 +7,14 @@ local replicatedstorage_service = game:GetService("ReplicatedStorage")
 local run_service               = game:GetService("RunService")
 local player_service            = game:GetService("Players")
 
--- local sound_module = require(script.Sound)
+local sound_module = require(script:WaitForChild("Sound"))
 
 -- // (Variables)
 local local_player = player_service.LocalPlayer
 local character    = script.Parent
 local humanoid: Humanoid = character:WaitForChild("Humanoid")
+
+local playing_sprint_arms = false
 
 local animator: Animator = humanoid:FindFirstChildOfClass("Animator")
 if not animator then
@@ -62,19 +64,6 @@ local animations_table = {
 }
 
 local loaded_animations: {[string]: AnimationTrack} = {}
-local default_priorities = {}
-local function gun_equipped()
-	return character:GetAttribute("GunEquipped") == true
-end
-
--- These overlays move the arms/torso away from the equipped gun.
-local function blocked_gun_overlay(name: string): boolean
-	return name == "Crouch_Arms" or name == "Jump_Arms"
-		or name == "Jump_MidAir" or name == "Jump_Land"
-		or name == "Sprint_Arms" or name == "Sprint_Lean"
-		or name == "PrinceRifle_Sprint" or name == "GraceRevolver_Sprint"
-		or string.find(name, "Flinch") ~= nil
-end
 
 local directional_table = { Forward = false, Left = false, Right = false }
 
@@ -101,7 +90,7 @@ local climb_connection
 
 local ORIGINAL_HIP_HEIGHT = humanoid.HipHeight
 
--- FIX: list of all sprint overlay names for reliable clearing
+-- list of all sprint overlay names for reliable clearing
 local SPRINT_OVERLAY_NAMES = {
 	"Sprint_Lean",
 	"Sprint_Arms",
@@ -110,110 +99,42 @@ local SPRINT_OVERLAY_NAMES = {
 }
 
 -- // (Utils)
-local authoredNames = {
-	Walk_Forward = "walk_forward", Walk_Injured = "walk_injured",
-	Walk_Left = "walk_left", Walk_Right = "walk_right",
-	Sprint_Arms = "sprinting_arms", Sprinting_Full = "sprinting_full",
-	Sprint_Lean = "sprinting_lean", Leg_Aiming = "leg_aiming",
-}
-
-local function legsOnly(sequence)
-	local copy = sequence:Clone()
-	local allowed = {HumanoidRootPart = true, Torso = true, LowerTorso = true,
-		["Left Leg"] = true, ["Right Leg"] = true, LeftUpperLeg = true,
-		LeftLowerLeg = true, LeftFoot = true, RightUpperLeg = true,
-		RightLowerLeg = true, RightFoot = true}
-	for _, keyframe in copy:GetKeyframes() do
-		local root = keyframe:FindFirstChild("HumanoidRootPart")
-		if root and humanoid.RigType == Enum.HumanoidRigType.R6 then
-			-- The saved clip puts legs directly below HRP. R6 Animator binds
-			-- them through Torso, so retain that ancestry with zero pose weight.
-			local torso = root:FindFirstChild("Torso")
-			if not torso then torso = Instance.new("Pose"); torso.Name = "Torso"; torso.Parent = root end
-			for _, name in {"Left Leg", "Right Leg"} do
-				local leg = root:FindFirstChild(name)
-				if leg then leg.Parent = torso end
-			end
-		end
-		for _, pose in keyframe:GetDescendants() do
-			if pose:IsA("Pose") then
-				if not allowed[pose.Name] then pose:Destroy()
-				elseif pose.Name == "HumanoidRootPart" or pose.Name == "Torso" or pose.Name == "LowerTorso" then
-					pose.Weight = 0
-					pose.CFrame = CFrame.identity
-				end
-			end
-		end
-	end
-	return copy
-end
-
 local function load_animations()
-	local authored = replicatedstorage_service:WaitForChild("MovementAnimations", 15)
-	local sources = {}
-	for _, animation in animations_table do sources[animation.Name] = animation end
-	local legacyWalkForward = sources.Walk_Forward
-	sources.Walk_Injured = animations_folder.Walking.Standing:FindFirstChild("Walk_Injured")
-	for name, authoredName in authoredNames do
-		local source = authored and authored:FindFirstChild(authoredName)
-		if source then sources[name] = source end
-	end
-	for name, source in sources do
-		local success, err = pcall(function()
-			local animation = source
-			if source:IsA("KeyframeSequence") then
-				local sequence = if name == "Leg_Aiming" then legsOnly(source) else source
-				animation = Instance.new("Animation")
-				animation.AnimationId = game:GetService("KeyframeSequenceProvider"):RegisterKeyframeSequence(sequence)
-			end
-			local track = animator:LoadAnimation(animation)
-			if name == "Leg_Aiming" then
-				track.Priority = Enum.AnimationPriority.Action3
-			elseif name == "Climb" or string.find(name, "Jump") or string.find(name, "Sprint") then
-				track.Priority = Enum.AnimationPriority.Action
-			elseif string.find(name, "Flinch") then
-				track.Priority = Enum.AnimationPriority.Action4
-			else track.Priority = Enum.AnimationPriority.Movement end
-			track.Looped = name == "Leg_Aiming" or name == "Jump_MidAir" or name == "Climb"
-				or string.find(name, "Walk") ~= nil or string.find(name, "Sprint") ~= nil
-				or string.find(name, "Idle") ~= nil or name == "Crouch_Arms"
-			default_priorities[name] = track.Priority
-			-- Priority is evaluated per joint: gun arms win, unkeyed legs move.
-			if gun_equipped() and name ~= "Leg_Aiming" then
-				track.Priority = Enum.AnimationPriority.Action
-			end
-			loaded_animations[name] = track
-			track:GetMarkerReachedSignal("Footstep"):Connect(function() sound_module.Play_WalkSFX() end)
-		end)
-		if not success then
-			warn("[Animate] Could not load " .. name .. ": " .. tostring(err))
-			if name == "Walk_Forward" and legacyWalkForward then
-				local ok, fallback = pcall(function() return animator:LoadAnimation(legacyWalkForward) end)
-				if ok then
-					fallback.Looped = true
-					fallback.Priority = Enum.AnimationPriority.Movement
-					fallback:GetMarkerReachedSignal("Footstep"):Connect(function() sound_module.Play_WalkSFX() end)
-					loaded_animations.Walk_Forward = fallback
-				end
-			end
+	for _, animation in pairs(animations_table) do
+		if not animation then
+			continue
 		end
+
+		local track = animator:LoadAnimation(animation)
+
+		-- PRIORITIES
+		if animation.Name == "Climb" then
+			track.Priority = Enum.AnimationPriority.Action
+
+		elseif string.find(animation.Name, "Jump")
+			or string.find(animation.Name, "Sprint") then
+
+			track.Priority = Enum.AnimationPriority.Action
+
+		elseif string.find(animation.Name, "Flinch") then
+			track.Priority = Enum.AnimationPriority.Action4
+		else
+			track.Priority = Enum.AnimationPriority.Movement
+		end
+
+		-- LOOPING
+		if animation.Name == "Jump_MidAir"
+			or animation.Name == "Climb" then
+
+			track.Looped = true
+		end
+
+		loaded_animations[animation.Name] = track
+
+		loaded_animations[animation.Name]:GetMarkerReachedSignal("Footstep"):Connect(function()
+			sound_module.Play_WalkSFX()
+		end)
 	end
-end
-
-local function update_aiming_legs()
-	local track = loaded_animations.Leg_Aiming
-	if not track then return end
-	if character:GetAttribute("Aiming") == true and humanoid.Health > 0 then
-		if not track.IsPlaying then track:Play(0.12) end
-	elseif track.IsPlaying then track:Stop(0.12) end
-end
-
-local function is_injured()
-	local explicit = character:GetAttribute("Injured")
-	if explicit == nil then explicit = local_player:GetAttribute("Injured") end
-	if explicit ~= nil then return explicit == true end
-	-- Same injured threshold used by the medkit's health check.
-	return humanoid.Health > 0 and humanoid.Health < 100
 end
 
 local function initialize_hips()
@@ -273,12 +194,29 @@ local function if_tool_equipped()
 	return true
 end
 
+local function sprint_arms_overlay()
+	if character:GetAttribute("Sprint_Animation") then
+		return tostring(character:GetAttribute("Sprint_Animation") .. "_Sprint")
+	else
+		return "Sprint_Arms"
+	end
+end
+
 local function get_walk_animation()
-	if is_injured() and loaded_animations.Walk_Injured then return "Walk_Injured" end
-	-- Local movement direction supports diagonal A/D input and gamepads.
-	local direction = humanoid_root_part.CFrame:VectorToObjectSpace(humanoid.MoveDirection)
-	if direction.X < -0.35 then return "Walk_Left" end
-	if direction.X > 0.35 then return "Walk_Right" end
+	-- Forward ALWAYS wins if pressed
+	if directional_table.Forward then
+		return "Walk_Forward"
+	end
+
+	-- Only allow lateral if forward is NOT pressed
+	if directional_table.Left then
+		return "Walk_Left"
+	end
+
+	if directional_table.Right then
+		return "Walk_Right"
+	end
+
 	return "Walk_Forward"
 end
 
@@ -330,7 +268,6 @@ local function play_base(name: string, fade: number?, reversed: boolean?, speed:
 end
 
 local function play_overlay(name: string, fade: number?, speed: number?, weight: number?)
-	if gun_equipped() and blocked_gun_overlay(name) then return end
 	local track = loaded_animations[name]
 	if not track then return end
 
@@ -366,7 +303,7 @@ local function clear_overlays()
 	active_overlays = {}
 end
 
--- FIX: dedicated helper to stop all sprint overlays regardless of
+-- dedicated helper to stop all sprint overlays regardless of
 -- whether they were registered in active_overlays
 local function clear_sprint_overlays(fade: number?)
 	for _, name in ipairs(SPRINT_OVERLAY_NAMES) do
@@ -377,20 +314,6 @@ local function clear_sprint_overlays(fade: number?)
 		active_overlays[name] = nil
 	end
 end
-
--- Also handle equipping mid-crouch, mid-sprint, or during an active flinch.
-character:GetAttributeChangedSignal("GunEquipped"):Connect(function()
-	local equipped = gun_equipped()
-	for name, track in loaded_animations do
-		if name ~= "Leg_Aiming" then
-			track.Priority = if equipped then Enum.AnimationPriority.Action
-				else default_priorities[name] or Enum.AnimationPriority.Movement
-		end
-		if equipped and blocked_gun_overlay(name) then stop_overlay(name, 0) end
-	end
-	-- Re-evaluate unchanged movement states so unarmed overlays return on unequip.
-	current_state = nil
-end)
 
 -- // (Movement)
 local function update_movement(speed: number)
@@ -405,6 +328,7 @@ local function update_movement(speed: number)
 
 	local moving = humanoid.MoveDirection.Magnitude > 0.1 and speed > 1
 
+	-- IDLE
 	if not moving then
 		local target = crouching and "CROUCH_IDLE" or "IDLE"
 
@@ -415,7 +339,6 @@ local function update_movement(speed: number)
 
 				clear_overlays()
 				play_overlay("Crouch_Arms")
-
 			else
 				play_base("Stand_Idle", nil, nil, 1)
 				set_target_hip_offset(0)
@@ -447,23 +370,99 @@ local function update_movement(speed: number)
 		return
 	end
 
-	if character:GetAttribute("Sprinting") == true then
-		if set_state("SPRINT") then
+	-- WALK
+	if speed < 13 then
+		if set_state("WALK") then
 			set_target_hip_offset(0)
+
 			clear_overlays()
 		end
-		play_base("Sprinting_Full", 0.15)
-		play_overlay("Sprint_Arms", 0.15)
-		play_overlay("Sprint_Lean", 0.15)
+
+		if freelook then
+			play_base("Walk_Forward")
+		else
+			play_base(get_walk_animation())
+		end
+
 		return
 	end
 
-	if set_state("WALK") then
-		set_target_hip_offset(0)
-		clear_overlays()
-	end
-	play_base(get_walk_animation())
+	-- SPRINT TRANSITION
+	if speed >= 13 and speed < 17 then
+		if set_state("SPRINT_TRANSITION") then
+			set_target_hip_offset(0)
 
+			clear_overlays()
+
+			-- Make sure all walking tracks are stopped.
+			for _, name in ipairs({
+				"Walk_Forward",
+				"Walk_Left",
+				"Walk_Right",
+				}) do
+				local track = loaded_animations[name]
+
+				if track and track.IsPlaying then
+					track:Stop(0.1)
+				end
+			end
+
+			play_base("Walk_Forward", 0.1, nil, 1 - speed / 100)
+			play_overlay("Sprint_Lean", 0.15)
+		end
+
+		-- Keep the transition animation synced to speed.
+		if active_base == loaded_animations["Walk_Forward"] then
+			active_base:AdjustSpeed(1 - speed / 100)
+		end
+
+		return
+	end
+
+	-- FULL SPRINT
+	if speed >= 17 then
+		if set_state("SPRINT") then
+			set_target_hip_offset(0)
+
+			-- Stop every possible walking animation.
+			for _, name in ipairs({
+				"Walk_Forward",
+				"Walk_Left",
+				"Walk_Right",
+				}) do
+				local track = loaded_animations[name]
+
+				if track and track.IsPlaying then
+					track:Stop(0.05)
+				end
+			end
+
+			-- Clear all previous overlays.
+			clear_overlays()
+
+			-- Stop whatever base animation was active.
+			if active_base then
+				active_base:Stop(0.05)
+				active_base = nil
+				current_base_name = nil
+			end
+
+			-- Full-body sprint animation.
+			play_base("Sprinting_Full", 0, nil, 1)
+
+			-- Sprint arms.
+			if not character:GetAttribute("No_Sprint_Animation") then
+				play_overlay(sprint_arms_overlay(), 0.1, nil, 1)
+			end
+
+			-- Sprint lean.
+			--play_overlay("Sprint_Lean", 0.1, nil, 1)
+
+			playing_sprint_arms = true
+		end
+
+		return
+	end
 end
 
 -- // (Input)
@@ -521,7 +520,6 @@ end)
 run_service.RenderStepped:Connect(function(dt)
 	local speed = humanoid.MoveDirection.Magnitude * humanoid.WalkSpeed
 	update_movement(speed)
-	update_aiming_legs()
 	update_hip_offset(dt)
 end)
 
@@ -583,7 +581,7 @@ humanoid.StateChanged:Connect(function(_, new_state)
 		end
 
 		is_climbing = true
-		is_airborne = false   -- FIX: always clear airborne when climbing begins
+		is_airborne = false   -- always clear airborne when climbing begins
 
 		--reset state so set_state() won't no-op when we leave climbing
 		current_state = nil
@@ -628,10 +626,6 @@ humanoid.StateChanged:Connect(function(_, new_state)
 		return
 	end
 
-	-- FIX: handle leaving the climbing state (any non-climbing state after
-	-- is_climbing was true) — was previously missing the climb_connection
-	-- disconnect when transitioning directly to states other than the ones
-	-- explicitly checked above (e.g. GettingUp, Running, etc.)
 	if is_climbing then
 		is_climbing = false
 
@@ -652,7 +646,6 @@ end)
 
 -- // (Died)
 humanoid.Died:Connect(function()
-	if loaded_animations.Leg_Aiming then loaded_animations.Leg_Aiming:Stop(0) end
 	if active_base then active_base:Stop(0) end
 	clear_overlays()
 end)
@@ -660,5 +653,3 @@ end)
 -- // (Init)
 load_animations()
 initialize_hips()
-character:GetAttributeChangedSignal("Aiming"):Connect(update_aiming_legs)
-update_aiming_legs()
