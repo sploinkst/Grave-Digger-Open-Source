@@ -416,8 +416,8 @@ return {
 				},
 				
 				["Voice Lines"] = {
-					Default = "X",
-					Current = "X",
+					Default = "E",
+					Current = "E",
 				},
 				
 				["Voice Command: Request Ammo"] = {

@@ -1065,6 +1065,7 @@ local function StopConcussionEffect()
 	if not concussionActive then
 		return
 	end
+	
 	concussionActive = false
 
 	local concussionUi = LocalPlayer.PlayerGui:WaitForChild("Status"):WaitForChild("Concussion")

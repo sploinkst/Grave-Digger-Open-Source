@@ -36,8 +36,8 @@ function RagdollStatus:_un_apply(player: Player)
 end
 
 -- // to be used for like on death and stuff
-function RagdollStatus:_special_apply(character: Model)
-	Easy_Ragdoll_Module.SetRagdoll(character, true, true, 0, true)
+function RagdollStatus:_special_apply(character: Model, helmet: Model?)
+	Easy_Ragdoll_Module.SetRagdoll(character, true, true, 0, true, helmet)
 end
 
 return RagdollStatus

@@ -23,6 +23,7 @@ local main_menu: GuiObject? = nil
 local current_ui: ScreenGui? = nil
 local button_connections = {}
 
+local firstclick = false
 -- // Functions
 
 local function set_ui()
@@ -64,6 +65,31 @@ local function disable_all_scenes_ui()
 end
 
 
+local function set_scene(scene, btn)
+	if not scenes_folder or not scenes_folder.Parent then
+		return
+	end
+
+	local scene = scenes_folder:FindFirstChild(scene)
+
+	if not scene or not scene:IsA("ScreenGui") then
+		warn("[MENUSERVICE] Missing menu scene:", scene)
+		return
+	end
+
+	-- Switch menu camera scene.
+	menu_camera_module:Switch(scene)
+
+	-- Reset all buttons.
+	color_all_grey()
+
+	-- Close every other scene.
+	disable_all_scenes_ui()
+
+	-- Open selected scene.
+	scene.Enabled = true
+	current_ui = scene
+end
 local function bind_menu_buttons()
 	-- Disconnect connections belonging to the previous UI tree.
 	for _, connection in ipairs(button_connections) do
@@ -82,32 +108,9 @@ local function bind_menu_buttons()
 		end
 
 		table.insert(button_connections, button.Activated:Connect(function()
-			if not scenes_folder or not scenes_folder.Parent then
-				return
-			end
-
-			local scene = scenes_folder:FindFirstChild(button.Name)
-
-			if not scene or not scene:IsA("ScreenGui") then
-				warn("[MENUSERVICE] Missing menu scene:", button.Name)
-				return
-			end
-
-			-- Switch menu camera scene.
-			menu_camera_module:Switch(button.Name)
-
-			-- Reset all buttons.
-			color_all_grey()
-
+			set_scene(button.Name)
 			-- Highlight selected button.
 			button.ImageColor3 = Color3.new(1, 1, 1)
-
-			-- Close every other scene.
-			disable_all_scenes_ui()
-
-			-- Open selected scene.
-			scene.Enabled = true
-			current_ui = scene
 		end))
 	end
 end
@@ -321,16 +324,13 @@ function module.start_module()
 
 	-- Ensure the initial state is clean.
 	disable_all_scenes_ui()
-	color_all_grey()
 	set_ui()
 
 	-- Start child menu modules.
 	start_sub_modules()
-
 	-- Character lifecycle.
 	local_player.CharacterRemoving:Connect(handle_character_removing)
 	local_player.CharacterAdded:Connect(handle_character_added)
-
 	-- Menu input.
 	input_service.InputBegan:Connect(function(input, gps)
 		if gps then
@@ -340,6 +340,7 @@ function module.start_module()
 		if input.KeyCode ~= menu_button then
 			return
 		end
+		
 
 		-- Always resolve the current UI before opening/closing.
 		if not refresh_ui(false) then
@@ -357,7 +358,14 @@ function module.start_module()
 		else
 			-- OPEN MENU
 			menu_boolean = true
-
+			
+			if not firstclick then
+				set_scene("Loadout")
+				firstclick = true
+				
+				local_player.PlayerGui.Menu.Main_Frame.Loadout.ImageColor3 = Color3.fromRGB(255, 255, 255)
+			end
+			
 			camera_service.SwitchCamera("MenuCamera", true)
 
 			if current_ui and current_ui.Parent then

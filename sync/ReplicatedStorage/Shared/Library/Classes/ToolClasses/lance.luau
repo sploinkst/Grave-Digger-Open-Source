@@ -83,10 +83,14 @@ function Lance:_on_give()
 			self:endAiming(); self:_stopAllExcept()
 			local track = self:_playAnim("Charge")
 			if track then track.Looped = true end
+			Players.LocalPlayer.Character:SetAttribute("charging", true)
+			print("Charging attribute given")
 		elseif kind == "ChargeStop" then
 			self.Charging = false; self.ForceBlockFire = false
 			self:_stopAllExcept(); self:_playAnim("Charge_Stop")
 			task.delay(1, function() if self.Equipped then self:_restoreBase() end end)
+			Players.LocalPlayer.Character:SetAttribute("charging", nil)
+			print("Charging attribute removed")
 		elseif kind == "CloseSweep" then
 			self:_stopAllExcept(); self:_playAnim("Melee1")
 		elseif kind == "Inspire" then

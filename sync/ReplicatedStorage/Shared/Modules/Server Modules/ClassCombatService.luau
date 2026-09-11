@@ -67,6 +67,13 @@ local function damage(player, target, amount, instant)
 	local alive, humanoid = living(target)
 	if not alive or not enemy(player, target) then return end
 	local targetPlayer = Players:GetPlayerFromCharacter(target)
+	
+	print("Damage:", player.Name, target.Name, amount, instant)
+	
+	if targetPlayer == player then
+		return
+	end
+	
 	if targetPlayer then targetPlayer:SetAttribute("LastTagged", player.Name) end
 	humanoid:TakeDamage(instant and humanoid.Health or amount * (target:GetAttribute("MeleeDamageMultiplier") or 1))
 end
@@ -150,13 +157,15 @@ local function recover(player, character, seconds, knocked)
 	character:SetAttribute("CombatStunned", true)
 	local wasAnchored = root.Anchored
 	if knocked then
-		require(script.Parent.StatusService).GiveStatus(player, "RagdollStatus")
+		--require(script.Parent.StatusService).GiveStatus(player, "RagdollStatus")
+		root.Anchored = true
 	else root.Anchored = true end
 	task.delay(seconds, function()
 		if root.Parent then root.Anchored = wasAnchored end
 		character:SetAttribute("CombatStunned", nil)
 		if knocked and player.Character == character then
-			require(script.Parent.StatusService).RemoveStatus(player, "RagdollStatus")
+			--require(script.Parent.StatusService).RemoveStatus(player, "RagdollStatus")
+			root.Anchored = false
 		end
 	end)
 end

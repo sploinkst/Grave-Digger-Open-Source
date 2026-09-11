@@ -188,6 +188,7 @@ function BaseEquipment:StartCount()
 	local progress = bb:FindFirstChild("progress")
 	if not count or not count:IsA("TextLabel") or not progress then return end
 
+	
 	local current = tonumber(count.Text) or 0
 
 	if self.Counting then
@@ -197,12 +198,15 @@ function BaseEquipment:StartCount()
 	if current >= self.MaxEquipment then
 		return
 	end
-
+	
+	
 	self.Counting = true
 
 	local frame1 = progress.frame1.img.grad
 	local frame2 = progress.frame2.img.grad
 
+	frame1.Parent.Visible = true
+	frame2.Parent.Visible = true
 	frame1.Rotation = 0
 	frame2.Rotation = -180
 
@@ -235,6 +239,9 @@ function BaseEquipment:StartCount()
 			-- Reset progress wheel.
 			frame1.Rotation = 0
 			frame2.Rotation = -180
+			
+			frame1.Parent.Visible = false
+			frame2.Parent.Visible = false
 		end)
 	end)
 end

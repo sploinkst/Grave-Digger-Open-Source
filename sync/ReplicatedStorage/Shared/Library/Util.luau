@@ -517,15 +517,32 @@ function Util.setupFastCast(config: {
 			fadeAndDestroy(trail)
 		end
 
+		-- Only the player who fired this cast gets a hitmarker.
+		local shooter = cast.UserData and cast.UserData.Shooter
 
-		if result.Instance and result.Instance.Parent:FindFirstChild("Humanoid") then
-			print("HIT")
-			local Clone = HitMarker:Clone()
-			Clone.Parent = game.Workspace
-			Clone.CFrame = CFrame.new(result.Position)
-			local tween = TweenService:Create(Clone.bb.img, TweenInfo.new(1), {ImageTransparency = 1})
-			tween:Play()
-			game.Debris:AddItem(Clone, 3)
+		if shooter == game.Players.LocalPlayer then
+			local instance = result.Instance
+
+			if instance then
+				local hitModel = instance:FindFirstAncestorOfClass("Model")
+
+				if hitModel and hitModel:FindFirstChildOfClass("Humanoid") then
+					print("HIT")
+
+					local clone = HitMarker:Clone()
+					clone.Parent = workspace
+					clone.CFrame = CFrame.new(result.Position)
+
+					local tween = TweenService:Create(
+						clone.bb.img,
+						TweenInfo.new(1),
+						{ ImageTransparency = 1 }
+					)
+
+					tween:Play()
+					game:GetService("Debris"):AddItem(clone, 3)
+				end
+			end
 		end
 	end)
 

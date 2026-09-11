@@ -386,8 +386,6 @@ local function CopyUI(player)
 	for _, child in pairs(game:GetService("ReplicatedStorage").Shared:WaitForChild("Library"):WaitForChild("UI"):GetChildren()) do
 		local existing = player.PlayerGui:FindFirstChild(child.Name)
 		if existing then
-			-- Menu modules start once and retain references to these two trees.
-			-- Preserve them across respawns instead of replacing their instances.
 			if child.Name == "Menu" or child.Name == "Menu_Scenes" then
 				for _, gui in ipairs(existing:GetDescendants()) do
 					if gui:IsA("ScreenGui") then gui.ResetOnSpawn = false end
@@ -403,6 +401,9 @@ local function CopyUI(player)
 			end
 			if clone:IsA("ScreenGui") then clone.ResetOnSpawn = false end
 		end
+		
+		if clone:IsA("ScreenGui") and clone.ResetOnSpawn == false then return end
+		
 		clone.Parent = player:WaitForChild("PlayerGui")
 	end
 end
@@ -413,6 +414,7 @@ local function CopyRespawnUI(player)
 			-- These are normally persistent, but Roblox can still remove their
 			-- ScreenGui descendants during a respawn. Restore the authored tree
 			-- if it is absent instead of leaving MenuService with no UI to show.
+			
 			if not player.PlayerGui:FindFirstChild(child.Name) then
 				local clone = child:Clone()
 				for _, gui in ipairs(clone:GetDescendants()) do
@@ -423,15 +425,12 @@ local function CopyRespawnUI(player)
 			end
 			continue
 		end
+		
 		if player.PlayerGui:FindFirstChild(child.Name) then
 			continue
 		end
-
-		if child:IsA("ScreenGui") then
-			if child.ResetOnSpawn then
-				child:Clone().Parent = player:WaitForChild("PlayerGui")
-			end
-		end
+		
+		child:Clone().Parent = player:WaitForChild("PlayerGui")
 	end
 end
 
@@ -467,17 +466,18 @@ local function HandleCharacter(player: Player, character: Model, ragdollObject)
 			characterClone.Parent = bodiesFolder
 		end
 
-		ragdollObject:_special_apply(characterClone)
+		ragdollObject:_special_apply(characterClone, character:FindFirstChild("helmet", true))
 
 		player:SetAttribute("Active", nil)
 
 		task.delay(60, function()
 			characterClone:Destroy()
 		end)
-
-		task.delay(0.5, function()
-			character:Destroy()
+		
+		task.delay(0.1, function()
+			character:Destroy()		
 		end)
+		
 		player:SetAttribute("LastTagged", nil)
 	end)
 

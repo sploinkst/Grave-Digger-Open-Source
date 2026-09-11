@@ -224,7 +224,8 @@ function JudgementRifle:setAltMode()
 	self:_stopAllExcept()
 	self:_set_sprint_arms(true)
 	local chargeTrack = self:_playAnim("Charge")
-
+	
+	Players.LocalPlayer.Character:SetAttribute("charging", true)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { character }
@@ -282,12 +283,14 @@ function JudgementRifle:setAltMode()
 	end
 	if self.Equipped then
 		local stopTrack = self:_playAnim("Charge_Stop")
+		Players.LocalPlayer.Character:SetAttribute("charging", nil)
 		if stopTrack then stopTrack.Stopped:Wait() end
 	end
 	self:_set_sprint_arms(false)
 	self.ForceBlockFire = false
 	self.Alting = false
 	self:_restoreBaseDeferred()
+	Players.LocalPlayer.Character:SetAttribute("charging", nil)
 end
 
 function JudgementRifle:_damageAtDistance(distance: number): number

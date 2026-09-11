@@ -213,6 +213,10 @@ function module.start_module()
 	end)
 
 	setup_input()
+	
+	game.Players.PlayerAdded:Connect(function(joinee)
+		chat_utils.create_chat(joinee, joinee.Name .. " has joined the war.", true )
+	end)
 end
 
 return module

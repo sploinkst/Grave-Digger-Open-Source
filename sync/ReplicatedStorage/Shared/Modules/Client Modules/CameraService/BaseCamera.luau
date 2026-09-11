@@ -69,6 +69,13 @@ local RECOIL_SNAPPINESS     = 100
 local SHOULDER_SWITCH_SPEED = 6
 local TRANSITION_SPEED      = 0.5
 
+local LEAN_MAX_ROLL   = math.rad(3)
+local LEAN_MAX_OFFSET = 0.5
+local LEAN_LERP_SPEED = 6
+
+local LEAN_ARM_ROLL    = math.rad(10)
+local LEAN_ARM_OFFSET  = 0.35
+
 local hold_breath = LocalPlayer.PlayerGui:WaitForChild("Aiming"):WaitForChild("hold_breath")
 
 local first_person_transparency_tween = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -190,6 +197,9 @@ function BaseCamera.new(cameraInfo)
 	self.TransitionStartCFrame       = nil
 	self.TransitionStartRootPosition = nil
 
+	self.LeanAlpha = 0
+	
+	
 	return self
 end
 
@@ -469,14 +479,46 @@ end
 
 function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 	local character = LocalPlayer.Character
-	if not character or character:GetAttribute("DontRotate") then return end
-	local targetYaw = self.CameraYaw
+	if not character or character:GetAttribute("DontRotate") then
+		return
+	end
 
-	-- Body turn delay is an ADS mechanic. Outside ADS the avatar should remain
-	-- immediately aligned with the freely moving camera.
+	local targetYaw = self.CameraYaw
+	local isCharging = character:GetAttribute("charging") == true
+
+	-- CHARGING ROTATION
+	-- Do this before any of the normal camera rotation logic.
+	if isCharging then
+		local diff = math.atan2(
+			math.sin(targetYaw - self.CharacterYaw),
+			math.cos(targetYaw - self.CharacterYaw)
+		)
+
+		-- Maximum rotation speed while charging.
+		local maxRate = math.rad(15)
+
+		-- Rotate toward the camera at a fixed maximum speed.
+		local step = math.clamp(
+			diff,
+			-maxRate * dt,
+			maxRate * dt
+		)
+
+		self.CharacterYaw += step
+
+		root.CFrame = CFrame.new(root.Position)
+			* CFrame.Angles(0, self.CharacterYaw, 0)
+
+		return
+	end
+
+	-- NORMAL ROTATION
 	if character:GetAttribute("Aiming") ~= true then
 		self.CharacterYaw = targetYaw
-		root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, targetYaw, 0)
+
+		root.CFrame = CFrame.new(root.Position)
+			* CFrame.Angles(0, targetYaw, 0)
+
 		return
 	end
 
@@ -489,31 +531,22 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 
 	if self.IsTransitioning then
 		maxRate = self.MaxTurnRate_Transitioning
-	elseif character then
-		local isCharging   = character:GetAttribute("charging")   == true
-		local isSlowRotate = character:GetAttribute("slow_rotate") == true
-		local isFallIntr   = character:GetAttribute("fall_damage_interrupt") == true
-		local perk         = character:GetAttribute("perk")  or ""
-		local class        = character:GetAttribute("class") or ""
-		local hasLancer    = character:FindFirstChild("elitekit") and
-			character.elitekit.Value == "lancer"
 
-		if isCharging or isFallIntr then
-			if character:GetAttribute("ImprovedCharge") or ((perk == "butcher" or perk == "vet" or hasLancer) and class == "lancer") then
-				maxRate = math.rad(6)
-			else
-				maxRate = math.rad(2)
-			end
-		elseif isSlowRotate then
-			maxRate = math.rad(12)
-		else
-			maxRate = self.MaxTurnRate
-		end
+	elseif character:GetAttribute("slow_rotate") == true then
+		maxRate = math.rad(12)
+
+	elseif character:GetAttribute("fall_damage_interrupt") == true then
+		maxRate = math.rad(2)
+
 	else
 		maxRate = self.MaxTurnRate
 	end
 
-	local responsivenessAlpha = math.clamp((maxRate / math.rad(100)) * 10 * dt, 0, 1)
+	local responsivenessAlpha = math.clamp(
+		(maxRate / math.rad(100)) * 10 * dt,
+		0,
+		1
+	)
 
 	local desiredStep = math.clamp(
 		diff * responsivenessAlpha,
@@ -522,7 +555,9 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 	)
 
 	self.CharacterYaw += desiredStep
-	root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, self.CharacterYaw, 0)
+
+	root.CFrame = CFrame.new(root.Position)
+		* CFrame.Angles(0, self.CharacterYaw, 0)
 end
 
 function BaseCamera:_setupAimingCheck()
@@ -1098,6 +1133,22 @@ function BaseCamera:OverTheShoulder()
 			CFrame.Angles(0, self.CameraYaw, 0)
 			* CFrame.Angles(self.CameraPitch, 0, 0)
 
+		local leanAttr   = character:GetAttribute("Roll_Right")
+		local leanTarget = 0
+		if leanAttr == true then
+			leanTarget = 1
+		elseif leanAttr == false then
+			leanTarget = -1
+		end
+
+		self.LeanAlpha = self:_lerp(
+			self.LeanAlpha,
+			leanTarget,
+			math.clamp(LEAN_LERP_SPEED * dt, 0, 1)
+		)
+
+		rotation = rotation * CFrame.Angles(0, 0, -LEAN_MAX_ROLL * self.LeanAlpha)
+
 		self.ShoulderAlpha = self:_lerp(
 			self.ShoulderAlpha,
 			self.ShoulderTarget,
@@ -1114,10 +1165,13 @@ function BaseCamera:OverTheShoulder()
 		local verticalOffset = self.is_crouching and 0.5 or 1.8
 		local focusPoint     = root.Position + Vector3.new(0, verticalOffset, 0)
 
+		local leanOffset = rotation.RightVector * (LEAN_MAX_OFFSET * self.LeanAlpha)
+
 		local cameraOffset =
 			(rotation.RightVector * shoulderX)
 			+ (rotation.UpVector * CameraOffsets.Third_Person_Right.Y)
 		- (rotation.LookVector * self.ShoulderZoom)
+			+ leanOffset
 
 		local idealPosition = focusPoint + cameraOffset
 		local rayDirection  = idealPosition - focusPoint

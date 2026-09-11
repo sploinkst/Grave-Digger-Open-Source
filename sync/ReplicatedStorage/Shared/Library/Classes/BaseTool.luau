@@ -40,6 +40,13 @@ local MOTOR_SNAP_DIST  = 0.001
 local CUT              = 0.15
 local CHARACTER_TRANSPARENCY = 0.95
 
+local LEAN_DISTANCE = 3
+
+local LEAN_ARM_ROLL    = math.rad(10)
+local LEAN_ARM_OFFSET  = 0.35
+local LEAN_LERP_SPEED  = 6
+
+local LEAN_TORSO_ROLL = math.rad(12)
 -- // Class
 
 local BaseTool = {}
@@ -136,6 +143,8 @@ function BaseTool.new(BaseToolCreateInfo: Types.BaseToolCreateInfo): BaseTool
 	self.Caster         = nil
 	self.CasterBehavior = nil
 	self.keyframe_connections = {}
+
+	self.LeanAlpha = 0
 
 	return self
 end
@@ -533,6 +542,7 @@ function BaseTool:equip()
 			self.Equipping = false
 			self:_restoreBase()
 			self:init_short_mechanic()
+			self:init_lean_mechanic() 
 		end
 	end
 	if draw then
@@ -706,6 +716,7 @@ function BaseTool:unequip()
 	end
 
 	self:clean_up_short()
+	self:clean_up_lean()
 	self.actual_model = nil
 	if LOCAL_PLAYER.Character then LOCAL_PLAYER.Character:SetAttribute("Aiming", nil) end
 
@@ -1240,6 +1251,105 @@ function BaseTool:endAiming()
 	self:_resetBodyTransparency()
 end
 
+-- // Lean mechanic
+
+function BaseTool:init_lean_mechanic()
+	if self.CanLean == false then
+		return
+	end
+
+	if self.lean_connection then
+		self.lean_connection:Disconnect()
+	end
+
+	self:_cacheShoulderC0()
+	self:_cacheRootJointC0()
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.IgnoreWater = true
+
+	self.lean_connection = RunService.RenderStepped:Connect(function(dt)
+		local character = LOCAL_PLAYER.Character
+		local leanTarget = 0
+
+		if character and self.Aiming and self.Equipped then
+			local root = character:FindFirstChild("HumanoidRootPart")
+
+			if root then
+				local leanRight  = self.current_shoulder ~= "Left"
+				local sideVector = leanRight and root.CFrame.RightVector or -root.CFrame.RightVector
+
+				rayParams.FilterDescendantsInstances = { character, self.actual_model, self.barrelWarning }
+
+				local sideResult = raycastIgnoringCharactersAndInvisible(
+					root.Position + Vector3.new(0, 1, 0) - sideVector,
+					root.CFrame.LookVector * LEAN_DISTANCE,
+					rayParams
+				)
+
+				if sideResult then
+					local forwardResult = raycastIgnoringCharactersAndInvisible(
+						CAMERA.CFrame.Position,
+						CAMERA.CFrame.LookVector * LEAN_DISTANCE,
+						rayParams
+					)
+
+					if not forwardResult then
+						leanTarget = leanRight and 1 or -1
+					end
+				end
+			end
+		end
+
+		self.LeanAlpha = self.LeanAlpha + (leanTarget - self.LeanAlpha) * math.clamp(LEAN_LERP_SPEED * dt, 0, 1)
+
+		if character then
+			if leanTarget == 1 then
+				character:SetAttribute("Roll_Right", true)
+			elseif leanTarget == -1 then
+				character:SetAttribute("Roll_Right", false)
+			else
+				character:SetAttribute("Roll_Right", nil)
+			end
+
+			-- Roll the torso itself (relative to the root) so the lean isn't
+			-- just an arm offset. RootJoint connects HumanoidRootPart -> Torso,
+			-- so rotating its C0 tilts the torso while the legs stay put.
+			local root = character:FindFirstChild("HumanoidRootPart")
+			local rootJoint = root and root:FindFirstChild("RootJoint")
+
+			if rootJoint and rootJoint:IsA("Motor6D") then
+				if self._restRootJointC0 == nil then
+					self._restRootJointC0 = rootJoint.C0
+				end
+
+				local torsoRoll = CFrame.Angles(0, 0, -LEAN_TORSO_ROLL * self.LeanAlpha)
+				rootJoint.C0 = self._restRootJointC0 * torsoRoll
+			end
+		end
+	end)
+end
+
+function BaseTool:clean_up_lean()
+	if self.lean_connection then
+		self.lean_connection:Disconnect()
+		self.lean_connection = nil
+	end
+
+	local character = LOCAL_PLAYER.Character
+	if character then
+		character:SetAttribute("Roll_Right", nil)
+
+		local root = character:FindFirstChild("HumanoidRootPart")
+		local rootJoint = root and root:FindFirstChild("RootJoint")
+		if rootJoint and rootJoint:IsA("Motor6D") and self._restRootJointC0 then
+			rootJoint.C0 = self._restRootJointC0
+		end
+	end
+
+	self.LeanAlpha = 0
+end
+
 -- // Transparency helpers
 
 function BaseTool:_startTransparencyTracking()
@@ -1387,25 +1497,76 @@ function BaseTool:_stopShoulderTracking()
 end
 
 -- // Aim motor tracking
+function BaseTool:_cacheShoulderC0()
+	local character = LOCAL_PLAYER.Character
+	local torso = character and character:FindFirstChild("Torso")
+
+	if not torso then
+		return
+	end
+
+	local leftShoulder = torso:FindFirstChild("Left Shoulder")
+	local rightShoulder = torso:FindFirstChild("Right Shoulder")
+
+	if leftShoulder then
+		self._restLeftC0 = leftShoulder.C0
+	end
+
+	if rightShoulder then
+		self._restRightC0 = rightShoulder.C0
+	end
+end
+
+function BaseTool:_cacheRootJointC0()
+	if not RunService:IsClient() then return end
+
+	local character = LOCAL_PLAYER.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local rootJoint = root and root:FindFirstChild("RootJoint")
+
+	if not rootJoint or not rootJoint:IsA("Motor6D") then
+		return
+	end
+
+	if self._restRootJointC0 == nil then
+		self._restRootJointC0 = rootJoint.C0
+	end
+end
+
 
 function BaseTool:_startAimTracking()
-	if self.AnimationDrivenGrip then return end
-	if self._aimConnection then return end
+	if self.AnimationDrivenGrip then
+		return
+	end
+
+	if self._aimConnection then
+		return
+	end
 
 	local character = LOCAL_PLAYER.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	local torso = character and character:FindFirstChild("Torso")
-	if not (character and root and torso) then return end
+
+	if not (character and root and torso) then
+		return
+	end
 
 	local leftShoulder = torso:FindFirstChild("Left Shoulder")
 	local rightShoulder = torso:FindFirstChild("Right Shoulder")
-	if not (leftShoulder and rightShoulder) then return end
 
+	if not (leftShoulder and rightShoulder) then
+		return
+	end
 
-	self._wasFreeLook  = self._wasFreeLook  or false
-	self._freeLookYaw  = self._freeLookYaw  or 0
-	self._smoothedYaw  = self._smoothedYaw  or 0
-	self._lastYaw      = self._lastYaw      or 0
+	-- Cache the actual resting shoulder positions.
+	self:_cacheShoulderC0()
+	self:_cacheRootJointC0()
+
+	self._fpLeftRot = nil
+	self._fpRightRot = nil
+
+	self._smoothedYaw = nil
+	self._lastYaw = nil
 
 	local lerpAlpha = 0.15
 
@@ -1461,9 +1622,9 @@ function BaseTool:_startAimTracking()
 					* CFrame.new(1, 0.5, 0)
 					* CFrame.Angles(0, math.pi / 2, 0)
 			)
-
 		else
 			local currentLookDir = CAMERA.CFrame.LookVector
+
 			local cameraPitch = math.asin(
 				math.clamp(currentLookDir.Y, -1, 1)
 			)
@@ -1495,7 +1656,7 @@ function BaseTool:_startAimTracking()
 				deltaYaw += math.pi * 2
 			end
 
-			self._smoothedYaw = self._smoothedYaw + deltaYaw * 0.2
+			self._smoothedYaw += deltaYaw * 0.2
 
 			self._smoothedYaw = math.clamp(
 				self._smoothedYaw,
@@ -1507,13 +1668,9 @@ function BaseTool:_startAimTracking()
 
 			local armRotation
 
-			if isFreeLook then
-				-- FreeLook:
-				-- Follow Camera Pitch
+			if isFreeLook or char:GetAttribute("charging") then
 				armRotation = CFrame.Angles(cameraPitch, 0, 0)
 			else
-				-- Normal third person:
-				-- Follow both yaw and pitch.
 				armRotation =
 					CFrame.Angles(0, yaw, 0)
 					* CFrame.Angles(cameraPitch, 0, 0)
@@ -1544,15 +1701,23 @@ function BaseTool:_startAimTracking()
 		self._fpLeftRot = self._fpLeftRot:Lerp(leftRot, 0.12)
 		self._fpRightRot = self._fpRightRot:Lerp(rightRot, 0.12)
 
+		-- // Apply lean as a pure horizontal translation.
+		local leanOffset = LEAN_ARM_OFFSET * self.LeanAlpha
+		local leanCounterRoll = CFrame.Angles(0, -LEAN_ARM_ROLL * self.LeanAlpha, 0)
 		ls.C0 =
-			CFrame.new(leftArmCF.Position)
-			* self._fpLeftRot
+			CFrame.new(
+				leftArmCF.Position + Vector3.new(leanOffset, 0, 0)
+			)
+			* self._fpLeftRot * leanCounterRoll
 
 		rs.C0 =
-			CFrame.new(rightArmCF.Position)
-			* self._fpRightRot
+			CFrame.new(
+				rightArmCF.Position + Vector3.new(leanOffset, 0, 0)
+			)
+			* self._fpRightRot * leanCounterRoll
 	end)
 end
+
 
 function BaseTool:_stopAimTracking()
 	if self._aimConnection then
@@ -1563,16 +1728,66 @@ function BaseTool:_stopAimTracking()
 	local character = LOCAL_PLAYER.Character
 	local torso = character and character:FindFirstChild("Torso")
 
-	if torso then
-		local resetInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-		local ls = torso:FindFirstChild("Left Shoulder")
-		local rs = torso:FindFirstChild("Right Shoulder")
-		if ls and self._restLeftC0  then TweenService:Create(ls, resetInfo, { C0 = self._restLeftC0  }):Play() end
-		if rs and self._restRightC0 then TweenService:Create(rs, resetInfo, { C0 = self._restRightC0 }):Play() end
+	if not torso then
+		return
 	end
 
-	task.delay(0.15, function()
-		if not self.Aiming then self:_resetMotor6D() end
+	local ls = torso:FindFirstChild("Left Shoulder")
+	local rs = torso:FindFirstChild("Right Shoulder")
+
+	local resetInfo = TweenInfo.new(
+		0.15,
+		Enum.EasingStyle.Quad,
+		Enum.EasingDirection.Out
+	)
+
+	-- Restore the ACTUAL original shoulder CFrames.
+	if ls and self._restLeftC0 then
+		TweenService:Create(
+			ls,
+			resetInfo,
+			{
+				C0 = self._restLeftC0
+			}
+		):Play()
+	end
+
+	if rs and self._restRightC0 then
+		TweenService:Create(
+			rs,
+			resetInfo,
+			{
+				C0 = self._restRightC0
+			}
+		):Play()
+	end
+
+	-- Clear interpolation state so the next aim starts clean.
+	self._fpLeftRot = nil
+	self._fpRightRot = nil
+	self._smoothedYaw = nil
+	self._lastYaw = nil
+
+	task.delay(0.16, function()
+		if not self.Aiming and self.Equipped then
+			local character = LOCAL_PLAYER.Character
+			local torso = character and character:FindFirstChild("Torso")
+
+			if not torso then
+				return
+			end
+
+			local ls = torso:FindFirstChild("Left Shoulder")
+			local rs = torso:FindFirstChild("Right Shoulder")
+
+			if ls and self._restLeftC0 then
+				ls.C0 = self._restLeftC0
+			end
+
+			if rs and self._restRightC0 then
+				rs.C0 = self._restRightC0
+			end
+		end
 	end)
 end
 
@@ -1712,6 +1927,7 @@ function BaseTool:destroy()
 	self:_stopShoulderTracking()
 	self:_stopAimTracking()
 	self:_resetMotor6D()
+	self:clean_up_lean()
 
 	if self._drawStoppedConnection then
 		self._drawStoppedConnection:Disconnect()

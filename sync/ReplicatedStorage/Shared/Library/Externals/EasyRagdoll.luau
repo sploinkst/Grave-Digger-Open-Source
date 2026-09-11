@@ -4,7 +4,13 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local PhysicsService = game:GetService("PhysicsService")
 
+local AccessoryService = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules")["Server Modules"]:WaitForChild("AccessoryService"))
+local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
+local ClassAppearance = require(ReplicatedStorage.Shared.Library.ClassAppearance)
+
+local BodySounds = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Sounds"):WaitForChild("BodySounds")
 --- Module ---
 local RagdollModule = {}
 
@@ -16,7 +22,79 @@ local RAGDOLL_INSTANCE_NAMES = {
 	["ColliderPart"] = true, -- Keep this for cleanup in case old ragdolls had them
 }
 
+-- States the Humanoid could otherwise fall into once the engine decides to
+-- leave Ragdoll on its own. Disabling all of them leaves Ragdoll as the only
+-- reachable destination, so ChangeState(Ragdoll) actually holds instead of
+-- getting immediately overridden by Running/Landed/etc.
+-- Deliberately excludes Dead (breaks health-zero handling) and
+-- PlatformStanding (used internally by ragdoll-adjacent physics).
+local STATES_TO_DISABLE = {
+	Enum.HumanoidStateType.GettingUp,
+	Enum.HumanoidStateType.Running,
+	Enum.HumanoidStateType.RunningNoPhysics,
+	Enum.HumanoidStateType.Landed,
+	Enum.HumanoidStateType.Jumping,
+	Enum.HumanoidStateType.Climbing,
+	Enum.HumanoidStateType.Flying,
+	Enum.HumanoidStateType.Swimming,
+}
+
+--- State ---
+-- Tracks the Humanoid.StateChanged connection per-character that keeps a
+-- ragdolled character locked in the Ragdoll state. Roblox's Humanoid state
+-- machine will otherwise try to leave Ragdoll on its own once it decides the
+-- character has settled, which snaps the body upright with no transition.
+local ragdollWatchers: {[Model]: RBXScriptConnection} = {}
+
 --- Helper Functions ---
+
+--[[
+	@param humanoid: Humanoid -- The humanoid to lock or unlock.
+	@param locked: boolean -- True disables every alternative state (leaving
+	only Ragdoll reachable); false re-enables them all.
+	@brief Toggles every Humanoid state that could compete with Ragdoll.
+]]
+local function lockRagdollStates(humanoid: Humanoid, locked: boolean)
+	for _, state in STATES_TO_DISABLE do
+		humanoid:SetStateEnabled(state, not locked)
+	end
+end
+
+--[[
+	@param character: Model -- The character to keep locked in the Ragdoll state.
+	@param humanoid: Humanoid -- The humanoid object within the character.
+	@brief Connects a watcher that forces the Humanoid back into the Ragdoll
+	state the instant the engine tries to leave it on its own. Replaces any
+	existing watcher for this character.
+]]
+local function watchRagdollState(character: Model, humanoid: Humanoid)
+	local existing = ragdollWatchers[character]
+	if existing then
+		existing:Disconnect()
+	end
+
+	ragdollWatchers[character] = humanoid.StateChanged:Connect(function(_, newState)
+		if newState ~= Enum.HumanoidStateType.Ragdoll then
+			-- Re-assert immediately, synchronously, in the same callback.
+			lockRagdollStates(humanoid, true)
+			humanoid:ChangeState(Enum.HumanoidStateType.Ragdoll)
+		end
+	end)
+end
+
+--[[
+	@param character: Model -- The character whose ragdoll watcher should stop.
+	@brief Disconnects and clears the ragdoll-state watcher for this character,
+	if one exists. Must be called before restoring normal Humanoid states,
+	otherwise the watcher will fight the intentional stand-up.
+]]
+local function stopWatchingRagdollState(character: Model)
+	local existing = ragdollWatchers[character]
+	if existing then
+		existing:Disconnect()
+		ragdollWatchers[character] = nil
+	end
+end
 
 --[[
 	@param character: Model -- The character model to ragdoll.
@@ -80,22 +158,50 @@ local function replaceJoints(character: Model, humanoid: Humanoid)
 			-- Apply specific overrides for certain joints for better control
 			if motor.Name:find("Neck") then
 				ballSocketConstraint.UpperAngle = 45
-				ballSocketConstraint.TwistLowerAngle = -70
-				ballSocketConstraint.TwistUpperAngle = 70
+				ballSocketConstraint.TwistLowerAngle = -90
+				ballSocketConstraint.TwistUpperAngle = 90
 			elseif motor.Name:find("Hip") then
 				ballSocketConstraint.UpperAngle = 60
-				ballSocketConstraint.TwistLowerAngle = -30
-				ballSocketConstraint.TwistUpperAngle = 30
+				ballSocketConstraint.TwistLowerAngle = -50
+				ballSocketConstraint.TwistUpperAngle = 50
 			elseif motor.Name:find("Shoulder") then
 				ballSocketConstraint.UpperAngle = 75
-				ballSocketConstraint.TwistLowerAngle = -60
-				ballSocketConstraint.TwistUpperAngle = 60
+				ballSocketConstraint.TwistLowerAngle = -90
+				ballSocketConstraint.TwistUpperAngle = 90
 			end
 
 			-- Parent the attachments and constraint
 			attachment0.Parent = motor.Part0
 			attachment1.Parent = motor.Part1
 			ballSocketConstraint.Parent = motor.Parent
+		end
+	end
+
+
+
+	for _, part in ipairs(character:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = part.Name ~= "HumanoidRootPart"
+			part.CollisionGroup = "Default"
+
+			local TouchConn
+
+			TouchConn = part.Touched:Connect(function(touched)
+				if touched.Parent == character then return end
+
+				local sound:Sound = BodySounds:FindFirstChild("bodyhit" .. math.random(0, #BodySounds:GetChildren())):Clone()
+
+				sound.Parent = part
+				sound:Play()
+
+				sound.Ended:Once(function()
+					sound:Destroy()
+				end)
+
+				task.delay(2, function()
+					TouchConn:Disconnect()
+				end)
+			end)
 		end
 	end
 
@@ -156,12 +262,14 @@ end
 	@param pushMagnitude: number? -- Optional: The magnitude of the push if applyPushOnRagdoll is true. Defaults to 100.
 	@brief Toggles the ragdoll state of the given character, with an option to apply an extra push.
 ]]
-function RagdollModule.SetRagdoll(character: Model, value: boolean, applyPushOnRagdoll: boolean?, pushMagnitude: number?, break_tool_welds:boolean?)
+function RagdollModule.SetRagdoll(character: Model, value: boolean, applyPushOnRagdoll: boolean?, pushMagnitude: number?, break_tool_welds:boolean?, helmet: Model)
 	-- Validate inputs
 	if not character then
 		warn("RagdollModule.SetRagdoll: No character provided.")
 		return
 	end
+
+	local player = Players:FindFirstChild(character.Name)
 
 	if break_tool_welds then
 		print("Breaking tool welds")
@@ -175,7 +283,7 @@ function RagdollModule.SetRagdoll(character: Model, value: boolean, applyPushOnR
 			end
 		end
 
-		-- Drop weapon model into the world (THIS is what makes it feel like "dropping")
+		-- Drop weapon model into the world
 		local equipment = character:FindFirstChild("CharacterData")
 			and character.CharacterData:FindFirstChild("Equipment")
 
@@ -209,7 +317,7 @@ function RagdollModule.SetRagdoll(character: Model, value: boolean, applyPushOnR
 			end
 		end
 	end
-	
+
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then
 		warn("RagdollModule.SetRagdoll: Character does not have a Humanoid.")
@@ -220,43 +328,61 @@ function RagdollModule.SetRagdoll(character: Model, value: boolean, applyPushOnR
 	applyPushOnRagdoll = applyPushOnRagdoll or false
 	pushMagnitude = pushMagnitude or 100
 
+
 	if value then -- Ragdoll the character
+		ClassAppearance.Apply(character, player.Team.Name, player:GetAttribute("SelectedClass"))
 		replaceJoints(character, humanoid)
-		
+
 		--> Check to see if the module is being called from client/server
 		if RunService:IsClient() then
 			humanoid:ChangeState(Enum.HumanoidStateType.Ragdoll)
-			humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
-			
+			lockRagdollStates(humanoid, true)
+
 		elseif RunService:IsServer() then
 			character.PrimaryPart:SetNetworkOwner(nil)
-			
+
 			humanoid:ChangeState(Enum.HumanoidStateType.Ragdoll)
-			humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+			lockRagdollStates(humanoid, true)
 		end
+
+		-- Keep the Humanoid locked in the Ragdoll state. Without this, the
+		-- engine's own state machine will try to leave Ragdoll once the body
+		-- settles and snap it upright instead of staying down.
+		watchRagdollState(character, humanoid)
 
 		-- Apply push only if explicitly requested
 		if applyPushOnRagdoll then
 			applyPush(character, pushMagnitude)
 		end
-		
-		if character:FindFirstChildWhichIsA("BodyVelocity", true) then
-			task.delay(0.1, function()
-				character:FindFirstChildWhichIsA("BodyVelocity", true):Destroy()
-			end)
+
+		for _, child in pairs(character:GetDescendants()) do
+			if child:IsA("BodyVelocity") then
+				child:Destroy()
+			end
 		end
 
+		--[[for _, child in pairs(player.GameData.Accessorys:GetChildren()) do
+			local Accessory = Util.fetch_accessory(child.Name)
+			if not Accessory or not Accessory:IsA("Model") then continue end
+			Util.create_object(character, Accessory)
+		end]]
+
+	
 	else -- Unragdoll the character
+		-- Must happen before resetJoints/ChangeState below, otherwise the
+		-- watcher will immediately force the Humanoid back into Ragdoll and
+		-- fight the intentional stand-up.
+		stopWatchingRagdollState(character)
+		lockRagdollStates(humanoid, false)
+
 		resetJoints(character, humanoid)
-		
+
 		if RunService:IsClient() then
-			humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
 			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-			
+
 		elseif RunService:IsServer() then
-			humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
 			humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-			
+
 			-- Fix network ownership for players
 			local player: Player? = Players:GetPlayerFromCharacter(character)
 			if player then

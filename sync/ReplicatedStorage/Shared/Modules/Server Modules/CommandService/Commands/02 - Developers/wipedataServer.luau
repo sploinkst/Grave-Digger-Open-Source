@@ -3,6 +3,6 @@ return function(_, players, boolean)
 	for _, player in pairs(players) do
 		print("wipedataServer: wiping data for", player.Name, "type:", boolean)
 		local wipedata_module = require(game.ReplicatedStorage.Shared.Modules["Server Modules"].DataService)
-		wipedata_module.wipe_player_data(player, wipe_type)
+		wipedata_module.WipePlayerData(player, true)
 	end
 end

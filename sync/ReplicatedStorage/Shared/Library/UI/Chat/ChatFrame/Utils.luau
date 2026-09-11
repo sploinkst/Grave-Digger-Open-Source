@@ -1,17 +1,26 @@
 local module = {}
 
-local function format_username(username: string, team: string)
-	local hex =
-		team == "Golden Empire"
-		and "#FFD454"
-		or "#7F16AF"
 
-	return "<b><font color='" .. hex .. "'>ARM "
-		.. username
-		.. "</font></b>"
+local function format_username(username: string, team: string, server: boolean)
+	local hex = if team == "Golden Empire" then "#FFD454" else "#7F16AF"
+
+	local prefix = "ARM "
+
+	if server then
+		hex = "#FF0000"
+		username = "SERVER"
+		prefix = ""
+	end
+
+	return string.format(
+		"<b><font color='%s'>%s%s</font></b>",
+		hex,
+		prefix,
+		username
+	)
 end
 
-function module.create_chat(player: Player, chat: string)
+function module.create_chat(player: Player, chat: string, server: boolean)
 	local ChatFrame: ScrollingFrame =
 		game.Players.LocalPlayer.PlayerGui.Chat.ChatFrame
 
@@ -28,7 +37,8 @@ function module.create_chat(player: Player, chat: string)
 	local formattedName =
 		format_username(
 			player.Name,
-			player.Team.Name
+			player.Team.Name,
+			server
 		)
 
 	local playername =

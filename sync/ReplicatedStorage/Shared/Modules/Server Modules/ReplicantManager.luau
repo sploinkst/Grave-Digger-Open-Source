@@ -67,6 +67,8 @@ if not dualWieldEvent then
 	dualWieldEvent.Parent = replicant_folder
 end
 
+local ResetEvent = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Reset")
+
 -- // funcs
 
 local function getModelFromInstance(instance: Instance)
@@ -1038,6 +1040,12 @@ function module.start_module()
 	SettingChange.OnServerEvent:Connect(function(player, Category, Setting, value)
 		player.PlayerData['Settings Data'][Category][Setting].Current.Value = value
 		print("Updated Setting")
+	end)
+	
+	ResetEvent.OnServerEvent:Connect(function(player)
+		local humanoid: Humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+		
+		humanoid.Health = 0
 	end)
 end
 
