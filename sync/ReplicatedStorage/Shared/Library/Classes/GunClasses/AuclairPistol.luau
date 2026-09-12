@@ -1,3 +1,33 @@
-local AuclairPistol = {}
-
-return AuclairPistol
+return require(script.Parent.LegacyGunFactory).create({
+	className = "AuclairPistol",
+	assetName = "mares",
+	AnimationGunType = "mares",
+	WeaponCategory = "Pistol",
+	Designation = "Secondary",
+	Weight = 1,
+	LegacyStats = {
+		name = "'Auclair' Lever Pistol",
+		icon = "87759641915052",
+		ammo_give = ".44 Army",
+		damage = 110,
+		range = 50,
+		range_damage = 85,
+		far = 70,
+		far_damage = 70,
+		pen = 2,
+		accuracy = 10,
+		moving_accuracy = 80,
+		fire_rate = 0.7,
+		cycle = 0,
+		cycle_rest = 0,
+		draw_speed = 0.4,
+		aim_speed = 0.2,
+		recoil = 6,
+		recoil_count = 6,
+		ammo_reserves = 2,
+		ammo_reserves_max = 3,
+		capacity = 7,
+	},
+	bulletSpeed = 800,
+	cycles = true,
+})

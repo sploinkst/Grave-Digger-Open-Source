@@ -29,6 +29,42 @@ local VETERAN_RELOAD_TIME = 2.5
 local STANDARD_FAILED_RELOAD_TIME = 4.25
 local VETERAN_FAILED_RELOAD_TIME = 3
 local BOLT_CATCH_FAILURE_CHANCE = 0.4
+local WEAPON_STATS = {
+	name = "'Adjudicator' Repeating Rifle",
+	desc = "Semi automatic clip fed rifle firing a rifle sized cartridge.",
+	icon = "131875342064540",
+	ammo_give = "8mm Gras",
+	damage = 140,
+	range = 50,
+	range_damage = 105,
+	far = 70,
+	far_damage = 80,
+	melee_damage = 80,
+	melee_swing_speed = 0.7,
+	melee_range = 5,
+	pen = 3,
+	accuracy = 8,
+	moving_accuracy = 150,
+	fire_rate = 0.475,
+	cycle = 0,
+	cycle_rest = 0,
+	draw_speed = 0.8,
+	aim_speed = 0.4,
+	recoil = 8,
+	recoil_count = 6,
+	movement = 3,
+	firing_movement = 2,
+	firing_movement_last = 0.75,
+	ammo_reserves = 3,
+	ammo_reserves_max = 4,
+	capacity = 5,
+	chamber = true,
+	reload_start = 3,
+	reload_empty = 0,
+	reload_loop = 0,
+	reload_end = 1.25,
+	require_full_load = true,
+}
 
 local ANIM_LAYERS: { [string]: number } = {
 	Hold = 0,
@@ -143,42 +179,50 @@ function AdjudicatorRifle.new(info: Types.BaseToolCreateInfo): AdjudicatorRifle
 	}
 
 	self.animation_speeds = {
-		Draw = 1 / (blackHand and 0.65 or 0.8),
-		Aim = 1 / (blackHand and 0.34 or 0.4),
-		Aim_Left = 1 / (blackHand and 0.34 or 0.4),
+		Draw = 1 / (blackHand and 0.65 or WEAPON_STATS.draw_speed),
+		Aim = 1 / (blackHand and 0.34 or WEAPON_STATS.aim_speed),
+		Aim_Left = 1 / (blackHand and 0.34 or WEAPON_STATS.aim_speed),
 		Hip_Aim = 1 / (blackHand and 0.26 or 0.3),
 		Hip_Aim_Left = 1 / (blackHand and 0.26 or 0.3),
 	}
 
-	self.damage = 140
-	self.Max_Capacity = veteran and 6 or 5
+	self.damage = WEAPON_STATS.damage
+	self.Max_Capacity = veteran and (WEAPON_STATS.capacity + 1) or WEAPON_STATS.capacity
 	self.Capacity = self.Max_Capacity
-	self.Starting_Reserve_Ammo = 15
-	self.Max_Reserve_Ammo = 20
-	self.Ammo_Type = "8mm Gras"
-	self.Penetration_Level = 2
-	self.Armor_Penetration_Level = 3
+	self.Starting_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves
+	self.Max_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves_max
+	self.Ammo_Type = WEAPON_STATS.ammo_give
+	self.Penetration_Level = WEAPON_STATS.pen
+	self.Armor_Penetration_Level = WEAPON_STATS.pen
 	self.KnockBack_Force = 10
-	self.recoil = 55
-	self.recoil_count = 7
+	self.recoil = WEAPON_STATS.recoil
+	self.recoil_count = WEAPON_STATS.recoil_count
 	self.Aiming_Number = 80
-	self.Accuracy = 5
-	self.Moving_Accuracy = 65
+	self.Accuracy = WEAPON_STATS.accuracy
+	self.Moving_Accuracy = WEAPON_STATS.moving_accuracy
 	self.HipBraceAccuracy = 12
 	self.MuzzlePartName = "muzzle"
 	self.AmmoCheckPartName = "hitbox"
 	self.SoundFolder = SoundFolder
-	self.FireInterval = 60 / (blackHand and BLACK_HAND_RPM or STANDARD_RPM)
+	self.FireInterval = blackHand and (60 / BLACK_HAND_RPM) or WEAPON_STATS.fire_rate
 	self.IsVeteran = veteran
 	self.HipBraced = false
+	self:applyFirearmConfig(WEAPON_STATS)
+	if veteran then
+		self.Max_Capacity = WEAPON_STATS.capacity + 1
+		self.Capacity = self.Max_Capacity
+	end
+	if blackHand then
+		self.FireInterval = 60 / BLACK_HAND_RPM
+	end
 
 	return self
 end
 
 function AdjudicatorRifle:_damageAtDistance(distance: number): number
-	if distance < 50 then return 140 end
-	if distance <= 70 then return 105 end
-	return 80
+	if distance < self.range then return self.damage end
+	if distance <= self.far then return self.range_damage end
+	return self.far_damage
 end
 
 function AdjudicatorRifle:setAltMode()
@@ -197,7 +241,6 @@ function AdjudicatorRifle:reload()
 		return
 	end
 
-	if self.Aiming then self:endAiming() end
 	self.Reloading = true
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
@@ -258,5 +301,23 @@ AdjudicatorRifle.Tool_Image = "rbxassetid://109119172425763"
 AdjudicatorRifle.Medal_Cost = 0
 AdjudicatorRifle.Weight = 2
 AdjudicatorRifle.Designation = "Primary"
+AdjudicatorRifle.Display_Name = WEAPON_STATS.name
+AdjudicatorRifle.desc = WEAPON_STATS.desc
+AdjudicatorRifle.icon = WEAPON_STATS.icon
+AdjudicatorRifle.damage = WEAPON_STATS.damage
+AdjudicatorRifle.range = WEAPON_STATS.range
+AdjudicatorRifle.range_damage = WEAPON_STATS.range_damage
+AdjudicatorRifle.far = WEAPON_STATS.far
+AdjudicatorRifle.far_damage = WEAPON_STATS.far_damage
+AdjudicatorRifle.accuracy = WEAPON_STATS.accuracy
+AdjudicatorRifle.moving_accuracy = WEAPON_STATS.moving_accuracy
+AdjudicatorRifle.fire_rate = WEAPON_STATS.fire_rate
+AdjudicatorRifle.recoil = WEAPON_STATS.recoil
+AdjudicatorRifle.recoil_count = WEAPON_STATS.recoil_count
+AdjudicatorRifle.capacity = WEAPON_STATS.capacity
+AdjudicatorRifle.ammo_give = WEAPON_STATS.ammo_give
+AdjudicatorRifle.ammo_reserves = WEAPON_STATS.ammo_reserves
+AdjudicatorRifle.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
+AdjudicatorRifle.pen = WEAPON_STATS.pen
 
 return AdjudicatorRifle

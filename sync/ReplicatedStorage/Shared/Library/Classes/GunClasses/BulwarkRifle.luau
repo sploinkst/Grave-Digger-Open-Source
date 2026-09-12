@@ -5,11 +5,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
-local Util = require(script.Parent.Parent.Parent.Util)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -156,6 +154,10 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	}
 
 	self.damage = 120
+	self.range = 70
+	self.range_damage = 90
+	self.far = 100
+	self.far_damage = 75
 	self.Max_Capacity = 11
 	self.Capacity = 11
 	self.Starting_Reserve_Ammo = 11
@@ -168,6 +170,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	self.KnockBack_Force = 10
 	self.Aiming_Number = 75
 	self.MuzzlePartName = "muzzle"
+	self.BulletSpeed = BULLET_SPEED
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
 	self.Short_Distance = 3.5
@@ -296,76 +299,32 @@ function Crestfall:_getFireAnim(): AnimationTrack?
 end
 
 function Crestfall:_damageAtDistance(distance: number): number
-	if distance < 70 then
-		return 120
-	elseif distance <= 100 then
-		return 90
-	end
-	return 75
+	return BaseRifle._damageAtDistance(self, distance)
 end
 
 function Crestfall:fire()
-	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
-	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
-	if self.Capacity <= 0 then
-		self:_dryFire()
-		return
-	end
-
-	local muzzle = self:_findModelPart(self.MuzzlePartName)
-	local camera = workspace.CurrentCamera
-	if not muzzle or not muzzle:IsA("BasePart") or not camera then return end
-
-	self.Firing = true
-	local mousePosition = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
-
-	local result = Util.raycastSkipTransparent(ray.Origin, ray.Direction * 5000, params)
-	local target = result and result.Position or ray.Origin + ray.Direction * 5000
-	local direction = self:get_spread(muzzle, (target - muzzle.Position).Unit)
-	local cast = self.Caster:Fire(muzzle.Position, direction, BULLET_SPEED, self.CasterBehavior)
-	cast.UserData = {
-		Direction = direction,
-		Penetrated = false,
-		Origin = muzzle.Position,
-		Shooter = LOCAL_PLAYER,
-	}
-
-	self:_connect_FastCast(muzzle.Position, direction, BULLET_SPEED, {
-		bulletTemplate = FxFolder.Bullet,
-		bulletContainer = workspace.Game_Details.Effects.Bullets,
-		isPenetration = false,
-		penetrationLevel = self.Penetration_Level,
-		damage = self.damage,
-		knockbackForce = self.KnockBack_Force,
-	})
-
-	self.Capacity -= 1
-	self:_stopAllExcept()
 	local left = self.current_shoulder ~= "Right"
 	local fireAnimation
 	if self.HipBraced then
-		if self.Capacity == 0 then
+		if self.Capacity <= 1 then
 			fireAnimation = left and "Hip_Fire_Last_Left" or "Hip_Fire_Last"
 		else
 			fireAnimation = left and "Hip_Fire_Left" or "Hip_Fire"
 		end
 	else
-		if self.Capacity == 0 then
+		if self.Capacity <= 1 then
 			fireAnimation = left and "Fire_Last_Left" or "Fire_Last"
 		else
 			fireAnimation = left and "Fire_Left" or "Fire"
 		end
 	end
-	self:_playFireAnimation(fireAnimation)
 	local fireSound = self.SoundFolder and self.SoundFolder:FindFirstChild("fire")
-	if fireSound then self:_play_sfx(fireSound, muzzle) end
-	self:_bounce_scoped_ui()
-	self:_fireMuzzleFlash()
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
+	local fired = self:_fireSingleShot({
+		bulletSpeed = self.BulletSpeed,
+		fireAnimation = fireAnimation,
+		sound = fireSound,
+	})
+	if not fired then return end
 
 	self.Cycling = true
 	local cycleTrack = self.RegisteredAnimations
@@ -376,40 +335,15 @@ function Crestfall:fire()
 	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / effectiveInterval, 0.01)) end
 	task.wait(effectiveInterval)
 	self.Cycling = false
-	self.Firing = false
 	self:_restoreBaseDeferred()
 end
 
 function Crestfall:reload()
-	if self.Reloading or self.Equipping or self.Capacity >= self.Max_Capacity then return end
-	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
-	if not reserve or not reserve:IsA("NumberValue") or reserve.Value <= 0 then
-		self:notify("I don't have any more ammo...")
-		return
-	end
-
-	if self.Aiming then self:endAiming() end
-	self.Reloading = true
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
-	self:_stopAllExcept()
-	self:_playAnim("Reload_Start").Stopped:Wait()
-
-	while self.Equipped and self.Capacity < self.Max_Capacity and reserve.Value > 0 and not self._reloadCancelled do
-		self:_playAnim("Reload_Loop").Stopped:Wait()
-		if self._reloadCancelled then break end
-		self.Capacity += 1
-		self:_fire_ammo(1)
-	end
-
-	if not self._reloadCancelled and self.RegisteredAnimations.Reload_End then
-		local endTrack = self:_playAnim("Reload_End")
-		if endTrack then endTrack.Stopped:Wait() end
-	end
-	self.Reloading = false
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
-	self:_restoreBaseDeferred()
+	self:_reloadByRound({
+		startAnim = "Reload_Start",
+		loopAnim = "Reload_Loop",
+		endAnim = "Reload_End",
+	})
 end
 
 function Crestfall:activate()

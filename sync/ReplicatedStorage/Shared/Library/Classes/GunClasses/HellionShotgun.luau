@@ -4,11 +4,9 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseShotgun = require(script.Parent.Parent.BaseShotgun)
-local Util = require(script.Parent.Parent.Parent.Util)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -28,6 +26,43 @@ local BULLET_SPEED = 850
 local STANDARD_FULL_RELOAD = 7.75
 local VETERAN_FULL_RELOAD = 5.5
 local SHOULDER_WALK_MULTIPLIER = 0.7
+local WEAPON_STATS = {
+	name = "'Hellion' Automatic Shotgun",
+	desc = "High capacity crowd-sweeper capable of annihilating groups in close range.",
+	icon = "117308271652473",
+	ammo_give = "00 Buckshot",
+	damage = 22,
+	range = 20,
+	range_damage = 12,
+	far = 35,
+	far_damage = 9,
+	melee_damage = 80,
+	melee_swing_speed = 0.7,
+	melee_range = 5,
+	pen = 2,
+	accuracy = 20,
+	moving_accuracy = 20,
+	fire_rate = 0.4,
+	cycle = 0,
+	cycle_rest = 0,
+	draw_speed = 1,
+	aim_speed = 0.35,
+	pellets = 9,
+	recoil = 12,
+	recoil_count = 9,
+	movement = 2,
+	firing_movement = 2,
+	firing_movement_last = 0.75,
+	ammo_reserves = 1,
+	ammo_reserves_max = 2,
+	capacity = 7,
+	chamber = false,
+	reload_start = 0.75,
+	reload_empty = 2,
+	reload_loop = 1,
+	reload_end = 0,
+	bullet_speed = BULLET_SPEED,
+}
 
 local function animation(name: string, fallback: Animation?): Animation?
 	local found = hellionAnimations and hellionAnimations:FindFirstChild(name, true)
@@ -159,34 +194,35 @@ function HellionShotgun.new(info: Types.BaseToolCreateInfo): HellionShotgun
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 	self.animation_speeds = {
-		Draw = 1 / (blackHand and 0.6 or 1),
-		Aim = 1 / (blackHand and 0.3 or 0.35),
-		Aim_Left = 1 / (blackHand and 0.3 or 0.35),
+		Draw = 1 / (blackHand and 0.6 or WEAPON_STATS.draw_speed),
+		Aim = 1 / (blackHand and 0.3 or WEAPON_STATS.aim_speed),
+		Aim_Left = 1 / (blackHand and 0.3 or WEAPON_STATS.aim_speed),
 		Shoulder_Aim = 1 / (blackHand and 0.43 or 0.5),
 		Shoulder_Aim_Left = 1 / (blackHand and 0.43 or 0.5),
 	}
 
-	self.damage = 22
-	self.Max_Capacity = 7
-	self.Capacity = 7
-	self.Starting_Reserve_Ammo = 7
-	self.Max_Reserve_Ammo = 14
-	self.Ammo_Type = "00 Buckshot"
-	self.PelletCount = 9
+	self.damage = WEAPON_STATS.damage
+	self.Max_Capacity = WEAPON_STATS.capacity
+	self.Capacity = WEAPON_STATS.capacity
+	self.Starting_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves
+	self.Max_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves_max
+	self.Ammo_Type = WEAPON_STATS.ammo_give
+	self.PelletCount = WEAPON_STATS.pellets
 	self.HeadshotMultiplier = 1.2
-	self.Penetration_Level = 0
-	self.Armor_Penetration_Level = 2
+	self.Penetration_Level = WEAPON_STATS.pen
+	self.Armor_Penetration_Level = WEAPON_STATS.pen
 	self.KnockBack_Force = 5
-	self.recoil = 78
-	self.recoil_count = 9
+	self.recoil = WEAPON_STATS.recoil
+	self.recoil_count = WEAPON_STATS.recoil_count
 	self.Aiming_Number = 80
 	self.MuzzlePartName = "muzzle"
+	self.BulletSpeed = BULLET_SPEED
 	self.AmmoCheckPartName = "hitbox"
 	self.SoundFolder = SoundFolder
-	self.FireInterval = 60 / (blackHand and BLACK_HAND_RPM or STANDARD_RPM)
+	self.FireInterval = blackHand and (60 / BLACK_HAND_RPM) or WEAPON_STATS.fire_rate
 	self.FullReloadTime = veteran and VETERAN_FULL_RELOAD or STANDARD_FULL_RELOAD
-	self.ShotgunSpread = 6
-	self.ShoulderedSpread = 4
+	self.ShotgunSpread = WEAPON_STATS.accuracy
+	self.ShoulderedSpread = WEAPON_STATS.moving_accuracy
 	self.Shouldered = false
 	self.IsVeteran = veteran
 	self.Can_Drop = true
@@ -198,13 +234,16 @@ function HellionShotgun.new(info: Types.BaseToolCreateInfo): HellionShotgun
 	self._reloadCancelled = false
 	self.FireEmissions = { smoke_medium = 4, smoke_forward = 6 }
 	self:_initShoulderTracking()
+	self:applyFirearmConfig(WEAPON_STATS)
+	self.FireInterval = blackHand and (60 / BLACK_HAND_RPM) or WEAPON_STATS.fire_rate
+	self.FullReloadTime = veteran and VETERAN_FULL_RELOAD or STANDARD_FULL_RELOAD
 	return self
 end
 
 function HellionShotgun:_damageAtDistance(distance: number): number
-	if distance < 20 then return 22 end
-	if distance <= 35 then return 12 end
-	return 9
+	if distance < self.range then return self.damage end
+	if distance <= self.far then return self.range_damage end
+	return self.far_damage
 end
 
 function HellionShotgun:get_pellet_directions(direction: Vector3, _spread: number?): { Vector3 }
@@ -280,40 +319,16 @@ function HellionShotgun:endAiming()
 end
 
 function HellionShotgun:fire()
-	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
-	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
-	if self.Capacity <= 0 then
-		self:_dryFire()
-		return
-	end
-	local muzzle = self:_findModelPart(self.MuzzlePartName)
-	local camera = workspace.CurrentCamera
-	if not muzzle or not muzzle:IsA("BasePart") or not camera then return end
-
-	self.Firing = true
-	local mousePosition = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
-	local result = Util.raycastSkipTransparent(ray.Origin, ray.Direction * 5000, params)
-	local target = result and result.Position or ray.Origin + ray.Direction * 5000
-	self:_firePellets(muzzle, (target - muzzle.Position).Unit, BULLET_SPEED, self.damage, self.KnockBack_Force)
-
-	self.Capacity -= 1
-	self:_stopAllExcept()
 	local left = self.current_shoulder ~= "Right"
 	local prefix = self.Shouldered and "Shoulder_" or ""
-	local suffix = self.Capacity == 0 and "Fire_Last" or "Fire"
-	self:_playFireAnimation(prefix .. suffix .. (left and "_Left" or ""))
+	local suffix = self.Capacity <= 1 and "Fire_Last" or "Fire"
 	local sound = SoundFolder:FindFirstChild("fire")
-	if sound then self:_play_sfx(sound, muzzle) end
-	self:_bounce_scoped_ui()
-	self:_fireMuzzleFlash()
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
-	task.wait(self:getFireDelay(self.FireInterval))
-	self.Firing = false
-	self:_restoreBaseDeferred()
+	self:_fireShotgunBlast({
+		bulletSpeed = self.BulletSpeed,
+		fireAnimation = prefix .. suffix .. (left and "_Left" or ""),
+		sound = sound,
+		fireDelay = self.FireInterval,
+	})
 end
 
 function HellionShotgun:reload()
@@ -323,7 +338,6 @@ function HellionShotgun:reload()
 		self:notify("I don't have any more ammo...")
 		return
 	end
-	if self.Aiming then self:endAiming() end
 	self.Reloading = true
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
@@ -433,5 +447,24 @@ HellionShotgun.Tool_Image = "rbxassetid://17496049645"
 HellionShotgun.Medal_Cost = 0
 HellionShotgun.Weight = 2
 HellionShotgun.Designation = "Primary"
+HellionShotgun.Display_Name = WEAPON_STATS.name
+HellionShotgun.desc = WEAPON_STATS.desc
+HellionShotgun.icon = WEAPON_STATS.icon
+HellionShotgun.damage = WEAPON_STATS.damage
+HellionShotgun.range = WEAPON_STATS.range
+HellionShotgun.range_damage = WEAPON_STATS.range_damage
+HellionShotgun.far = WEAPON_STATS.far
+HellionShotgun.far_damage = WEAPON_STATS.far_damage
+HellionShotgun.accuracy = WEAPON_STATS.accuracy
+HellionShotgun.moving_accuracy = WEAPON_STATS.moving_accuracy
+HellionShotgun.fire_rate = WEAPON_STATS.fire_rate
+HellionShotgun.recoil = WEAPON_STATS.recoil
+HellionShotgun.recoil_count = WEAPON_STATS.recoil_count
+HellionShotgun.capacity = WEAPON_STATS.capacity
+HellionShotgun.ammo_give = WEAPON_STATS.ammo_give
+HellionShotgun.ammo_reserves = WEAPON_STATS.ammo_reserves
+HellionShotgun.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
+HellionShotgun.pen = WEAPON_STATS.pen
+HellionShotgun.pellets = WEAPON_STATS.pellets
 
 return HellionShotgun

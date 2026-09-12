@@ -6,11 +6,9 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
-local Util = require(script.Parent.Parent.Parent.Util)
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
@@ -25,13 +23,64 @@ local volkSounds = GunAssets.Sounds:FindFirstChild("mosin")
 	or GunAssets.Sounds:FindFirstChild("Volk")
 local SoundFolder = volkSounds or GunAssets.Sounds.VolkRifle
 
-local FIRE_INTERVAL = 60 / 50
+local FIRE_INTERVAL = 0.3
 local BULLET_SPEED = 1200
-local RELOAD_ROUND_TIME = 4 / 5
 local SCOPED_FOV = 25
 local IRON_FOV = 70
 local HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
+
+local WEAPON_STATS = {
+	name = "'Volk' Scoped Rifle",
+	desc = "A marksman rifle with a scope, excellent precision and damage over far distances.",
+	lore = "No-one knew his real name; he didn't speak much to his comrades, and his line of work kept him away from his fellow soldiers in the first place.\n\nInstead, he was known as 'The Wolf' - regarded the greatest marksman of the Royal Nation, many of his accolades have been likely been exaggerated in the years following his death. Wielding a mundane rifle with a make-shift scope assembly taken from a 'Jesse' rifle, he was rumored to have over 400 confirmed kills, with one kill at a distance over 2,000 meters. He earned his name from a story where the first kill of a skirmish coincided with the howling of a wolf, striking fear into the hearts of Imperial soldiers as they were helplessly picked off by the unseen sniper.\n\nAll legends eventually meet their end - the 'Wolf was no different. After being reported missing for weeks, his dessicated and dismembered corpse was found crucified on the stake of heresy, his dog-tags taken and his name lost to the grave.\n\nThough neither the Golden Empire nor the Royal Nation knows of who ended his reign, his legacy lives on with the standard production of his once-unique rifle.",
+	size = 2,
+	icon = "18352089477",
+	animations = "mosin",
+	ammo_give = "7.62mmR Lead",
+	melee_sound = "rifle",
+	assists = {
+		"Top of the line accuracy while scoped, but mind the slow handling.",
+		"[@ALT] to toggle the scope zoom.",
+		"Has an inverse damage profile, rounds are deadlier at range due to overpenetration.",
+	},
+	tooltype = "gun",
+	damage = 105,
+	range = 45,
+	range_damage = 180,
+	far = 100,
+	far_damage = 140,
+	melee_damage = 80,
+	melee_swing_speed = 0.7,
+	melee_range = 5,
+	pen = 3,
+	wallpen_distance = 50,
+	wallpen_studs = 3,
+	accuracy = 3,
+	moving_accuracy = 120,
+	fire_rate = FIRE_INTERVAL,
+	cycle = 0.7,
+	cycle_rest = 0.2,
+	draw_speed = 1,
+	aim_speed = 0.35,
+	wound = 1,
+	length = 4,
+	recoil = 5,
+	recoil_count = 6,
+	movement = 3,
+	firing_movement = 1.5,
+	firing_movement_last = 0.5,
+	ammo_reserves = 2,
+	ammo_reserves_max = 4,
+	capacity = 5,
+	chamber = false,
+	reload_start = 1,
+	reload_empty = 1.5,
+	reload_loop = 0.5,
+	reload_end = 0.5,
+	reload_full = 1.5,
+	bullet_speed = BULLET_SPEED,
+}
 
 local ANIM_LAYERS: { [string]: number } = {
 	Hold = 0,
@@ -139,31 +188,40 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 	}
 
 	self.animation_speeds = {
-		Aim = 1 / 0.35,
-		Reload_Loop = 1 / RELOAD_ROUND_TIME,
+		Draw = 1 / WEAPON_STATS.draw_speed,
+		Aim = 1 / WEAPON_STATS.aim_speed,
+		Aim_Left = 1 / WEAPON_STATS.aim_speed,
+		Cycle = 1 / WEAPON_STATS.cycle,
+		Reload_Start = 1 / WEAPON_STATS.reload_start,
+		Reload_Empty = 1 / WEAPON_STATS.reload_empty,
+		Reload_Loop = 1 / WEAPON_STATS.reload_loop,
+		Reload_End = 1 / WEAPON_STATS.reload_end,
 	}
 
-	self.damage = 180
-	self.Max_Capacity = 5
-	self.Capacity = 5
-	self.Starting_Reserve_Ammo = 10
-	self.Max_Reserve_Ammo = 20
-	self.Ammo_Type = "7.62x54mmR Lead"
-	self.recoil = 70
-	self.recoil_count = 9
-	self.Penetration_Level = 2
+	self.damage = WEAPON_STATS.damage
+	self.Max_Capacity = WEAPON_STATS.capacity
+	self.Capacity = WEAPON_STATS.capacity
+	self.Starting_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves
+	self.Max_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves_max
+	self.Ammo_Type = WEAPON_STATS.ammo_give
+	self.recoil = WEAPON_STATS.recoil
+	self.recoil_count = WEAPON_STATS.recoil_count
+	self.Penetration_Level = WEAPON_STATS.pen
 	self.Armor_Penetration_Level = 3
 	self.KnockBack_Force = 12
 	self.Aiming_Number = 35
 	self.MuzzlePartName = "muzzle"
+	self.BulletSpeed = BULLET_SPEED
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
 	self.Short_Distance = 3.5
-	self.Melee_Distance = 5
-	self.Melee_Damage = 35
-	self.Accuracy = 3
-	self.Moving_Accuracy = 55
+	self.Melee_Distance = WEAPON_STATS.melee_range
+	self.Melee_Damage = WEAPON_STATS.melee_damage
+	self.Accuracy = WEAPON_STATS.accuracy
+	self.Moving_Accuracy = WEAPON_STATS.moving_accuracy
 	self.SoundFolder = SoundFolder
+	self.FireInterval = WEAPON_STATS.fire_rate
+	self:applyFirearmConfig(WEAPON_STATS)
 
 	self.ScopedMode = true
 	self.Equipped = false
@@ -243,9 +301,9 @@ function VolkRifle:setAltMode()
 end
 
 function VolkRifle:_damageAtDistance(distance: number): number
-	if distance < 45 then return 105 end
-	if distance <= 100 then return 180 end
-	return 140
+	if distance < self.range then return self.damage end
+	if distance <= self.far then return self.range_damage end
+	return self.far_damage
 end
 
 function VolkRifle:_getMuzzlePart(): BasePart?
@@ -299,126 +357,38 @@ function VolkRifle:_getMuzzlePart(): BasePart?
 end
 
 function VolkRifle:fire()
-	if self.Firing or self.Reloading or self.Cycling or self.Checking or self.Alting or self.Meleeing then
-		return
-	end
-	if not self.Aiming then
-		return
-	end
-	if self.Capacity <= 0 then
-		self:_dryFire()
-		return
-	end
-	if self:_if_sprinting() then
-		return
-	end
-	if self:_if_jumping() then
-		return
-	end
-	if self.ForceBlockFire then
-		return
-	end
-
-	local muzzle = self:_getMuzzlePart()
-	local camera = workspace.CurrentCamera
-	if not muzzle or not muzzle:IsA("BasePart") then
-		warn("[VolkRifle Debug] Fire blocked because muzzle was not found as a BasePart:", self.MuzzlePartName, muzzle)
-		return
-	end
-	if not camera then
-		warn("[VolkRifle Debug] Fire blocked because CurrentCamera is missing")
-		return
-	end
-	if not self.Caster or not self.CasterBehavior then
-		warn("[VolkRifle Debug] Fire blocked because FastCast was not initialized", self.Caster, self.CasterBehavior)
-		return
-	end
-
-	self.Firing = true
-	local mousePosition = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
-
-	local result = Util.raycastSkipTransparent(ray.Origin, ray.Direction * 5000, params)
-	local target = result and result.Position or ray.Origin + ray.Direction * 5000
-	local direction = self:get_spread(muzzle, (target - muzzle.Position).Unit)
-	local cast = self.Caster:Fire(muzzle.Position, direction, BULLET_SPEED, self.CasterBehavior)
-	cast.UserData = {
-		Direction = direction,
-		Penetrated = false,
-		Origin = muzzle.Position,
-		Shooter = LOCAL_PLAYER,
-	}
-
-	self:_connect_FastCast(muzzle.Position, direction, BULLET_SPEED, {
-		bulletTemplate = FxFolder.Bullet,
-		bulletContainer = workspace.Game_Details.Effects.Bullets,
-		isPenetration = false,
-		penetrationLevel = self.Penetration_Level,
-		damage = self.damage,
-		knockbackForce = self.KnockBack_Force,
-	})
-
-	self.Capacity -= 1
-	self:_stopAllExcept()
-	if self.current_shoulder == "Right" then
-		self:_playFireAnimation("Fire")
-	end
 	local fireSound = findSound("fire", "Fire")
-	if fireSound then self:_play_sfx(fireSound, muzzle) end
-	self:_bounce_scoped_ui()
-	self:_fireMuzzleFlash()
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
+	local fired = self:_fireSingleShot({
+		bulletSpeed = self.BulletSpeed,
+		sound = fireSound,
+	})
+	if not fired then return end
 
 	self.Cycling = true
-	task.wait(math.min(0.25, FIRE_INTERVAL))
+	task.wait(math.min(0.25, self.fire_rate or FIRE_INTERVAL))
 	if self.Equipped then
 		self:_stopAllExcept()
 		local cycleTrack = self:_playAnim("Cycle")
 		local cycleSound = findSound("cycle", "bolt")
-		if cycleSound then self:_play_sfx(cycleSound, muzzle) end
+		local muzzle = self:_getMuzzlePart()
+		if cycleSound and muzzle then self:_play_sfx(cycleSound, muzzle) end
+		if cycleTrack and self.cycle and self.cycle > 0 then
+			cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / self.cycle, 0.01))
+		end
 		if cycleTrack then cycleTrack.Stopped:Wait() end
 	end
+	task.wait(self.cycle_rest or 0)
 
 	self.Cycling = false
-	self.Firing = false
 	self:_restoreBaseDeferred()
 end
 
 function VolkRifle:reload()
-	if self.Reloading or self.Equipping or self.Capacity >= self.Max_Capacity then return end
-	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
-	if not reserve or not reserve:IsA("NumberValue") or reserve.Value <= 0 then
-		self:notify("I don't have any more ammo...")
-		return
-	end
-
-	if self.Aiming then self:endAiming() end
-	self.Reloading = true
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
-	self:_stopAllExcept()
-
-	local startTrack = self:_playAnim("Reload_Start")
-	if startTrack then startTrack.Stopped:Wait() end
-	while self.Equipped and self.Capacity < self.Max_Capacity and reserve.Value > 0 and not self._reloadCancelled do
-		local loopTrack = self:_playAnim("Reload_Loop")
-		if loopTrack then loopTrack.Stopped:Wait() else task.wait(RELOAD_ROUND_TIME) end
-		if self._reloadCancelled or not self.Equipped then break end
-		self.Capacity += 1
-		self:_fire_ammo(1)
-	end
-	if self.Equipped and not self._reloadCancelled then
-		local endTrack = self:_playAnim("Reload_End")
-		if endTrack then endTrack.Stopped:Wait() end
-	end
-
-	self.Reloading = false
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
-	self:_restoreBaseDeferred()
+	self:_reloadByRound({
+		startAnim = "Reload_Start",
+		loopAnim = "Reload_Loop",
+		endAnim = "Reload_End",
+	})
 end
 
 function VolkRifle:activate()
@@ -482,9 +452,33 @@ function VolkRifle:Destroy()
 	BaseRifle.destroy(self)
 end
 
+VolkRifle.name = WEAPON_STATS.name
+VolkRifle.Display_Name = WEAPON_STATS.name
 VolkRifle.Tool_Image = "rbxassetid://109461036497765"
 VolkRifle.Medal_Cost = 0
 VolkRifle.Weight = 2
 VolkRifle.Designation = "Primary"
+VolkRifle.desc = WEAPON_STATS.desc
+VolkRifle.lore = WEAPON_STATS.lore
+VolkRifle.assists = WEAPON_STATS.assists
+VolkRifle.icon = WEAPON_STATS.icon
+VolkRifle.tooltype = WEAPON_STATS.tooltype
+VolkRifle.damage = WEAPON_STATS.damage
+VolkRifle.range = WEAPON_STATS.range
+VolkRifle.range_damage = WEAPON_STATS.range_damage
+VolkRifle.far = WEAPON_STATS.far
+VolkRifle.far_damage = WEAPON_STATS.far_damage
+VolkRifle.accuracy = WEAPON_STATS.accuracy
+VolkRifle.moving_accuracy = WEAPON_STATS.moving_accuracy
+VolkRifle.fire_rate = WEAPON_STATS.fire_rate
+VolkRifle.cycle = WEAPON_STATS.cycle
+VolkRifle.cycle_rest = WEAPON_STATS.cycle_rest
+VolkRifle.recoil = WEAPON_STATS.recoil
+VolkRifle.recoil_count = WEAPON_STATS.recoil_count
+VolkRifle.capacity = WEAPON_STATS.capacity
+VolkRifle.ammo_give = WEAPON_STATS.ammo_give
+VolkRifle.ammo_reserves = WEAPON_STATS.ammo_reserves
+VolkRifle.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
+VolkRifle.pen = WEAPON_STATS.pen
 
 return VolkRifle

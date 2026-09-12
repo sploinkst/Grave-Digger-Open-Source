@@ -1,0 +1,27 @@
+local v1 = require(game.ReplicatedStorage.shared.bFunctions):deepCopy(require(game.ReplicatedStorage.weapon_modules.steyr))
+v1.name = "\'Union\' Stocked Pistol"
+v1.variant = "steyr"
+v1.desc = "Modification of the \'Union\' Military Pistol"
+v1.lore = "This model of the venerable \226\128\152Union\226\128\153 Military Pistol combines two in-house Solace modifications to form a sturdy, reliable carbine capable of all sorts of roles, from self-defense to hunting to military use. The cheaper of the two is the addition of a stock, giving greater stability and accuracy allowing for its full rate of fire to be utilized without jeopardizing control.\n\nThe rarer, more expensive modification is the extended magazine - now with a doubled capacity from eight rounds to sixteen, the weapon\226\128\153s somewhat cumbersome loading mechanism is less of a drawback in sustained engagements. The combination of both modifications creates a high-capacity light carbine with a fair rate of fire, similar to the \226\128\152Honour\226\128\153 Duty Pistol, though at a rather steep cost, leaving it as a rather niche implement for soldiers and guardsmen alike compared to a true rifle.\n\nWritten by Deceased_Rabbit and Lazarubius."
+v1.icon = "136717815109524"
+v1.assists = { "Extended magazine greatly improves capacity but added weight is cumbersome.", "Attached Stock improves handling, accuracy, and recoil control.", "Can\'t fit in your pistol holster anymore and no space for clips." }
+v1.size = 2
+v1.draw_speed = 0.65
+v1.aim_speed = 0.3
+v1.recoil = 3
+v1.moving_accuracy = 8
+v1.movement = 3
+v1.firing_movement = 3
+v1.accuracy = 1
+v1.capacity = 16
+v1.ammo_reserves = 1
+v1.ammo_reserves_max = 2
+v1.reload_start = 1.5
+v1.reload_empty = 1.4
+v1.reload_loop = 0.75
+v1.reload_end = 0.45
+v1.holsterc0 = CFrame.new(-0.741775513, 0.881345749, 0.564033508, 0, 1, 2.84217094e-14, -1, 0, 5.5562312e-16, -5.5562312e-16, 2.84217094e-14, 1)
+v1.holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+v1.alt_holsterc0 = CFrame.new(0.643341064, 0.881345749, 0.564033508, 0, -1, -2.84217094e-14, -1, 0, -5.5562312e-16, -5.5562312e-16, -2.84217094e-14, -1)
+v1.alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+return v1;

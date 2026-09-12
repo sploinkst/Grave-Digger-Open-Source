@@ -26,6 +26,41 @@ local PEDERSEN_SWITCH_TIME = 7
 local PEDERSEN_RELOAD_TIME = 5
 local PEDERSEN_JAM_CLEAR_TIME = 1
 local RELOAD_ROUND_TIME = 5.2 / 5
+local WEAPON_STATS = {
+	name = "'Whisper' Silenced Rifle",
+	desc = "A silent and powerful bolt rifle that leaves no bullet trails.",
+	icon = "130781995861130",
+	ammo_give = ".30-06 Ball",
+	damage = 130,
+	range = 70,
+	range_damage = 120,
+	far = 100,
+	far_damage = 115,
+	melee_damage = 80,
+	melee_swing_speed = 0.7,
+	melee_range = 5,
+	pen = 3,
+	accuracy = 6,
+	moving_accuracy = 100,
+	fire_rate = 0.3,
+	cycle = 0.55,
+	cycle_rest = 0.15,
+	draw_speed = 0.75,
+	aim_speed = 0.35,
+	recoil = 8,
+	recoil_count = 6,
+	movement = 1,
+	firing_movement = 1,
+	firing_movement_last = 0.5,
+	ammo_reserves = 3,
+	ammo_reserves_max = 4,
+	capacity = 5,
+	chamber = false,
+	reload_start = 1.5,
+	reload_empty = 1.75,
+	reload_loop = 0.65,
+	reload_end = 0.75,
+}
 
 local ANIM_LAYERS: { [string]: number } = {
 	Hold = 0,
@@ -113,21 +148,22 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 		Short = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Short,
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
-	self.animation_speeds.Draw = 1 / 0.75
-	self.animation_speeds.Aim = 1 / 0.35
-	self.animation_speeds.Aim_Left = 1 / 0.35
-	self.animation_speeds.Reload_Loop = 1 / RELOAD_ROUND_TIME
+	self.animation_speeds.Draw = 1 / WEAPON_STATS.draw_speed
+	self.animation_speeds.Aim = 1 / WEAPON_STATS.aim_speed
+	self.animation_speeds.Aim_Left = 1 / WEAPON_STATS.aim_speed
+	self.animation_speeds.Reload_Loop = 1 / WEAPON_STATS.reload_loop
 
-	self.damage = 130
-	self.Max_Capacity = 5
-	self.Capacity = 5
-	self.Starting_Reserve_Ammo = 15
-	self.Max_Reserve_Ammo = 20
-	self.Ammo_Type = ".30-06 Ball"
-	self.Penetration_Level = 2
-	self.Armor_Penetration_Level = 3
+	self.damage = WEAPON_STATS.damage
+	self.Max_Capacity = WEAPON_STATS.capacity
+	self.Capacity = WEAPON_STATS.capacity
+	self.Starting_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves
+	self.Max_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves_max
+	self.Ammo_Type = WEAPON_STATS.ammo_give
+	self.Penetration_Level = WEAPON_STATS.pen
+	self.Armor_Penetration_Level = WEAPON_STATS.pen
 	self.KnockBack_Force = 12
 	self.SoundFolder = whisperSounds
+	self.BulletSpeed = 1200
 	self.FireEmissions = nil
 
 	self.PedersenMode = false
@@ -140,14 +176,16 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 	self.Alting = false
 
 	configureSuppressedSounds(whisperSounds)
+	self:applyFirearmConfig(WEAPON_STATS)
+	self.SoundFolder = whisperSounds
 	return self
 end
 
 function WhisperRifle:_damageAtDistance(distance: number): number
 	if self.PedersenMode then return 55 end
-	if distance < 70 then return 130 end
-	if distance <= 100 then return 120 end
-	return 115
+	if distance < self.range then return self.damage end
+	if distance <= self.far then return self.range_damage end
+	return self.far_damage
 end
 
 function WhisperRifle:setAltMode()
@@ -204,26 +242,21 @@ function WhisperRifle:fire()
 		return
 	end
 
-	self.Firing = true
 	self.damage = self.PedersenMode and 55 or 130
-	local fired = self:_fireProjectile(
-		1200,
-		self.Penetration_Level,
-		self.damage,
-		self.KnockBack_Force
-	)
+	local fireAnimation = if self.Capacity <= 1
+		then ((self.current_shoulder == "Right") and "Fire_Last" or "Fire_Last_Left")
+		else ((self.current_shoulder == "Right") and "Fire" or "Fire_Left")
+	local fireSound = whisperSounds:FindFirstChild("fire") or whisperSounds:FindFirstChild("Fire")
+	local fired = self:_fireSingleShot({
+		bulletSpeed = 1200,
+		fireAnimation = fireAnimation,
+		sound = fireSound,
+	})
 	if fired then
-		self.Capacity -= 1
 		if self.PedersenMode then self.ShotsUntilJam -= 1 end
-		self:_stopAllExcept()
-		local fireAnimation = if self.Capacity == 0
-			then ((self.current_shoulder == "Right") and "Fire_Last" or "Fire_Last_Left")
-			else ((self.current_shoulder == "Right") and "Fire" or "Fire_Left")
-		self:_playFireAnimation(fireAnimation)
-		local fireSound = whisperSounds:FindFirstChild("fire") or whisperSounds:FindFirstChild("Fire")
-		if fireSound and fireSound:IsA("Sound") then self:_play_sfx(fireSound, self:_getMuzzlePart()) end
 		if self.PedersenMode and self.ShotsUntilJam <= 0 then self.Jammed = true end
 	end
+	if not fired then return end
 
 	if self.PedersenMode then
 		task.wait(PEDERSEN_FIRE_INTERVAL)
@@ -234,13 +267,13 @@ function WhisperRifle:fire()
 			self:_stopAllExcept()
 			local cycleTrack = self:_playAnim("Cycle")
 			local cycleSound = whisperSounds:FindFirstChild("cycle") or whisperSounds:FindFirstChild("bolt")
-			if cycleSound and cycleSound:IsA("Sound") then self:_play_sfx(cycleSound, self:_getMuzzlePart()) end
+			local muzzle = self:_getMuzzlePart()
+			if cycleSound and cycleSound:IsA("Sound") and muzzle then self:_play_sfx(cycleSound, muzzle) end
 			if cycleTrack then cycleTrack.Stopped:Wait() end
 		end
 		task.wait(math.max(0, BOLT_FIRE_INTERVAL - 0.25))
 		self.Cycling = false
 	end
-	self.Firing = false
 	self:_restoreBaseDeferred()
 end
 
@@ -251,7 +284,6 @@ function WhisperRifle:reload()
 	end
 	if self.Reloading or self.Capacity >= self.Max_Capacity or self.PedersenReserve <= 0 then return end
 
-	if self.Aiming then self:endAiming() end
 	self.Reloading = true
 	self:_stopAllExcept()
 	self:_playAnim("Reload_Start")
@@ -269,5 +301,25 @@ WhisperRifle.Tool_Image = "rbxassetid://76707981179928"
 WhisperRifle.Medal_Cost = 0
 WhisperRifle.Weight = 2
 WhisperRifle.Designation = "Primary"
+WhisperRifle.Display_Name = WEAPON_STATS.name
+WhisperRifle.desc = WEAPON_STATS.desc
+WhisperRifle.icon = WEAPON_STATS.icon
+WhisperRifle.damage = WEAPON_STATS.damage
+WhisperRifle.range = WEAPON_STATS.range
+WhisperRifle.range_damage = WEAPON_STATS.range_damage
+WhisperRifle.far = WEAPON_STATS.far
+WhisperRifle.far_damage = WEAPON_STATS.far_damage
+WhisperRifle.accuracy = WEAPON_STATS.accuracy
+WhisperRifle.moving_accuracy = WEAPON_STATS.moving_accuracy
+WhisperRifle.fire_rate = WEAPON_STATS.fire_rate
+WhisperRifle.cycle = WEAPON_STATS.cycle
+WhisperRifle.cycle_rest = WEAPON_STATS.cycle_rest
+WhisperRifle.recoil = WEAPON_STATS.recoil
+WhisperRifle.recoil_count = WEAPON_STATS.recoil_count
+WhisperRifle.capacity = WEAPON_STATS.capacity
+WhisperRifle.ammo_give = WEAPON_STATS.ammo_give
+WhisperRifle.ammo_reserves = WEAPON_STATS.ammo_reserves
+WhisperRifle.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
+WhisperRifle.pen = WEAPON_STATS.pen
 
 return WhisperRifle

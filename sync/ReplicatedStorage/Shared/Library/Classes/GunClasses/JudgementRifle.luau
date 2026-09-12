@@ -5,11 +5,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
-local Util = require(script.Parent.Parent.Parent.Util)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -34,8 +32,74 @@ local CHARGE_DURATION = 3
 local CHARGE_TURN_RATE = math.rad(5)
 local CHARGE_RANGE = 30
 local CHARGE_DAMAGE = 300
-local CRESTFALL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
-	* CFrame.Angles(0, 0, math.rad(90))
+local WEAPON_STATS = {
+	name = "'Judgement' Breech Rifle",
+	desc = "A devastating, breech loading, single shot rifle fitted with a Bayonet.",
+	lore = [[Though bayonets have fallen out of favor in the caves' confines - manuverability and handling is often paramount to survival in these circumstances - in the case of the 'Judgement', the bayonet not only serves as a stalwart backup to the single-shot nature of the rifle, but also a superstitious role.
+
+Corrosive shells hammered into the Empire's zealots as 'Able Four' marched through the hellish scene, gas masks adorned and automatic weapons at the ready. One of, if not the most battle-proven teams of the Royal Nation, this simple artillery ambush would prove to be their undoing - as knightly men blitzed through noxious fumes, flesh peeling and eyes bulging as they skewered the venerated Shock Troopers in cold blood. The horrific sight caused even these grizzled men to hesitate - and in those crucial moments, .577/450 rounds tore through their Vanguards' Shields, their flesh, and soon, their spirit.
+
+...Or so the legend goes.]],
+	size = 2,
+	icon = "18724437158",
+	animations = "henry",
+	ammo_give = ".577 Alloy",
+	melee_sound = "bayonet",
+	assists = {
+		"Deals significant damage at all ranges.",
+		"Affixed bayonet provides superior melee capabilities.",
+		"Capable of obliterating through helmets at close range.",
+		"Un-wieldy and cumbersome, Steady Aim is your best friend.",
+		"[@ALT] while in a Full Sprint to initiate the Bayonet Charge.",
+		"Bayonet Charges are not effective for a short period after starting.",
+	},
+	tooltype = "gun",
+	damage = 199,
+	range = 60,
+	range_damage = 180,
+	far = 100,
+	far_damage = 120,
+	melee_damage = 105,
+	melee_swing_speed = 0.65,
+	melee_range = 7.5,
+	pen = 4,
+	wallpen_distance = 70,
+	wallpen_studs = 4,
+	accuracy = 12,
+	moving_accuracy = 150,
+	fire_rate = 0.75,
+	display_fire_rate = 21,
+	cycle = 0,
+	cycle_rest = 0,
+	draw_speed = 1.2,
+	aim_speed = 0.4,
+	wound = 1,
+	length = 6,
+	recoil = 25,
+	recoil_count = 9,
+	movement = 3,
+	firing_movement = 2.5,
+	firing_movement_last = 0.75,
+	ammo_reserves = 8,
+	ammo_reserves_max = 14,
+	capacity = 1,
+	chamber = false,
+	reload_start = 2,
+	reload_empty = 0,
+	reload_loop = 0,
+	reload_end = 0,
+	reload_alt = 0,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-0.932582855, 2.12966585, 0.536758423, 0, 0.999995708, 0, -1, 0, 0, 0, 0, 0.999995708),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(-0.43554306, 2.12966585, 0.570640564, -0.0355006903, 0.999369681, 0, -0.99936974, -0.0355006866, 0, -0, 0, 1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = true,
+	equipc0 = CFrame.new(0.367686272, -3.14173198, -0.561454773, 0, 0, -0.999995708, 0.99999994, 0, 0, 0, -0.999995708, 0),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	special = {},
+}
+local HENRY_HOLSTER_C0 = WEAPON_STATS.holsterc0
 
 local ANIM_LAYERS: { [string]: number } = {
 	Hold = 0,
@@ -85,7 +149,7 @@ local function get_holster_reference(model_reference: Model?): Model?
 
 	hitbox.Name = "JudgementRifle_Torso"
 	holster.PrimaryPart = hitbox
-	holster:SetAttribute("HolsterC0", CRESTFALL_HOLSTER_C0)
+	holster:SetAttribute("HolsterC0", HENRY_HOLSTER_C0)
 	for _, descendant in ipairs(holster:GetDescendants()) do
 		if descendant:IsA("BasePart") then
 			descendant.CanCollide = false
@@ -114,17 +178,15 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		or ToolFolder:FindFirstChild("Henry")
 		or ToolFolder:FindFirstChild("JudgementRifle")
 		or ToolFolder:FindFirstChild("Judgement")
-		or ToolFolder:FindFirstChild("lever")
-		or ToolFolder:FindFirstChild("Lever")
 	self.holster_reference = get_holster_reference(self.model_reference)
 	
-	self.DefaultGripC0 = CFrame.new(0.254, -3.2, -0.5) * CFrame.fromOrientation(math.rad(0.979), math.rad(-80), math.rad(90))
+	self.DefaultGripC0 = WEAPON_STATS.equipc0
 	self.motor_6d_data = {
 		Parent = "Left Arm",
 		Part0 = "Left Arm",
 		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
 		C0 = self.DefaultGripC0,
-		C1 = CFrame.identity,
+		C1 = WEAPON_STATS.equipc1,
 	}
 
 	self.AnimationGunType = "henry"
@@ -146,33 +208,39 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 	}
 
 	self.animation_speeds = {
-		Draw = 1 / 1.2,
-		Aim = 1 / 0.4,
-		Aim_Left = 1 / 0.4,
-		Reload_Start = 1 / RELOAD_ROUND_TIME,
+		Draw = 1 / WEAPON_STATS.draw_speed,
+		Aim = 1 / WEAPON_STATS.aim_speed,
+		Aim_Left = 1 / WEAPON_STATS.aim_speed,
+		Reload_Start = 1 / WEAPON_STATS.reload_start,
 	}
 
-	self.damage = 199
-	self.Max_Capacity = 1
-	self.Capacity = 1
-	self.Starting_Reserve_Ammo = 8
-	self.Max_Reserve_Ammo = 14
-	self.Ammo_Type = ".577 Alloy"
-	self.recoil = 80
-	self.recoil_count = 10
-	self.Penetration_Level = 3
-	self.Armor_Penetration_Level = 4
+	self.damage = WEAPON_STATS.damage
+	self.Max_Capacity = WEAPON_STATS.capacity
+	self.Capacity = WEAPON_STATS.capacity
+	self.Starting_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves
+	self.Max_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves_max
+	self.Ammo_Type = WEAPON_STATS.ammo_give
+	self.recoil = WEAPON_STATS.recoil
+	self.recoil_count = WEAPON_STATS.recoil_count
+	self.Penetration_Level = WEAPON_STATS.pen
+	self.Armor_Penetration_Level = WEAPON_STATS.pen
 	self.KnockBack_Force = 14
 	self.Aiming_Number = 80
 	self.MuzzlePartName = "muzzle"
+	self.BulletSpeed = BULLET_SPEED
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
 	self.Short_Distance = 3.5
-	self.Melee_Distance = 7
-	self.Melee_Damage = 105
-	self.Accuracy = 4
-	self.Moving_Accuracy = 65
+	self.Melee_Distance = WEAPON_STATS.melee_range
+	self.Melee_Damage = WEAPON_STATS.melee_damage
+	self.Accuracy = WEAPON_STATS.accuracy
+	self.Moving_Accuracy = WEAPON_STATS.moving_accuracy
 	self.SoundFolder = SoundFolder
+	self.FireSound = SoundFolder:FindFirstChild("fire")
+	self.FireInterval = WEAPON_STATS.fire_rate
+	self.ReloadStartAnimation = "Reload_Start"
+	self.ReloadLoopAnimation = false
+	self.ReloadEndAnimation = false
 
 	self.Equipped = false
 	self.Firing = false
@@ -192,6 +260,7 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 	}
 
 	self:_initShoulderTracking()
+	self:applyFirearmConfig(WEAPON_STATS)
 	return self
 end
 
@@ -293,140 +362,11 @@ function JudgementRifle:setAltMode()
 	Players.LocalPlayer.Character:SetAttribute("charging", nil)
 end
 
-function JudgementRifle:_damageAtDistance(distance: number): number
-	if distance < 60 then
-		return 199
-	elseif distance <= 100 then
-		return 180
-	end
-	return 120
-end
-
-function JudgementRifle:fire()
-	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
-	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
-	if self.Capacity <= 0 then
-		self:_dryFire()
-		return
-	end
-
-	local muzzle = self:_findModelPart(self.MuzzlePartName)
-	local camera = workspace.CurrentCamera
-	if not muzzle or not muzzle:IsA("BasePart") or not camera then return end
-
-	self.Firing = true
-	local mousePosition = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
-
-	local result = Util.raycastSkipTransparent(ray.Origin, ray.Direction * 5000, params)
-	local target = result and result.Position or ray.Origin + ray.Direction * 5000
-	local direction = self:get_spread(muzzle, (target - muzzle.Position).Unit)
-	local cast = self.Caster:Fire(muzzle.Position, direction, BULLET_SPEED, self.CasterBehavior)
-	cast.UserData = {
-		Direction = direction,
-		Penetrated = false,
-		Origin = muzzle.Position,
-		Shooter = LOCAL_PLAYER,
-	}
-
-	self:_connect_FastCast(muzzle.Position, direction, BULLET_SPEED, {
-		bulletTemplate = FxFolder.Bullet,
-		bulletContainer = workspace.Game_Details.Effects.Bullets,
-		isPenetration = false,
-		penetrationLevel = self.Penetration_Level,
-		damage = self.damage,
-		knockbackForce = self.KnockBack_Force,
-	})
-
-	self.Capacity -= 1
-	self:_stopAllExcept()
-	local fireAnimation = if self.Capacity == 0
-		then ((self.current_shoulder == "Right") and "Fire_Last" or "Fire_Last_Left")
-		else ((self.current_shoulder == "Right") and "Fire" or "Fire_Left")
-	self:_playFireAnimation(fireAnimation)
-	local fireSound = SoundFolder:FindFirstChild("fire")
-	if fireSound then self:_play_sfx(fireSound, muzzle) end
-	self:_bounce_scoped_ui()
-	self:_fireMuzzleFlash()
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
-
-	self.Cycling = true
-	task.wait(self:getFireDelay(FIRE_INTERVAL))
-	self.Cycling = false
-	self.Firing = false
-	self:_restoreBaseDeferred()
-end
-
-function JudgementRifle:reload()
-	if self.Reloading or self.Equipping or self.Capacity >= self.Max_Capacity then return end
-	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
-	if not reserve or not reserve:IsA("NumberValue") or reserve.Value <= 0 then
-		self:notify("I don't have any more ammo...")
-		return
-	end
-
-	if self.Aiming then self:endAiming() end
-	self.Reloading = true
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
-	self:_stopAllExcept()
-	local reloadTrack = self:_playAnim("Reload_Start")
-	if reloadTrack then reloadTrack.Stopped:Wait() end
-
-	if self.Equipped and reserve.Value > 0 and not self._reloadCancelled then
-		self.Capacity += 1
-		self:_fire_ammo(1)
-	end
-	self.Reloading = false
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
-	self:_restoreBaseDeferred()
-end
-
-function JudgementRifle:activate()
-	if self.Reloading then
-		-- Judgement reloads as a single committed action. M1 is ignored until
-		-- the reload clip finishes; shell-by-shell weapons retain cancellation.
-		if self.CanCancelReload then self._reloadCancelled = true end
-		return
-	end
-	if not self.actual_model or self:_isBusy() then return end
-	if self.Aiming then self:fire() else self:melee() end
-end
-
-function JudgementRifle:_on_equip()
-	self.Equipped = true
-	self:_cacheMotor6D()
-	self:_connectInput()
-	self:_initShoulderTracking()
-	self:_setupFastCast(FxFolder, function(cast, result, velocity)
-		local origin = cast.UserData and cast.UserData.Origin
-		local distance = origin and (result.Position - origin).Magnitude or 0
-		local damage = self:_damageAtDistance(distance)
-		local muzzle = self:_findModelPart(self.MuzzlePartName)
-		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, damage, self.KnockBack_Force)
-	end)
-end
-
 function JudgementRifle:_on_unequip()
-	self.Equipped = false
-	self.Firing = false
-	self.Cycling = false
-	self.Reloading = false
-	self.Alting = false
-	self._reloadCancelled = true
-	self:_disconnectInput()
-	self:_stopShoulderTracking()
-	self:_stopAimTracking()
-	self:_resetMotor6D()
-	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
+	BaseRifle._on_unequip(self)
 	local character = LOCAL_PLAYER.Character
 	if character then
-		character:SetAttribute("Aiming", false)
-		character:SetAttribute("Sprint_Animation", nil)
+		character:SetAttribute("charging", nil)
 	end
 end
 
@@ -435,9 +375,57 @@ function JudgementRifle:Destroy()
 	BaseRifle.destroy(self)
 end
 
-JudgementRifle.Tool_Image = "rbxassetid://126433379345419"
+JudgementRifle.Tool_Image = "rbxassetid://" .. WEAPON_STATS.icon
 JudgementRifle.Medal_Cost = 0
 JudgementRifle.Weight = 2
 JudgementRifle.Designation = "Primary"
+JudgementRifle.name = WEAPON_STATS.name
+JudgementRifle.Display_Name = WEAPON_STATS.name
+JudgementRifle.desc = WEAPON_STATS.desc
+JudgementRifle.lore = WEAPON_STATS.lore
+JudgementRifle.assists = WEAPON_STATS.assists
+JudgementRifle.icon = WEAPON_STATS.icon
+JudgementRifle.tooltype = WEAPON_STATS.tooltype
+JudgementRifle.size = WEAPON_STATS.size
+JudgementRifle.damage = WEAPON_STATS.damage
+JudgementRifle.range = WEAPON_STATS.range
+JudgementRifle.range_damage = WEAPON_STATS.range_damage
+JudgementRifle.far = WEAPON_STATS.far
+JudgementRifle.far_damage = WEAPON_STATS.far_damage
+JudgementRifle.melee_damage = WEAPON_STATS.melee_damage
+JudgementRifle.melee_swing_speed = WEAPON_STATS.melee_swing_speed
+JudgementRifle.melee_range = WEAPON_STATS.melee_range
+JudgementRifle.accuracy = WEAPON_STATS.accuracy
+JudgementRifle.moving_accuracy = WEAPON_STATS.moving_accuracy
+JudgementRifle.fire_rate = WEAPON_STATS.fire_rate
+JudgementRifle.display_fire_rate = WEAPON_STATS.display_fire_rate
+JudgementRifle.cycle = WEAPON_STATS.cycle
+JudgementRifle.cycle_rest = WEAPON_STATS.cycle_rest
+JudgementRifle.recoil = WEAPON_STATS.recoil
+JudgementRifle.recoil_count = WEAPON_STATS.recoil_count
+JudgementRifle.capacity = WEAPON_STATS.capacity
+JudgementRifle.ammo_give = WEAPON_STATS.ammo_give
+JudgementRifle.ammo_reserves = WEAPON_STATS.ammo_reserves
+JudgementRifle.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
+JudgementRifle.pen = WEAPON_STATS.pen
+JudgementRifle.wallpen_distance = WEAPON_STATS.wallpen_distance
+JudgementRifle.wallpen_studs = WEAPON_STATS.wallpen_studs
+JudgementRifle.wound = WEAPON_STATS.wound
+JudgementRifle.length = WEAPON_STATS.length
+JudgementRifle.chamber = WEAPON_STATS.chamber
+JudgementRifle.reload_start = WEAPON_STATS.reload_start
+JudgementRifle.reload_empty = WEAPON_STATS.reload_empty
+JudgementRifle.reload_loop = WEAPON_STATS.reload_loop
+JudgementRifle.reload_end = WEAPON_STATS.reload_end
+JudgementRifle.reload_alt = WEAPON_STATS.reload_alt
+JudgementRifle.holster_point = WEAPON_STATS.holster_point
+JudgementRifle.holsterc0 = WEAPON_STATS.holsterc0
+JudgementRifle.holsterc1 = WEAPON_STATS.holsterc1
+JudgementRifle.alt_holsterc0 = WEAPON_STATS.alt_holsterc0
+JudgementRifle.alt_holsterc1 = WEAPON_STATS.alt_holsterc1
+JudgementRifle.lefthand = WEAPON_STATS.lefthand
+JudgementRifle.equipc0 = WEAPON_STATS.equipc0
+JudgementRifle.equipc1 = WEAPON_STATS.equipc1
+JudgementRifle.special = WEAPON_STATS.special
 
 return JudgementRifle

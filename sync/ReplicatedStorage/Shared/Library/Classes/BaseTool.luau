@@ -37,7 +37,7 @@ local bullet_warning_part = ReplicatedStorage.Shared.Assets.UI.Warning_Barrel
 local AIM_LERP_ALPHA   = 0.1
 local MOTOR_LERP_ALPHA = 0.15
 local MOTOR_SNAP_DIST  = 0.001
-local CUT              = 0.15
+local CUT              = 0.06
 local CHARACTER_TRANSPARENCY = 0.95
 
 local LEAN_DISTANCE = 3
@@ -590,16 +590,28 @@ function BaseTool:equip()
 				local round = self.Round and target and target:FindFirstChild(self.Round.Name)
 				if round and round:IsA("BasePart") then round.Transparency = 1 end
 			elseif keyframe == "vfx_eject_casing" then
+				if not self.actual_model then return end
 				local casing = self.actual_model:FindFirstChild(self.className .. "_Ejection")
+					or self.actual_model:FindFirstChild("ejector", true)
+					or self.actual_model:FindFirstChild("casing", true)
 				if not casing then warn("[BASETOOL] vfx_eject_casing: no casing for " .. self.className) return end
 				self:emit_casing(casing, casing.CFrame)
 				print("Ejecting casing")
 
 			elseif keyframe == "vfx_cylinder_rotate_other" then
-				local cylinder_motor: Motor6D =
-					self.actual_model
-					:FindFirstChild(self.className .. "_Middle")
-					:FindFirstChild(self.className .. "_Cylinder")
+				if not self.actual_model then return end
+				local middle = self.actual_model:FindFirstChild(self.className .. "_Middle", true)
+					or self.actual_model:FindFirstChild("body", true)
+					or self.actual_model
+				local cylinder = middle and (
+					middle:FindFirstChild(self.className .. "_Cylinder", true)
+					or middle:FindFirstChild("cylinder", true)
+				)
+				local cylinder_motor = cylinder and cylinder:FindFirstChildWhichIsA("Motor6D", true)
+				if not cylinder_motor then
+					warn("[BASETOOL] vfx_cylinder_rotate_other: no cylinder motor for " .. self.className)
+					return
+				end
 
 				if not self.cylinder_rotation_degree then
 					self.cylinder_rotation_degree = 360 / self.Max_Capacity
@@ -614,18 +626,33 @@ function BaseTool:equip()
 				):Play()
 
 			elseif keyframe == "vfx_cylinder_load" then
-				local cylinder = self.actual_model:FindFirstChild(self.className .. "_Cylinder")
+				if not self.actual_model then return end
+				local cylinder = self.actual_model:FindFirstChild(self.className .. "_Cylinder", true)
+					or self.actual_model:FindFirstChild("cylinder", true)
+				if not cylinder then
+					warn("[BASETOOL] vfx_cylinder_load: no cylinder for " .. self.className)
+					return
+				end
 				local round_ref = cylinder:FindFirstChild(self.className .. "_Round" .. self.cylinder_rotation)
+					or cylinder:FindFirstChild("Round" .. tostring(self.cylinder_rotation))
+					or cylinder:FindFirstChild("round" .. tostring(self.cylinder_rotation))
+				if not round_ref then return end
 				round_ref.Transparency = 0
-				round_ref.bullet.Transparency = 0
+				if round_ref:FindFirstChild("bullet") then round_ref.bullet.Transparency = 0 end
 
 			elseif keyframe == "vfx_cylinder_empty" then
-				local cylinder = self.actual_model:FindFirstChild(self.className .. "_Cylinder")
+				if not self.actual_model then return end
+				local cylinder = self.actual_model:FindFirstChild(self.className .. "_Cylinder", true)
+					or self.actual_model:FindFirstChild("cylinder", true)
+				if not cylinder then
+					warn("[BASETOOL] vfx_cylinder_empty: no cylinder for " .. self.className)
+					return
+				end
 				for _, r in pairs(cylinder:GetChildren()) do
 					if not r:IsA("MeshPart") or not string.find(r.Name, "Round") then continue end
 					if r.Transparency == 1 then continue end
 					r.Transparency = 1
-					r.bullet.Transparency = 1
+					if r:FindFirstChild("bullet") then r.bullet.Transparency = 1 end
 					r.CanCollide = true
 					self:emit_casing(r, r.CFrame, r.CFrame.RightVector * math.random(0, 8))
 				end
@@ -670,9 +697,20 @@ end
 
 function BaseTool:unequip()
 	if not self.tool then return end
-	if self.Reloading and not self.Emergency_Drop then return end
 
 	self.Equipped = false
+	self.Equipping = false
+	self.Aiming = false
+	self.Firing = false
+	self.Reloading = false
+	self.Cycling = false
+	self.Alting = false
+	self.Spinning = false
+	self.Checking = false
+	self.Meleeing = false
+	self._reloadCancelled = true
+	self._aimVersion += 1
+	self:_stopItemAnimations()
 
 	local character = LOCAL_PLAYER.Character
 	if not character then return end
@@ -684,13 +722,19 @@ function BaseTool:unequip()
 	LOCAL_PLAYER:SetAttribute("CantUnequip", false)
 	character:SetAttribute("GunEquipped", nil)
 	character:SetAttribute("Sprint_Animation", nil)
+	character:SetAttribute("No_Sprint_Animation", nil)
+	character:SetAttribute("Aiming", nil)
+	character:SetAttribute("ADSMovementExempt", nil)
+	character:SetAttribute("CompassRight", nil)
+	character:SetAttribute("CompassDenied", nil)
 	if self._on_unequip then self:_on_unequip() end
 
-	if self.RegisteredAnimations then
-		for _, anim in pairs(self.RegisteredAnimations) do
-			anim:Stop(0)
-		end
-	end
+	self:_disconnectInput()
+	self:_stopShoulderTracking()
+	self:_stopAimTracking()
+	self:_stopTransparencyTracking()
+	self:_resetBodyTransparency()
+	self:_stopItemAnimations()
 
 	self:_disable_aiming_ui()
 	humanoid:UnequipTools()
@@ -702,17 +746,6 @@ function BaseTool:unequip()
 	if self._drawStoppedConnection then
 		self._drawStoppedConnection:Disconnect()
 		self._drawStoppedConnection = nil
-	end
-
-	if self.RegisteredAnimations then
-		if self.Emergency_Drop then
-			self:_playAnim("Drop", true)
-		elseif self.RegisteredAnimations.Unequip then
-			self:_playAnim("Unequip", true)
-			if self.unequip_wait then
-				self.RegisteredAnimations.Unequip.Stopped:Wait()
-			end
-		end
 	end
 
 	self:clean_up_short()
@@ -730,6 +763,7 @@ function BaseTool:unequip()
 
 	character:SetAttribute("CompassRight", nil)
 	LOCAL_PLAYER.Character:SetAttribute("CompassDenied", nil)
+	self:_stopItemAnimations()
 	if self.Moving_Connection then
 		self.Moving_Connection:Disconnect()
 		self.Moving_Connection = nil
@@ -752,6 +786,7 @@ function BaseTool:get_spread(muzzle, shootDir)
 	local isMoving = (tick() - (self.LastMovedTime or 0)) <= 0.1
 
 	local spread = isMoving and self.Moving_Accuracy or self.Accuracy
+	spread = spread or self.ShotgunSpread or self.Accuracy or self.Moving_Accuracy or 0
 
 	local spreadMultiplier = if self.IsFirearm and character then character:GetAttribute("SpreadMultiplier") or 1 else 1
 	-- Focus is an Officer aura.  It improves normal aim and compounds with
@@ -797,6 +832,23 @@ function BaseTool:_if_jumping(): boolean
 end
 
 -- // Animation helpers
+
+function BaseTool:_stopItemAnimations()
+	if self._shortTrack and self._shortTrack.IsPlaying then
+		self._shortTrack:Stop(0)
+	end
+	self._shortTrack = nil
+
+	if not self.RegisteredAnimations then return end
+	for _, track in pairs(self.RegisteredAnimations) do
+		if track:IsA("AnimationTrack") then
+			track:Stop(0)
+			pcall(function()
+				track.TimePosition = 0
+			end)
+		end
+	end
+end
 
 function BaseTool:_stopAllExcept(exception: AnimationTrack?)
 	if not self.RegisteredAnimations then return end
@@ -952,7 +1004,7 @@ function BaseTool:_restoreBase()
 			local kill = (want == anims.Aim) and anims.Aim_Left or anims.Aim
 			if kill and kill.IsPlaying then kill:Stop(CUT) end
 			if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT) end
-			if want and not want.IsPlaying then want:Play() end
+			if want and not want.IsPlaying then want:Play(CUT) end
 		else
 			self:aim()
 		end
@@ -961,14 +1013,18 @@ function BaseTool:_restoreBase()
 	else
 		self:_killAimTracks()
 		if anims.Hold and not anims.Hold.IsPlaying then
-			anims.Hold:Play()
+			anims.Hold:Play(CUT)
 			anims.Hold:AdjustSpeed(0.2)
 		end
 	end
 end
 
 function BaseTool:_restoreBaseDeferred()
-	task.defer(function() self:_restoreBase() end)
+	local restoreVersion = self._aimVersion
+	task.defer(function()
+		if restoreVersion ~= self._aimVersion then return end
+		self:_restoreBase()
+	end)
 end
 
 function BaseTool:_set_sprint_arms(enabled: boolean)
@@ -1898,13 +1954,7 @@ function BaseTool:drop()
 	end
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 
-	if self.RegisteredAnimations then
-		for _, anim in pairs(self.RegisteredAnimations) do
-			if anim:IsA("AnimationTrack") and anim.IsPlaying then
-				anim:Stop(0)
-			end
-		end
-	end
+	self:_stopItemAnimations()
 
 	drop_connection:FireServer(self.className, self.model_reference, true)
 	self:destroy()
@@ -1922,7 +1972,7 @@ function BaseTool:destroy()
 		self._activationConnection = nil
 	end
 
-	self:_stopAllExcept()
+	self:_stopItemAnimations()
 	self:_disconnectInput()
 	self:_stopShoulderTracking()
 	self:_stopAimTracking()

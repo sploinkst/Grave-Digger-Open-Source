@@ -1,0 +1,25 @@
+local v1 = require(game.ReplicatedStorage.shared.bFunctions):deepCopy(require(game.ReplicatedStorage.weapon_modules.saa))
+v1.name = "\'Talon\' Cavalry Revolver"
+v1.variant = "saa"
+v1.desc = "Modification of the \'Talon\' Army Revolver"
+v1.lore = "Before the bombs rendered the surface uninhabitable and the Cave Plague rendered horses a rare commodity better suited to labour than combat, Cavalry remained a staple of warfare on both sides, and as such, many weapons were designed specifically to accommodate them.\n\nOne such weapon was a modified \226\128\152Talon\226\128\153 Army Revolver with a lightweight wire stock - though firing from horseback was typically quite unreliable leaving melee weapons and shotguns the prime choice for mounted combat, once dismounted the Cavalryman became a deadly skirmisher with a lightweight carbine or stocked pistol. These modified revolvers are a byproduct of that era, far more lightweight than a carbine and loaded with higher-pressure .45 Steel rounds for better ranged performance.\n\nThough generally obsolete past the era of Cavalry, these modified revolvers still see rare use mostly as novelty pieces given the standard \226\128\152Talon\226\128\153 Army Revolver\226\128\153s superior maneuverability in the confines of the caves. Nevertheless, it retains a swiftness beyond any rifle and an effective range beyond any shotgun, perfect for skirmishing as your forefathers have. That being said, it still is a pistol, and only sees frontline use in times of low supply.\n\nWritten by Deceased_Rabbit and Lazarubius."
+v1.ammo_give = ".45 Steel"
+v1.icon = "114199947182529"
+v1.assists = { "Wire Stock allows for better precision and control.", "You\'re not doing any fancy tricks with this on.", "Loaded with .45 Steel, improving effective range." }
+v1.fire_rate = 0.6
+v1.range = 60
+v1.far = 80
+v1.size = 2
+v1.draw_speed = 0.35
+v1.aim_speed = 0.2
+v1.recoil = 10
+v1.accuracy = 8
+v1.moving_accuracy = 12
+v1.movement = 3
+v1.ammo_reserves = 3
+v1.ammo_reserves_max = 4
+v1.holsterc0 = CFrame.new(-0.741775513, 0.881345749, 0.564033508, 0, 1, 2.84217094e-14, -1, 0, 5.5562312e-16, -5.5562312e-16, 2.84217094e-14, 1)
+v1.holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+v1.alt_holsterc0 = CFrame.new(0.643341064, 0.881345749, 0.564033508, 0, -1, -2.84217094e-14, -1, 0, -5.5562312e-16, -5.5562312e-16, -2.84217094e-14, -1)
+v1.alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+return v1;

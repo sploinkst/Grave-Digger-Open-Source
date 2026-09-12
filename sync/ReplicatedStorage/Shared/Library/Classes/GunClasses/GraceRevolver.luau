@@ -8,11 +8,9 @@
 --!optimize 2
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService  = game:GetService("UserInputService")
 
 local Types    = require(script.Parent.Parent.Parent.Types)
 local BasePistol = require(script.Parent.Parent.BasePistol)
-local Util     = require(script.Parent.Parent.Parent.Util)
 
 -- // Assets
 
@@ -29,6 +27,43 @@ local fire_sound  = SoundFolder.fire
 
 local FIRE_RATE    = 0.75
 local BULLET_SPEED = 800
+local WEAPON_STATS = {
+	name = "'Grace' Service Revolver",
+	desc = "The ever powerful service revolver of the great Golden Empire.",
+	icon = "17601078078",
+	ammo_give = ".45 Lead",
+	damage = 120,
+	range = 30,
+	range_damage = 105,
+	far = 70,
+	far_damage = 70,
+	melee_damage = 80,
+	melee_swing_speed = 0.7,
+	melee_range = 5,
+	pen = 2,
+	accuracy = 8,
+	moving_accuracy = 50,
+	fire_rate = 0.75,
+	cycle = 0,
+	cycle_rest = 0,
+	draw_speed = 0.2,
+	aim_speed = 0.125,
+	recoil = 15,
+	recoil_count = 6,
+	movement = 0.5,
+	firing_movement = 1,
+	firing_movement_last = 0.5,
+	ammo_reserves = 2,
+	ammo_reserves_max = 3,
+	capacity = 6,
+	chamber = false,
+	reload_start = 1.1,
+	reload_empty = 0,
+	reload_loop = 0.4,
+	reload_loop_after = 0.1,
+	reload_end = 0.65,
+	bullet_speed = BULLET_SPEED,
+}
 
 -- // Animation layers
 
@@ -164,37 +199,41 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 		Melee2            = 1.43,
 		Fire              = 1.33,
 		Fire_Left         = 1.33,
-		Draw              = 5.0,
-		Aim               = 8.0,
-		Aim_Left          = 8.0,
-		Reload_Start      = 0.91,
-		Reload_Loop       = 2.5,
-		Reload_Loop_After = 10,
-		Reload_End        = 1.54,
+		Draw              = 1 / WEAPON_STATS.draw_speed,
+		Aim               = 1 / WEAPON_STATS.aim_speed,
+		Aim_Left          = 1 / WEAPON_STATS.aim_speed,
+		Reload_Start      = 1 / WEAPON_STATS.reload_start,
+		Reload_Loop       = 1 / WEAPON_STATS.reload_loop,
+		Reload_Loop_After = 1 / WEAPON_STATS.reload_loop_after,
+		Reload_End        = 1 / WEAPON_STATS.reload_end,
 	}
 
-	self.damage                  = 120
-	self.Max_Capacity            = 6
-	self.Capacity                = 6
-	self.Ammo_Type               = ".45 Lead"
-	self.recoil                  = 50
-	self.recoil_count            = 10
+	self.damage                  = WEAPON_STATS.damage
+	self.Max_Capacity            = WEAPON_STATS.capacity
+	self.Capacity                = WEAPON_STATS.capacity
+	self.Starting_Reserve_Ammo   = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves
+	self.Max_Reserve_Ammo        = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves_max
+	self.Ammo_Type               = WEAPON_STATS.ammo_give
+	self.recoil                  = WEAPON_STATS.recoil
+	self.recoil_count            = WEAPON_STATS.recoil_count
 	self.do_roll 				 = true
-	self.Penetration_Level       = 1
-	self.Armor_Penetration_Level = 2
+	self.Penetration_Level       = WEAPON_STATS.pen
+	self.Armor_Penetration_Level = WEAPON_STATS.pen
 	self.KnockBack_Force         = 8
 	self.Aiming_Number           = 80
 	self.Short_Distance          = 3.5
 	self.MuzzlePartName          = "GraceRevolver_Muzzle"
+	self.BulletSpeed             = BULLET_SPEED
+	self.FireSound               = fire_sound
 	self.AmmoCheckPartName       = "GraceRevolver_Middle"
 	self.Can_Drop                = true
-	self.Melee_Distance          = 5
-	self.Melee_Damage            = 80
-	self.Accuracy                = 6
-	self.Moving_Accuracy         = 50
+	self.Melee_Distance          = WEAPON_STATS.melee_range
+	self.Melee_Damage            = WEAPON_STATS.melee_damage
+	self.Accuracy                = WEAPON_STATS.accuracy
+	self.Moving_Accuracy         = WEAPON_STATS.moving_accuracy
 
 	self.SoundFolder             = SoundFolder
-	self.FireInterval            = FIRE_RATE
+	self.FireInterval            = WEAPON_STATS.fire_rate
 
 	self.unequip_wait     = false
 	self.Aiming           = false
@@ -230,8 +269,17 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	}
 	
 	self:_initShoulderTracking()
+	self:applyFirearmConfig(WEAPON_STATS)
+	self.FireSound = fire_sound
+	self.SoundFolder = SoundFolder
 
 	return self
+end
+
+function GraceRevolver:_damageAtDistance(distance: number): number
+	if distance < self.range then return self.damage end
+	if distance <= self.far then return self.range_damage end
+	return self.far_damage
 end
 
 -- // Key bindings
@@ -285,81 +333,23 @@ function GraceRevolver:spin()
 end
 
 function GraceRevolver:fire()
-	if self.Firing then return end
-	if self.ForceBlockFire then return end
-	self.Firing = true
-
 	if self.Spinning then self:_cancelSpin() end
 
-	-- Dry fire
-	if self.Capacity <= 0 then
-		self:_dryFire()
-		self.Firing = false
-		return
-	end
-
-	local muzzle = self:_findModelPart(self.MuzzlePartName)
-	if not muzzle or self:_if_sprinting() then
-		self.Firing = false
-		return
-	end
-
-	local camera = workspace.CurrentCamera
-
-	local mousePos = UserInputService:GetMouseLocation()
-	local ray      = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
-
-	local raycastParams = RaycastParams.new()
-	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-	raycastParams.FilterDescendantsInstances = { game.Players.LocalPlayer.Character }
-
-	-- Skip transparent parts so invisible walls don't deflect the aimed direction.
-	local result    = Util.raycastSkipTransparent(ray.Origin, ray.Direction * 1000, raycastParams)
-	local targetPos = result and result.Position or (ray.Origin + ray.Direction * 1000)
-	local shootDir  = (targetPos - muzzle.Position).Unit
-
-	shootDir = self:get_spread(muzzle, shootDir)
-
-	local activeCast = self.Caster:Fire(muzzle.Position, shootDir, BULLET_SPEED, self.CasterBehavior)
-	activeCast.UserData.Direction  = shootDir
-	activeCast.UserData.Penetrated = false
-	activeCast.UserData.Origin     = muzzle.Position
-	activeCast.UserData.Shooter    = game.Players.LocalPlayer
-
-	self:_connect_FastCast(muzzle.Position, shootDir, BULLET_SPEED, {
-		bulletTemplate   = FxFolder.Bullet,
-		bulletContainer  = workspace.Game_Details.Effects.Bullets,
-		isPenetration    = false,
-		penetrationLevel = self.Penetration_Level,
-		damage           = self.damage,
-		knockbackForce   = self.KnockBack_Force,
-	})
-
-	self.Capacity -= 1
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
-
 	local fireAnim  = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
-	local fireTrack = self:_playFireAnimation(fireAnim)
-
-	self:_play_sfx(fire_sound, muzzle, nil, self.Alt_Mode and 0.5 or nil)
-	self:_bounce_scoped_ui()
-	self:_fireMuzzleFlash()
-
-	fireTrack.Stopped:Once(function()
-		if not self.Reloading and not self.Spinning then
-			self:_restoreBaseDeferred()
-		end
-	end)
-
-	task.wait(FIRE_RATE)
-	self.Firing = false
+	self:_fireSingleShot({
+		bulletSpeed = self.BulletSpeed,
+		distance = 1000,
+		fireAnimation = fireAnim,
+		sound = fire_sound,
+		soundPitchVariation = self.Alt_Mode and 0.5 or nil,
+		fireDelay = self.FireInterval,
+	})
 end
 
 function GraceRevolver:reload()
 	if self.Reloading or self.Capacity >= self.Max_Capacity or self.Equipping then return end
 
 	if self.Spinning then self:_cancelSpin() end
-	if self.Aiming   then self:endAiming()   end
 
 	self.RegisteredAnimations["Reload_Start"]:AdjustWeight(1)
 	self.RegisteredAnimations["Reload_Loop"]:AdjustWeight(1)
@@ -425,8 +415,10 @@ function GraceRevolver:_on_equip()
 	self:_initShoulderTracking()
 
 	self:_setupFastCast(FxFolder, function(cast, result, velocity)
+		local origin = cast.UserData and cast.UserData.Origin
+		local distance = origin and (result.Position - origin).Magnitude or 0
 		local muzzle = self:_findModelPart(self.MuzzlePartName)
-		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, self.damage, self.KnockBack_Force)
+		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level, self:_damageAtDistance(distance), self.KnockBack_Force)
 	end)
 end
 
@@ -464,5 +456,23 @@ GraceRevolver.Tool_Image = "rbxassetid://17601078078"
 GraceRevolver.Medal_Cost = 1
 GraceRevolver.Weight     = 1
 GraceRevolver.Designation = "Secondary"
+GraceRevolver.Display_Name = WEAPON_STATS.name
+GraceRevolver.desc = WEAPON_STATS.desc
+GraceRevolver.icon = WEAPON_STATS.icon
+GraceRevolver.damage = WEAPON_STATS.damage
+GraceRevolver.range = WEAPON_STATS.range
+GraceRevolver.range_damage = WEAPON_STATS.range_damage
+GraceRevolver.far = WEAPON_STATS.far
+GraceRevolver.far_damage = WEAPON_STATS.far_damage
+GraceRevolver.accuracy = WEAPON_STATS.accuracy
+GraceRevolver.moving_accuracy = WEAPON_STATS.moving_accuracy
+GraceRevolver.fire_rate = WEAPON_STATS.fire_rate
+GraceRevolver.recoil = WEAPON_STATS.recoil
+GraceRevolver.recoil_count = WEAPON_STATS.recoil_count
+GraceRevolver.capacity = WEAPON_STATS.capacity
+GraceRevolver.ammo_give = WEAPON_STATS.ammo_give
+GraceRevolver.ammo_reserves = WEAPON_STATS.ammo_reserves
+GraceRevolver.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
+GraceRevolver.pen = WEAPON_STATS.pen
 
 return GraceRevolver

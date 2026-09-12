@@ -1,0 +1,22 @@
+local v1 = require(game.ReplicatedStorage.shared.bFunctions):deepCopy(require(game.ReplicatedStorage.weapon_modules.dbgun))
+v1.name = "\'Equine\' Sawed Shotgun"
+v1.variant = "dbgun"
+v1.desc = "Modification of the \'Equine\' Riding Shotgun"
+v1.lore = "The Solace Coalition is composed of those who are unwilling to fight and die for either the Nation or the Empire, so it is little surprise that very few of its workers are willing to take a life, even with the fact that they are allowed to carry weapons with foreman permission. This leaves many of them defenseless to potential bandit raids.\n\nThough Solace employs designated \226\128\152Guardsmen\226\128\153 to defend their operating sites, they are still often underequipped and understaffed compared to the armies of the Nation and Empire. As such, it often falls to the two vitriolic factions to put aside their differences for a brief moment and aid the Coalition in repelling these raids, after which the bodies of fallen bandits are unceremoniously looted and left to rot.\n\nThese weapons are often heavily modified, sometimes for practicality but often just \226\128\152cause. One of the more common modifications is an \226\128\152Equine\226\128\153 Riding Shotgun with a sawed off barrel, reducing its effective range heavily but saving on weight and maneuverability. Though the Empire often claims the standard length of the weapon is designed perfectly for a combination of lethality, effective range, and mobility, a few soldiers continue to use these modified versions both as \226\128\152trophy\226\128\153 weapons and also for its practical benefits.\n\nWritten by Deceased_Rabbit and Lazarubius."
+v1.icon = "128288706213405"
+v1.assists = { "Shorter barrel provides better handling and reloads.", "Shorter barrel hurts accuracy and effective range.", "Boasts increased firerate at the cost of increased recoil." }
+v1.accuracy = 30
+v1.moving_accuracy = 30
+v1.fire_rate = 0.5
+v1.draw_speed = 0.75
+v1.aim_speed = 0.275
+v1.length = 4
+v1.recoil = 22
+v1.recoil_count = 9
+v1.movement = 1
+v1.reload_start = 0.75
+v1.reload_empty = 0.75
+v1.reload_loop = 0.9
+v1.reload_end = 0.55
+v1.reload_alt = 1.4
+return v1;

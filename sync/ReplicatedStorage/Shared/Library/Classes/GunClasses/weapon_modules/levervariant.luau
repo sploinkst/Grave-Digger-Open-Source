@@ -1,0 +1,25 @@
+local v1 = require(game.ReplicatedStorage.shared.bFunctions):deepCopy(require(game.ReplicatedStorage.weapon_modules.lever))
+v1.name = "\'Crestfall\' Ranger Rifle"
+v1.variant = "lever"
+v1.desc = "Modification of the \'Crestfall\' Lever Rifle"
+v1.lore = "The Frontier Era has long since passed with the bombing of the surface, but nonetheless, many still hold nostalgia for an age of freedom and anarchy. The image of dextrous gunslingers, heroic outlaws, and five-o-clock shadows still pervades the lives of Solace, the Nation, and Empire alike, the Crestfall and Talon\226\128\153s continued manufacture often being attributed to this nostalgia.\n\nOf the films depicting the era, one stood out - \226\128\152The Dance between the Buffalo and the Ranger\226\128\153, where an unnamed ranger famously wielded a custom Kingslayer and Winchester rifle, the latter of which sported a sawed off barrel and was fired from the hip with deadly accuracy. A rounded lever topped off the ensemble, justifying the ranger\226\128\153s devastating rate of fire with the weapon, annihilating any who stood in his way.\n\nSuch an impractical modification eventually found its way into reality, with many soldiers mirroring the modification for use in the war. Though not standard with the Crestfall rifle, the film depiction famously fired .44 Special, which many followed through with despite the personal expense. Though the use of such a weapon requires extensive training and comes nowhere close to the fictitious feats of the famed Ranger, it nonetheless sees popular use to this day.\n\nWritten by Deceased_Rabbit and Lazarubius."
+v1.icon = "106341489806066"
+v1.ammo_give = ".44 Special"
+v1.assists = { "Shorter barrel but stronger loads averts loss in effective range.", "Better handling and fire-rate but worse control, hold tight.", "Bracing against the hip is the way to go, you don\'t have sights anyway." }
+v1.accuracy = 25
+v1.moving_accuracy = 25
+v1.fire_rate = 0.55
+v1.draw_speed = 0.6
+v1.aim_speed = 0.225
+v1.length = 3.75
+v1.recoil = 11
+v1.recoil_count = 6
+v1.capacity = 7
+v1.ammo_reserves = 2
+v1.movement = 0.5
+v1.firing_movement = 0.5
+v1.reload_start = 0.65
+v1.reload_empty = 1.8
+v1.reload_loop = 0.7
+v1.reload_end = 0
+return v1;

@@ -5,11 +5,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
-local Util = require(script.Parent.Parent.Parent.Util)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -26,6 +24,41 @@ local BULLET_SPEED = 900
 local HIP_BRACE_SWITCH_TIME = 0.33
 local RELOAD_ROUND_TIME = 9.56 / 11
 local HIP_BRACE_CROSSHAIR_SPREAD = 20
+local WEAPON_STATS = {
+	name = "'Crestfall' Lever Rifle",
+	desc = "Lethal and fast firing rifle, excelling at close to mid range duels.",
+	icon = "18236623631",
+	ammo_give = ".44 Army",
+	damage = 120,
+	range = 70,
+	range_damage = 90,
+	far = 100,
+	far_damage = 75,
+	melee_damage = 80,
+	melee_swing_speed = 0.7,
+	melee_range = 5,
+	pen = 2,
+	accuracy = 8,
+	moving_accuracy = 120,
+	fire_rate = 0.7,
+	cycle = 0,
+	cycle_rest = 0,
+	draw_speed = 0.75,
+	aim_speed = 0.275,
+	recoil = 8,
+	recoil_count = 6,
+	movement = 1.5,
+	firing_movement = 1,
+	firing_movement_last = 0.5,
+	ammo_reserves = 1,
+	ammo_reserves_max = 3,
+	capacity = 11,
+	chamber = false,
+	reload_start = 0.75,
+	reload_empty = 1.9,
+	reload_loop = 0.8,
+	reload_end = 0,
+}
 local CRESTFALL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
 
@@ -149,34 +182,36 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	}
 
 	self.animation_speeds = {
-		Draw = 1 / 0.75,
-		Aim = 1 / 0.275,
-		Aim_Left = 1 / 0.275,
-		Reload_Loop = 1 / RELOAD_ROUND_TIME,
+		Draw = 1 / WEAPON_STATS.draw_speed,
+		Aim = 1 / WEAPON_STATS.aim_speed,
+		Aim_Left = 1 / WEAPON_STATS.aim_speed,
+		Reload_Loop = 1 / WEAPON_STATS.reload_loop,
 	}
 
-	self.damage = 120
-	self.Max_Capacity = 11
-	self.Capacity = 11
-	self.Starting_Reserve_Ammo = 11
-	self.Max_Reserve_Ammo = 33
-	self.Ammo_Type = ".44 Army"
-	self.recoil = 68
-	self.recoil_count = 8
-	self.Penetration_Level = 2
-	self.Armor_Penetration_Level = 2
+	self.damage = WEAPON_STATS.damage
+	self.Max_Capacity = WEAPON_STATS.capacity
+	self.Capacity = WEAPON_STATS.capacity
+	self.Starting_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves
+	self.Max_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves_max
+	self.Ammo_Type = WEAPON_STATS.ammo_give
+	self.recoil = WEAPON_STATS.recoil
+	self.recoil_count = WEAPON_STATS.recoil_count
+	self.Penetration_Level = WEAPON_STATS.pen
+	self.Armor_Penetration_Level = WEAPON_STATS.pen
 	self.KnockBack_Force = 10
 	self.Aiming_Number = 75
 	self.MuzzlePartName = "muzzle"
+	self.BulletSpeed = BULLET_SPEED
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
 	self.Short_Distance = 3.5
-	self.Melee_Distance = 5
-	self.Melee_Damage = 80
-	self.Accuracy = 5
-	self.Moving_Accuracy = 65
+	self.Melee_Distance = WEAPON_STATS.melee_range
+	self.Melee_Damage = WEAPON_STATS.melee_damage
+	self.Accuracy = WEAPON_STATS.accuracy
+	self.Moving_Accuracy = WEAPON_STATS.moving_accuracy
 	self.HipBraceAccuracy = self.Accuracy * 1.3
 	self.SoundFolder = SoundFolder
+	self.FireInterval = WEAPON_STATS.fire_rate
 
 	self.Equipped = false
 	self.Firing = false
@@ -197,6 +232,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	}
 
 	self:_initShoulderTracking()
+	self:applyFirearmConfig(WEAPON_STATS)
 	return self
 end
 
@@ -296,76 +332,37 @@ function Crestfall:_getFireAnim(): AnimationTrack?
 end
 
 function Crestfall:_damageAtDistance(distance: number): number
-	if distance < 70 then
-		return 120
-	elseif distance <= 100 then
-		return 90
+	if distance < self.range then
+		return self.damage
+	elseif distance <= self.far then
+		return self.range_damage
 	end
-	return 75
+	return self.far_damage
 end
 
 function Crestfall:fire()
-	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
-	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
-	if self.Capacity <= 0 then
-		self:_dryFire()
-		return
-	end
-
-	local muzzle = self:_findModelPart(self.MuzzlePartName)
-	local camera = workspace.CurrentCamera
-	if not muzzle or not muzzle:IsA("BasePart") or not camera then return end
-
-	self.Firing = true
-	local mousePosition = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
-
-	local result = Util.raycastSkipTransparent(ray.Origin, ray.Direction * 5000, params)
-	local target = result and result.Position or ray.Origin + ray.Direction * 5000
-	local direction = self:get_spread(muzzle, (target - muzzle.Position).Unit)
-	local cast = self.Caster:Fire(muzzle.Position, direction, BULLET_SPEED, self.CasterBehavior)
-	cast.UserData = {
-		Direction = direction,
-		Penetrated = false,
-		Origin = muzzle.Position,
-		Shooter = LOCAL_PLAYER,
-	}
-
-	self:_connect_FastCast(muzzle.Position, direction, BULLET_SPEED, {
-		bulletTemplate = FxFolder.Bullet,
-		bulletContainer = workspace.Game_Details.Effects.Bullets,
-		isPenetration = false,
-		penetrationLevel = self.Penetration_Level,
-		damage = self.damage,
-		knockbackForce = self.KnockBack_Force,
-	})
-
-	self.Capacity -= 1
-	self:_stopAllExcept()
 	local left = self.current_shoulder ~= "Right"
 	local fireAnimation
 	if self.HipBraced then
-		if self.Capacity == 0 then
+		if self.Capacity <= 1 then
 			fireAnimation = left and "Hip_Fire_Last_Left" or "Hip_Fire_Last"
 		else
 			fireAnimation = left and "Hip_Fire_Left" or "Hip_Fire"
 		end
 	else
-		if self.Capacity == 0 then
+		if self.Capacity <= 1 then
 			fireAnimation = left and "Fire_Last_Left" or "Fire_Last"
 		else
 			fireAnimation = left and "Fire_Left" or "Fire"
 		end
 	end
-	self:_playFireAnimation(fireAnimation)
 	local fireSound = self.SoundFolder and self.SoundFolder:FindFirstChild("fire")
-	if fireSound then self:_play_sfx(fireSound, muzzle) end
-	self:_bounce_scoped_ui()
-	self:_fireMuzzleFlash()
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
+	local fired = self:_fireSingleShot({
+		bulletSpeed = self.BulletSpeed,
+		fireAnimation = fireAnimation,
+		sound = fireSound,
+	})
+	if not fired then return end
 
 	self.Cycling = true
 	local cycleTrack = self.RegisteredAnimations
@@ -376,40 +373,15 @@ function Crestfall:fire()
 	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / effectiveInterval, 0.01)) end
 	task.wait(effectiveInterval)
 	self.Cycling = false
-	self.Firing = false
 	self:_restoreBaseDeferred()
 end
 
 function Crestfall:reload()
-	if self.Reloading or self.Equipping or self.Capacity >= self.Max_Capacity then return end
-	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
-	if not reserve or not reserve:IsA("NumberValue") or reserve.Value <= 0 then
-		self:notify("I don't have any more ammo...")
-		return
-	end
-
-	if self.Aiming then self:endAiming() end
-	self.Reloading = true
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
-	self:_stopAllExcept()
-	self:_playAnim("Reload_Start").Stopped:Wait()
-
-	while self.Equipped and self.Capacity < self.Max_Capacity and reserve.Value > 0 and not self._reloadCancelled do
-		self:_playAnim("Reload_Loop").Stopped:Wait()
-		if self._reloadCancelled then break end
-		self.Capacity += 1
-		self:_fire_ammo(1)
-	end
-
-	if not self._reloadCancelled and self.RegisteredAnimations.Reload_End then
-		local endTrack = self:_playAnim("Reload_End")
-		if endTrack then endTrack.Stopped:Wait() end
-	end
-	self.Reloading = false
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
-	self:_restoreBaseDeferred()
+	self:_reloadByRound({
+		startAnim = "Reload_Start",
+		loopAnim = "Reload_Loop",
+		endAnim = "Reload_End",
+	})
 end
 
 function Crestfall:activate()
@@ -463,5 +435,23 @@ Crestfall.Tool_Image = "rbxthumb://type=Asset&id=118811623120292&w=420&h=420"
 Crestfall.Medal_Cost = 0
 Crestfall.Weight = 2
 Crestfall.Designation = "Primary"
+Crestfall.Display_Name = WEAPON_STATS.name
+Crestfall.desc = WEAPON_STATS.desc
+Crestfall.icon = WEAPON_STATS.icon
+Crestfall.damage = WEAPON_STATS.damage
+Crestfall.range = WEAPON_STATS.range
+Crestfall.range_damage = WEAPON_STATS.range_damage
+Crestfall.far = WEAPON_STATS.far
+Crestfall.far_damage = WEAPON_STATS.far_damage
+Crestfall.accuracy = WEAPON_STATS.accuracy
+Crestfall.moving_accuracy = WEAPON_STATS.moving_accuracy
+Crestfall.fire_rate = WEAPON_STATS.fire_rate
+Crestfall.recoil = WEAPON_STATS.recoil
+Crestfall.recoil_count = WEAPON_STATS.recoil_count
+Crestfall.capacity = WEAPON_STATS.capacity
+Crestfall.ammo_give = WEAPON_STATS.ammo_give
+Crestfall.ammo_reserves = WEAPON_STATS.ammo_reserves
+Crestfall.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
+Crestfall.pen = WEAPON_STATS.pen
 
 return Crestfall

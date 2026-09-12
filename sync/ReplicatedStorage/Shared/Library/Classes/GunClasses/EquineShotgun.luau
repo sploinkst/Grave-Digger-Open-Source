@@ -1,3 +1,32 @@
-local EquineShotgun = {}
-
-return EquineShotgun
+return require(script.Parent.LegacyGunFactory).create({
+	className = "EquineShotgun",
+	assetName = "dbgun",
+	WeaponCategory = "Shotgun",
+	Designation = "Primary",
+	Weight = 2,
+	LegacyStats = {
+		name = "'Equine' Riding Shotgun",
+		icon = "17858644652",
+		ammo_give = "00 Buckshot",
+		damage = 25,
+		range = 25,
+		range_damage = 15,
+		far = 30,
+		far_damage = 15,
+		pen = 2,
+		accuracy = 16,
+		moving_accuracy = 16,
+		fire_rate = 0.7,
+		cycle = 0,
+		cycle_rest = 0,
+		draw_speed = 0.95,
+		aim_speed = 0.35,
+		pellets = 9,
+		recoil = 18,
+		recoil_count = 9,
+		ammo_reserves = 3,
+		ammo_reserves_max = 4,
+		capacity = 2,
+	},
+	bulletSpeed = 850,
+})

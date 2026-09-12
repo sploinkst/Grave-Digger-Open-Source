@@ -5,11 +5,9 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
-local Util = require(script.Parent.Parent.Parent.Util)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -17,18 +15,38 @@ local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
-local crestfallAnimations = Assets.Animations.Tools.Guns:FindFirstChild("AntiMaterialRifle")
-	or Assets.Animations.Tools.Guns:FindFirstChild("CrestfallRifle")
-local crestfallSounds = GunAssets.Sounds:FindFirstChild("lever") or GunAssets.Sounds:FindFirstChild("AntiMaterialRifle")
-local SoundFolder = crestfallSounds or GunAssets.Sounds.CrestfallRifle
+local antimaterialAnimations = Assets.Animations.Tools.Guns:FindFirstChild("AntiMaterialRifle")
+local SoundFolder = GunAssets.Sounds:WaitForChild("AntiMaterialRifle")
 
 local FIRE_INTERVAL = 60 / 30
 local BULLET_SPEED = 1400
 local HIP_BRACE_SWITCH_TIME = 0.33
 local RELOAD_ROUND_TIME = 5.75 / 6
 local HIP_BRACE_CROSSHAIR_SPREAD = 20
-local CRESTFALL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
+local ANTIMATERIAL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
+
+local WEAPON_STATS = {
+	damage = 500,
+	range = 60,
+	range_damage = 250,
+	far = 80,
+	far_damage = 199,
+	capacity = 6,
+	ammo_give = ".50 Remover",
+	recoil = 120,
+	recoil_count = 14,
+	pen = 3,
+	armor_pen = 5,
+	knockback = 25,
+	aiming_number = 80,
+	bullet_speed = BULLET_SPEED,
+	fire_rate = FIRE_INTERVAL,
+	melee_damage = 105,
+	melee_range = 5,
+	accuracy = 2,
+	moving_accuracy = 75,
+}
 
 local ANIM_LAYERS: { [string]: number } = {
 	Hold = 0,
@@ -60,28 +78,39 @@ local ANIM_LAYERS: { [string]: number } = {
 	Short = 2,
 }
 
-local Crestfall = {}
-Crestfall.__index = Crestfall
-setmetatable(Crestfall, { __index = BaseRifle })
+local Antimaterial = {}
+Antimaterial.__index = Antimaterial
+setmetatable(Antimaterial, { __index = BaseRifle })
 
-export type Crestfall = typeof(setmetatable({} :: any, Crestfall))
+export type Antimaterial = typeof(setmetatable({} :: any, Antimaterial))
+
+local function animation(folder: Instance?, names: { string }): Animation?
+	if not folder then return nil end
+	for _, name in ipairs(names) do
+		local candidate = folder:FindFirstChild(name)
+		if candidate and candidate:IsA("Animation") then
+			return candidate
+		end
+	end
+	return nil
+end
 
 local function get_holster_reference(model_reference: Model?): Model?
-	local existing = GunAssets.Holsters:FindFirstChild("CrestfallRifleHolster")
+	local existing = GunAssets.Holsters:FindFirstChild("AntiMaterialRifleHolster")
 	if existing and existing:IsA("Model") then return existing end
 	if not RunService:IsServer() or not model_reference then return nil end
 
 	local holster = model_reference:Clone()
-	holster.Name = "CrestfallRifleHolster"
+	holster.Name = "AntiMaterialRifleHolster"
 	local hitbox = holster:FindFirstChild("hitbox", true)
 	if not hitbox or not hitbox:IsA("BasePart") then
 		holster:Destroy()
 		return nil
 	end
 
-	hitbox.Name = "CrestfallRifle_Torso"
+	hitbox.Name = "AntiMaterialRifle_Torso"
 	holster.PrimaryPart = hitbox
-	holster:SetAttribute("HolsterC0", CRESTFALL_HOLSTER_C0)
+	holster:SetAttribute("HolsterC0", ANTIMATERIAL_HOLSTER_C0)
 	for _, descendant in ipairs(holster:GetDescendants()) do
 		if descendant:IsA("BasePart") then
 			descendant.CanCollide = false
@@ -96,20 +125,17 @@ local function get_holster_reference(model_reference: Model?): Model?
 	return holster
 end
 
-function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
-	local self = setmetatable(BaseRifle.new(info), Crestfall)
+function Antimaterial.new(info: Types.BaseToolCreateInfo): Antimaterial
+	local self = setmetatable(BaseRifle.new(info), Antimaterial)
 	local isRook = LOCAL_PLAYER and LOCAL_PLAYER.Character
 		and LOCAL_PLAYER.Character:GetAttribute("Class") == "Rook"
 
 	self.className = "AntiMaterialRifle"
-	self.item_image = Crestfall.Tool_Image
+	self.item_image = Antimaterial.Tool_Image
 	self.Designation = "Primary"
 	self.ANIM_LAYERS = ANIM_LAYERS
 
-	local developmentModels = workspace:FindFirstChild("Development_Storage")
-		and workspace.Development_Storage:FindFirstChild("weapon_models")
 	self.model_reference = ToolFolder:FindFirstChild("pugsley")
-		or (developmentModels and developmentModels:FindFirstChild("pugsley"))
 	self.holster_reference = get_holster_reference(self.model_reference)
 	self.motor_6d_data = {
 		Parent = "Left Arm",
@@ -119,56 +145,76 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 		C1 = CFrame.identity,
 	}
 
-	self.AnimationGunType = "pugsley"
+	self.AnimationGunType = "AntiMaterialRifle"
 	self.animations = {
-		Draw = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
-		Hold = crestfallAnimations.held,
-		Unequip = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
+		Draw = animation(antimaterialAnimations, { "draw", "Draw" }),
+		Hold = animation(antimaterialAnimations, { "held", "Hold" }),
+		Unequip = animation(antimaterialAnimations, { "unequip", "Unequip" }),
 
-		Aim      = crestfallAnimations.aim,
-		Aim_Left = crestfallAnimations.aim_left,
+		Aim      = animation(antimaterialAnimations, { "aim", "Aim" }),
+		Aim_Left = animation(antimaterialAnimations, { "aim_left", "Aim_Left" }),
 
-		Fire      = crestfallAnimations.fire,
-		Fire_Left = crestfallAnimations.fire_left,
+		Fire      = animation(antimaterialAnimations, { "fire", "Fire" }),
+		Fire_Left = animation(antimaterialAnimations, { "fire_left", "Fire_Left" }),
+		Fire_Last = animation(antimaterialAnimations, { "fire_last", "Fire_Last", "fire", "Fire" }),
+		Fire_Last_Left = animation(antimaterialAnimations, { "fire_last_left", "Fire_Last_Left", "fire_left", "Fire_Left" }),
 
-		Reload_Start = crestfallAnimations.reload_start,
-		Reload_Loop  = crestfallAnimations.reload_bolt,
+		Cycle = animation(antimaterialAnimations, { "cycle", "Cycle", "reload_bolt", "Reload_Bolt" }),
 
-		Check  = crestfallAnimations.check,
-		Melee1 = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
-		Melee2 = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Melee2,
+		Reload_Start = animation(antimaterialAnimations, { "reload_start", "Reload_Start" }),
+		Reload_Loop  = animation(antimaterialAnimations, { "reload_loop", "Reload_Loop", "reload_insert", "Reload_Insert", "reload_round", "Reload_Round" }),
+		Reload_End = animation(antimaterialAnimations, { "reload_end", "Reload_End" }),
 
-		Drop  = crestfallAnimations.Parent.Parent.Misc.Drop_Rifle,
-		Short = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Short,
+		Check  = animation(antimaterialAnimations, { "check", "Check" }),
+		Melee1 = animation(antimaterialAnimations, { "melee1", "Melee1" }),
+		Melee2 = animation(antimaterialAnimations, { "melee2", "Melee2" }),
+
+		Drop  = Assets.Animations.Tools.Misc.Drop_Rifle,
+		Short = animation(antimaterialAnimations, { "short", "Short" }),
+
+		Hip_Hold = animation(antimaterialAnimations, { "locked", "hip_held", "Hip_Hold", "held", "Hold" }),
+		Hip_Aim = animation(antimaterialAnimations, { "alt_changeaim", "hip_aim", "Hip_Aim", "aim", "Aim" }),
+		Hip_Aim_Left = animation(antimaterialAnimations, { "alt_changeaim_left", "hip_aim_left", "Hip_Aim_Left", "aim_left", "Aim_Left" }),
+		Hip_Fire = animation(antimaterialAnimations, { "alt_changefire", "hip_fire", "Hip_Fire", "fire", "Fire" }),
+		Hip_Fire_Left = animation(antimaterialAnimations, { "alt_changefire_left", "hip_fire_left", "Hip_Fire_Left", "fire_left", "Fire_Left" }),
+		Hip_Fire_Last = animation(antimaterialAnimations, { "alt_changefire_last", "hip_fire_last", "Hip_Fire_Last", "fire_last", "Fire_Last", "fire", "Fire" }),
+		Hip_Fire_Last_Left = animation(antimaterialAnimations, { "alt_changefire_last_left", "hip_fire_last_left", "Hip_Fire_Last_Left", "fire_last_left", "Fire_Last_Left", "fire_left", "Fire_Left" }),
 	}
 
 	self.animation_speeds = {
 		Draw = 1 / 1.3,
 		Aim = 1 / 0.5,
 		Aim_Left = 1 / 0.5,
+		Cycle = 1 / FIRE_INTERVAL,
 		Reload_Loop = 1 / ((isRook and 4.6 or 5.75) / 6),
 	}
 
-	self.damage = 500
-	self.Max_Capacity = 6 -- 5+1 chambered rounds
-	self.Capacity = 6
+	self.damage = WEAPON_STATS.damage
+	self.range = WEAPON_STATS.range
+	self.range_damage = WEAPON_STATS.range_damage
+	self.far = WEAPON_STATS.far
+	self.far_damage = WEAPON_STATS.far_damage
+	self.Max_Capacity = WEAPON_STATS.capacity -- 5+1 chambered rounds
+	self.Capacity = WEAPON_STATS.capacity
 	self.Starting_Reserve_Ammo = 20000
 	self.Max_Reserve_Ammo = 20000
-	self.Ammo_Type = ".50 Remover"
-	self.recoil = 120
-	self.recoil_count = 14
-	self.Penetration_Level = 3
-	self.Armor_Penetration_Level = 5
-	self.KnockBack_Force = 25
-	self.Aiming_Number = 80
+	self.Ammo_Type = WEAPON_STATS.ammo_give
+	self.recoil = WEAPON_STATS.recoil
+	self.recoil_count = WEAPON_STATS.recoil_count
+	self.Penetration_Level = WEAPON_STATS.pen
+	self.Armor_Penetration_Level = WEAPON_STATS.armor_pen
+	self.KnockBack_Force = WEAPON_STATS.knockback
+	self.Aiming_Number = WEAPON_STATS.aiming_number
 	self.MuzzlePartName = "muzzle"
+	self.BulletSpeed = WEAPON_STATS.bullet_speed
+	self.FireSound = SoundFolder:FindFirstChild("fire", true)
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
 	self.Short_Distance = 3.5
-	self.Melee_Distance = 5
-	self.Melee_Damage = 105
-	self.Accuracy = 2
-	self.Moving_Accuracy = 75
+	self.Melee_Distance = WEAPON_STATS.melee_range
+	self.Melee_Damage = WEAPON_STATS.melee_damage
+	self.Accuracy = WEAPON_STATS.accuracy
+	self.Moving_Accuracy = WEAPON_STATS.moving_accuracy
 	self.HipBraceAccuracy = self.Accuracy * 1.3
 	self.SoundFolder = SoundFolder
 
@@ -178,7 +224,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	self.Reloading = false
 	self.Alting = false
 	self.HipBraced = false
-	self.FireInterval = FIRE_INTERVAL / (isRook and 1.075 or 1)
+	self.FireInterval = WEAPON_STATS.fire_rate / (isRook and 1.075 or 1)
 	self.IsRook = isRook
 	self._reloadCancelled = false
 	self.unequip_wait = false
@@ -196,7 +242,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	return self
 end
 
-function Crestfall:get_spread(muzzle: BasePart, shootDirection: Vector3): Vector3
+function Antimaterial:get_spread(muzzle: BasePart, shootDirection: Vector3): Vector3
 	if not self.HipBraced then
 		return BaseRifle.get_spread(self, muzzle, shootDirection)
 	end
@@ -208,7 +254,7 @@ function Crestfall:get_spread(muzzle: BasePart, shootDirection: Vector3): Vector
 	return (shootDirection + muzzle.CFrame.RightVector * horizontal + muzzle.CFrame.UpVector * vertical).Unit
 end
 
-function Crestfall:aim()
+function Antimaterial:aim()
 	local character = LOCAL_PLAYER.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then self._walkSpeedBeforeAim = humanoid.WalkSpeed end
@@ -220,7 +266,7 @@ function Crestfall:aim()
 	end
 end
 
-function Crestfall:endAiming()
+function Antimaterial:endAiming()
 	BaseRifle.endAiming(self)
 	local character = LOCAL_PLAYER.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -231,37 +277,7 @@ function Crestfall:endAiming()
 	self.FixedAimingSpread = nil
 end
 
-function Crestfall:setAltMode()
-	if not self.Equipped or self:_isBusy() then return end
-	self.Alting = true
-	task.wait(HIP_BRACE_SWITCH_TIME)
-	if not self.Equipped then
-		self.Alting = false
-		return
-	end
-	self.HipBraced = not self.HipBraced
-	self:_killAimTracks()
-	local hipAim = self:_aimTrack()
-	if self.HipBraced and self.Aiming and hipAim then hipAim:Play(CUT) end
-
-	if self.Aiming then
-		self.FixedAimingSpread = self.HipBraced and HIP_BRACE_CROSSHAIR_SPREAD or nil
-		self:_enable_aiming_ui(self.Aiming_Number)
-
-		local character = LOCAL_PLAYER.Character
-		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-		if humanoid and self._walkSpeedBeforeAim then
-			humanoid.WalkSpeed = self.HipBraced
-				and self._walkSpeedBeforeAim
-				or self._walkSpeedBeforeAim * 0.7
-		end
-	end
-
-	self:notify(self.HipBraced and "I am now hip bracing" or "I am now shoulder bracing")
-	self.Alting = false
-end
-
-function Crestfall:_aimTrack(): AnimationTrack?
+function Antimaterial:_aimTrack(): AnimationTrack?
 	if self.HipBraced and self.RegisteredAnimations then
 		return (self.current_shoulder == "Right")
 			and self.RegisteredAnimations.Hip_Aim
@@ -270,7 +286,7 @@ function Crestfall:_aimTrack(): AnimationTrack?
 	return BaseRifle._aimTrack(self)
 end
 
-function Crestfall:_killAimTracks()
+function Antimaterial:_killAimTracks()
 	BaseRifle._killAimTracks(self)
 	local anims = self.RegisteredAnimations
 	if not anims then return end
@@ -282,7 +298,7 @@ end
 
 -- Use the shared held pose outside ADS, including alternate firing modes.
 
-function Crestfall:_getFireAnim(): AnimationTrack?
+function Antimaterial:_getFireAnim(): AnimationTrack?
 	if self.HipBraced and self.RegisteredAnimations then
 		return (self.current_shoulder == "Right")
 			and self.RegisteredAnimations.Hip_Fire
@@ -291,74 +307,33 @@ function Crestfall:_getFireAnim(): AnimationTrack?
 	return BaseRifle._getFireAnim(self)
 end
 
-function Crestfall:_damageAtDistance(distance: number): number
-	if distance < 60 then return 500 end
-	if distance <= 80 then return 250 end
-	return 199
+function Antimaterial:_damageAtDistance(distance: number): number
+	return BaseRifle._damageAtDistance(self, distance)
 end
 
-function Crestfall:fire()
-	if self.Firing or self.Reloading or self.Cycling or not self.Aiming then return end
-	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
-	if self.Capacity <= 0 then
-		self:_dryFire()
-		return
-	end
-
-	local muzzle = self:_findModelPart(self.MuzzlePartName)
-	local camera = workspace.CurrentCamera
-	if not muzzle or not muzzle:IsA("BasePart") or not camera then return end
-
-	self.Firing = true
-	local mousePosition = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
-
-	local result = Util.raycastSkipTransparent(ray.Origin, ray.Direction * 5000, params)
-	local target = result and result.Position or ray.Origin + ray.Direction * 5000
-	local direction = self:get_spread(muzzle, (target - muzzle.Position).Unit)
-	local cast = self.Caster:Fire(muzzle.Position, direction, BULLET_SPEED, self.CasterBehavior)
-	cast.UserData = {
-		Direction = direction,
-		Penetrated = false,
-		Origin = muzzle.Position,
-		Shooter = LOCAL_PLAYER,
-	}
-
-	self:_connect_FastCast(muzzle.Position, direction, BULLET_SPEED, {
-		bulletTemplate = FxFolder.Bullet,
-		bulletContainer = workspace.Game_Details.Effects.Bullets,
-		isPenetration = false,
-		penetrationLevel = self.Penetration_Level,
-		damage = self.damage,
-		knockbackForce = self.KnockBack_Force,
-	})
-
-	self.Capacity -= 1
-	self:_stopAllExcept()
+function Antimaterial:fire()
 	local left = self.current_shoulder ~= "Right"
 	local fireAnimation
 	if self.HipBraced then
-		if self.Capacity == 0 then
+		if self.Capacity <= 1 then
 			fireAnimation = left and "Hip_Fire_Last_Left" or "Hip_Fire_Last"
 		else
 			fireAnimation = left and "Hip_Fire_Left" or "Hip_Fire"
 		end
 	else
-		if self.Capacity == 0 then
+		if self.Capacity <= 1 then
 			fireAnimation = left and "Fire_Last_Left" or "Fire_Last"
 		else
 			fireAnimation = left and "Fire_Left" or "Fire"
 		end
 	end
-	self:_playFireAnimation(fireAnimation)
-	local fireSound = self.SoundFolder and self.SoundFolder:FindFirstChild("fire")
-	if fireSound then self:_play_sfx(fireSound, muzzle) end
-	self:_bounce_scoped_ui()
-	self:_fireMuzzleFlash()
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
+	local fireSound = self.SoundFolder and self.SoundFolder:FindFirstChild("fire", true)
+	local fired = self:_fireSingleShot({
+		bulletSpeed = self.BulletSpeed,
+		fireAnimation = fireAnimation,
+		sound = fireSound,
+	})
+	if not fired then return end
 
 	self.Cycling = true
 	local cycleTrack = self.RegisteredAnimations
@@ -369,43 +344,19 @@ function Crestfall:fire()
 	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / effectiveInterval, 0.01)) end
 	task.wait(effectiveInterval)
 	self.Cycling = false
-	self.Firing = false
 	self:_restoreBaseDeferred()
 end
 
-function Crestfall:reload()
-	if self.Reloading or self.Equipping or self.Capacity >= self.Max_Capacity then return end
-	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
-	if not reserve or not reserve:IsA("NumberValue") or reserve.Value <= 0 then
-		self:notify("I don't have any more ammo...")
-		return
-	end
-
-	if self.Aiming then self:endAiming() end
-	self.Reloading = true
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
-	self:_stopAllExcept()
-	self:_playAnim("Reload_Start").Stopped:Wait()
-
-	while self.Equipped and self.Capacity < self.Max_Capacity and reserve.Value > 0 and not self._reloadCancelled do
-		self:_playAnim("Reload_Loop").Stopped:Wait()
-		if self._reloadCancelled then break end
-		self.Capacity += 1
-		self:_fire_ammo(1)
-	end
-
-	if not self._reloadCancelled and self.RegisteredAnimations.Reload_End then
-		local endTrack = self:_playAnim("Reload_End")
-		if endTrack then endTrack.Stopped:Wait() end
-	end
-	self.Reloading = false
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
-	self:_restoreBaseDeferred()
+function Antimaterial:reload()
+	self:_reloadByRound({
+		startAnim = "Reload_Start",
+		loopAnim = "Reload_Loop",
+		endAnim = "Reload_End",
+		loopWait = RELOAD_ROUND_TIME,
+	})
 end
 
-function Crestfall:activate()
+function Antimaterial:activate()
 	if self.Reloading then
 		self._reloadCancelled = true
 		return
@@ -414,7 +365,7 @@ function Crestfall:activate()
 	if self.Aiming then self:fire() else self:melee() end
 end
 
-function Crestfall:_on_equip()
+function Antimaterial:_on_equip()
 	self.Equipped = true
 	self:_cacheMotor6D()
 	self:_connectInput()
@@ -428,7 +379,7 @@ function Crestfall:_on_equip()
 	end)
 end
 
-function Crestfall:_on_unequip()
+function Antimaterial:_on_unequip()
 	self.Equipped = false
 	self.Firing = false
 	self.Cycling = false
@@ -447,14 +398,14 @@ function Crestfall:_on_unequip()
 	end
 end
 
-function Crestfall:Destroy()
+function Antimaterial:Destroy()
 	self:_disconnectInput()
 	BaseRifle.destroy(self)
 end
 
-Crestfall.Tool_Image = "rbxthumb://type=Asset&id=118811623120292&w=420&h=420"
-Crestfall.Medal_Cost = 0
-Crestfall.Weight = 2
-Crestfall.Designation = "Primary"
+Antimaterial.Tool_Image = "rbxthumb://type=Asset&id=118811623120292&w=420&h=420"
+Antimaterial.Medal_Cost = 0
+Antimaterial.Weight = 2
+Antimaterial.Designation = "Primary"
 
-return Crestfall
+return Antimaterial

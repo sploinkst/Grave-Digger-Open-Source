@@ -7,7 +7,6 @@ local UserInputService = game:GetService("UserInputService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
-local Util = require(script.Parent.Parent.Parent.Util)
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
@@ -22,6 +21,46 @@ local BLACK_HAND_RPM = 120
 local STANDARD_RELOAD_TIME = 5.4
 local VETERAN_RELOAD_TIME = 3.8
 local CLIP_SIZE = 5
+local WEAPON_STATS = {
+	name = "'Jesse' Combat Rifle",
+	desc = "A high capacity and agile rifle reloaded with Stripper Clips innately.",
+	icon = "127196615975204",
+	ammo_give = ".303 Spitzer",
+	damage = 130,
+	range = 50,
+	range_damage = 120,
+	far = 95,
+	far_damage = 95,
+	melee_damage = 80,
+	melee_swing_speed = 0.7,
+	melee_range = 5,
+	pen = 3,
+	accuracy = 12,
+	moving_accuracy = 80,
+	fire_rate = 0.2,
+	cycle = 0.55,
+	cycle_rest = 0.05,
+	draw_speed = 0.65,
+	aim_speed = 0.25,
+	recoil = 10,
+	recoil_count = 6,
+	movement = 1,
+	firing_movement = 1,
+	firing_movement_last = 0.5,
+	ammo_reserves = 1,
+	ammo_reserves_max = 2,
+	capacity = 10,
+	chamber = false,
+	reload_start = 1.2,
+	reload_empty = 1.7,
+	reload_loop = 0.7,
+	reload_end = 0.65,
+	bullet_speed = BULLET_SPEED,
+	standard_reload_time = STANDARD_RELOAD_TIME,
+	veteran_reload_time = VETERAN_RELOAD_TIME,
+	clip_size = CLIP_SIZE,
+	black_hand_fire_rate = 60 / BLACK_HAND_RPM,
+}
 
 local ANIMATION_LAYERS = {
 	Hold = 0,
@@ -87,12 +126,7 @@ end
 local function getModelReference(): Model?
 	local source = Guns.ToolModels:FindFirstChild("enfield")
 		or Guns.ToolModels:FindFirstChild("JesseRifle")
-	if source and source:IsA("Model") then return source end
-
-	local developmentStorage = workspace:FindFirstChild("Development_Storage")
-	local weaponModels = developmentStorage and developmentStorage:FindFirstChild("weapon_models")
-	local fallback = weaponModels and weaponModels:FindFirstChild("enfield")
-	return if fallback and fallback:IsA("Model") then fallback else nil
+	return if source and source:IsA("Model") then source else nil
 end
 
 local function playTimedAnimation(self: JesseRifle, name: string, duration: number): boolean
@@ -167,43 +201,51 @@ function JesseRifle.new(info: Types.BaseToolCreateInfo): JesseRifle
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 	self.animation_speeds = {
-		Draw = 1 / (blackHand and 0.35 or 0.65),
-		Aim = 1 / (blackHand and 0.21 or 0.25),
+		Draw = 1 / (blackHand and 0.35 or WEAPON_STATS.draw_speed),
+		Aim = 1 / (blackHand and 0.21 or WEAPON_STATS.aim_speed),
 	}
 
-	self.damage = 130
-	self.Max_Capacity = 10
-	self.Capacity = 10
-	self.Starting_Reserve_Ammo = veteran and 20 or 10
-	self.Max_Reserve_Ammo = 20
+	self.damage = WEAPON_STATS.damage
+	self.Max_Capacity = WEAPON_STATS.capacity
+	self.Capacity = WEAPON_STATS.capacity
+	self.Starting_Reserve_Ammo = WEAPON_STATS.capacity * (veteran and WEAPON_STATS.ammo_reserves_max or WEAPON_STATS.ammo_reserves)
+	self.Max_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves_max
 	self.Starting_Grenades = 2
 	self.Max_Grenades = 2
-	self.Ammo_Type = ".303 Spitzer"
-	self.Penetration_Level = 2
-	self.Armor_Penetration_Level = 3
+	self.Ammo_Type = WEAPON_STATS.ammo_give
+	self.Penetration_Level = WEAPON_STATS.pen
+	self.Armor_Penetration_Level = WEAPON_STATS.pen
 	self.KnockBack_Force = 10
-	self.recoil = 62
-	self.recoil_count = 8
+	self.recoil = WEAPON_STATS.recoil
+	self.recoil_count = WEAPON_STATS.recoil_count
 	self.Aiming_Number = 45
-	self.Accuracy = 4
-	self.Moving_Accuracy = 60
+	self.Accuracy = WEAPON_STATS.accuracy
+	self.Moving_Accuracy = WEAPON_STATS.moving_accuracy
 	self.MuzzlePartName = "muzzle"
+	self.BulletSpeed = WEAPON_STATS.bullet_speed
 	self.AmmoCheckPartName = "hitbox"
 	self.SoundFolder = SoundFolder
-	self.FireInterval = 60 / (blackHand and BLACK_HAND_RPM or STANDARD_RPM)
-	self.ReloadDuration = veteran and VETERAN_RELOAD_TIME or STANDARD_RELOAD_TIME
+	self.FireInterval = blackHand and (60 / BLACK_HAND_RPM) or WEAPON_STATS.fire_rate
+	self.ReloadDuration = veteran and WEAPON_STATS.veteran_reload_time or WEAPON_STATS.standard_reload_time
 	self.IsVeteran = veteran
 	self.GrenadeLoaded = false
 	self.LoadingGrenade = false
 	self.Can_Drop = true
 	self:_initShoulderTracking()
+	self:applyFirearmConfig(WEAPON_STATS)
+	if veteran then
+		self.Starting_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves_max
+	end
+	if blackHand then
+		self.FireInterval = WEAPON_STATS.black_hand_fire_rate
+	end
 	return self
 end
 
 function JesseRifle:_damageAtDistance(distance: number): number
-	if distance < 50 then return 130 end
-	if distance >= 95 then return 95 end
-	return 120 + (distance - 50) / 45 * -25
+	if distance < self.range then return self.damage end
+	if distance >= self.far then return self.far_damage end
+	return self.range_damage + (distance - self.range) / (self.far - self.range) * (self.far_damage - self.range_damage)
 end
 
 function JesseRifle:fire()
@@ -213,34 +255,13 @@ function JesseRifle:fire()
 		self:_fireGrenade()
 		return
 	end
-	if self.Capacity <= 0 then
-		self:_dryFire()
-		return
-	end
-	local muzzle = self:_findModelPart(self.MuzzlePartName)
-	local camera = workspace.CurrentCamera
-	if not muzzle or not camera then return end
-	self.Firing = true
-	local mousePosition = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
-	local result = Util.raycastSkipTransparent(ray.Origin, ray.Direction * 5000, params)
-	local target = result and result.Position or ray.Origin + ray.Direction * 5000
-	local direction = self:get_spread(muzzle, (target - muzzle.Position).Unit)
-	local cast = self.Caster:Fire(muzzle.Position, direction, BULLET_SPEED, self.CasterBehavior)
-	cast.UserData = { Direction = direction, Penetrated = false, Origin = muzzle.Position, Shooter = LOCAL_PLAYER }
-	self:_connect_FastCast(muzzle.Position, direction, BULLET_SPEED)
-
-	self.Capacity -= 1
-	self:_stopAllExcept()
-	self:_playFireAnimation("Fire")
 	local fireSound = SoundFolder:FindFirstChild("fire", true)
-	if fireSound then self:_play_sfx(fireSound, muzzle) end
-	self:_bounce_scoped_ui()
-	self:_fireMuzzleFlash()
-	Util.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
+	local fired = self:_fireSingleShot({
+		bulletSpeed = self.BulletSpeed,
+		fireAnimation = "Fire",
+		sound = fireSound,
+	})
+	if not fired then return end
 
 	self.Cycling = true
 	task.wait(0.15)
@@ -248,7 +269,6 @@ function JesseRifle:fire()
 	if cycleTrack then cycleTrack.Stopped:Wait() end
 	task.wait(math.max(0, self.FireInterval - 0.15))
 	self.Cycling = false
-	self.Firing = false
 	self:_restoreBaseDeferred()
 end
 
@@ -314,19 +334,18 @@ function JesseRifle:reload()
 		self:notify("I don't have any more ammo...")
 		return
 	end
-	if self.Aiming then self:endAiming() end
 	self.Reloading = true
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
 
 	local needed = math.min(self.Max_Capacity - self.Capacity, reserve.Value)
-	local clipCount = math.ceil(needed / CLIP_SIZE)
+	local clipCount = math.ceil(needed / WEAPON_STATS.clip_size)
 	local actionDuration = self.ReloadDuration / (clipCount + 2)
 	playTimedAnimation(self, self.IsVeteran and "Reload_Start_Vet" or "Reload_Start", actionDuration)
 	for _ = 1, clipCount do
 		if not self.Equipped or self._reloadCancelled then break end
-		local amount = math.min(CLIP_SIZE, self.Max_Capacity - self.Capacity, reserve.Value)
+		local amount = math.min(WEAPON_STATS.clip_size, self.Max_Capacity - self.Capacity, reserve.Value)
 		local animationName = self.Capacity == 0 and "Reload_Clip_Empty" or "Reload_Clip"
 		if not playTimedAnimation(self, animationName, actionDuration) then break end
 		self.Capacity += amount
@@ -382,5 +401,25 @@ JesseRifle.Tool_Image = "rbxassetid://109461036497765"
 JesseRifle.Medal_Cost = 0
 JesseRifle.Weight = 2
 JesseRifle.Designation = "Primary"
+JesseRifle.Display_Name = WEAPON_STATS.name
+JesseRifle.desc = WEAPON_STATS.desc
+JesseRifle.icon = WEAPON_STATS.icon
+JesseRifle.damage = WEAPON_STATS.damage
+JesseRifle.range = WEAPON_STATS.range
+JesseRifle.range_damage = WEAPON_STATS.range_damage
+JesseRifle.far = WEAPON_STATS.far
+JesseRifle.far_damage = WEAPON_STATS.far_damage
+JesseRifle.accuracy = WEAPON_STATS.accuracy
+JesseRifle.moving_accuracy = WEAPON_STATS.moving_accuracy
+JesseRifle.fire_rate = WEAPON_STATS.fire_rate
+JesseRifle.cycle = WEAPON_STATS.cycle
+JesseRifle.cycle_rest = WEAPON_STATS.cycle_rest
+JesseRifle.recoil = WEAPON_STATS.recoil
+JesseRifle.recoil_count = WEAPON_STATS.recoil_count
+JesseRifle.capacity = WEAPON_STATS.capacity
+JesseRifle.ammo_give = WEAPON_STATS.ammo_give
+JesseRifle.ammo_reserves = WEAPON_STATS.ammo_reserves
+JesseRifle.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
+JesseRifle.pen = WEAPON_STATS.pen
 
 return JesseRifle

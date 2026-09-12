@@ -6,6 +6,7 @@ local type_checker_module = require(game:GetService("ReplicatedStorage").Shared.
 local item_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes.ToolClasses
 local gun_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes.GunClasses
 local elite_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes:FindFirstChild("EliteClasses")
+local weapon_ids = require(game:GetService("ReplicatedStorage").Shared.Library.WeaponIds)
 
 
 local function animatedMount(object, character, clone, part1)
@@ -64,6 +65,35 @@ local function authoredGrip(clone, part1)
 	return nil, nil
 end
 
+local function findItemModule(item: string)
+	for _, itemName in weapon_ids.Aliases(item) do
+		local direct = item_classes:FindFirstChild(itemName)
+			or gun_classes:FindFirstChild(itemName)
+			or (elite_classes and elite_classes:FindFirstChild(itemName))
+		if direct then return direct, direct.Name end
+	end
+
+	for _, folder in { gun_classes, item_classes, elite_classes } do
+		if not folder then continue end
+		for _, child in ipairs(folder:GetChildren()) do
+			if not child:IsA("ModuleScript") then continue end
+			local ok, class = pcall(require, child)
+			if ok and (
+				class.Display_Name == item
+				or class.name == item
+				or class.Name == item
+				or weapon_ids.Canonical(class.className or child.Name) == weapon_ids.Canonical(item)
+				or weapon_ids.Canonical(class.Display_Name or "") == weapon_ids.Canonical(item)
+				or weapon_ids.Canonical(class.name or "") == weapon_ids.Canonical(item)
+			) then
+				return child, child.Name
+			end
+		end
+	end
+
+	return nil, item
+end
+
 function module.give_item(player: Player, item: string, given_ammo: number)
 	print("Received with:", player.Name, item)
 	local stage = "waiting for character"
@@ -74,13 +104,12 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 	end
 
 	stage = "finding item module"
-	local item_module = item_classes:FindFirstChild(item)
-		or gun_classes:FindFirstChild(item)
-		or (elite_classes and elite_classes:FindFirstChild(item))
+	local item_module, class_item = findItemModule(item)
     if not item_module then
         warn("ItemsService: Item class not found:", item)
         return "ItemService: Item Class not found.", item
     end
+	item = class_item
 
 	-- require class
 	stage = "requiring " .. item
@@ -369,15 +398,24 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 end
 
 function module.remove_item(player: Player, item: string, model_name: string?)
+	local itemAliases = weapon_ids.Aliases(item)
 
 	local backpack = player:FindFirstChild("Backpack")
 	local character = player.Character
 
 	local removed = false
+	local function findAliasChild(parent)
+		if not parent then return nil end
+		for _, itemName in itemAliases do
+			local found = parent:FindFirstChild(itemName)
+			if found then return found end
+		end
+		return parent:FindFirstChild(item)
+	end
 
 	-- Remove from Backpack
 	if backpack then
-		local tool = backpack:FindFirstChild(item)
+		local tool = findAliasChild(backpack)
 		if tool then
 			tool:Destroy()
 			removed = true
@@ -386,7 +424,7 @@ function module.remove_item(player: Player, item: string, model_name: string?)
 
 	-- Remove if currently equipped
 	if character then
-		local tool = character:FindFirstChild(item)
+		local tool = findAliasChild(character)
 		if tool then
 			character.Humanoid:UnequipTools()
 			tool:Destroy()
@@ -407,7 +445,7 @@ function module.remove_item(player: Player, item: string, model_name: string?)
 			and character.CharacterData:FindFirstChild("Equipment")
 
 		if equipmentFolder then
-			local model = equipmentFolder:FindFirstChild(model_name or item)
+			local model = model_name and equipmentFolder:FindFirstChild(model_name) or findAliasChild(equipmentFolder)
 			if model then
 				model:Destroy()
 			end
@@ -429,7 +467,11 @@ function module.remove_item(player: Player, item: string, model_name: string?)
 		and player.GameData.Accessorys:FindFirstChild("Holsters")
 
 	if holsters_folder then
-		local holster_value = holsters_folder:FindFirstChild(item .. "Holster")
+		local holster_value
+		for _, itemName in itemAliases do
+			holster_value = holsters_folder:FindFirstChild(itemName .. "Holster") or holsters_folder:FindFirstChild(itemName)
+			if holster_value then break end
+		end
 		if holster_value then
 			holster_value:Destroy()
 		end

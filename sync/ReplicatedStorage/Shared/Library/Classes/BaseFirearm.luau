@@ -21,7 +21,7 @@ local texture_event = events.Texture
 local casing_event = events.Casing
 local ammo_communication = events.Ammo
 local FX_BULLET_HOLE = ReplicatedStorage.Shared.Assets.Guns.Effects.BulletHole
-local CUT = 0.15
+local CUT = 0.06
 local MIN_AMMO_CHECK_DISPLAY_TIME = 1
 
 local BaseFirearm = {}
@@ -38,6 +38,323 @@ function BaseFirearm.new(info): BaseFirearm
 	self.DefaultGripC0 = CFrame.new(0.254, -1.703, -0.566)
 		* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
 	return setmetatable(self, BaseFirearm)
+end
+
+function BaseFirearm:applyFirearmConfig(config)
+	local legacy = config.LegacyStats
+	if legacy then
+		for key, value in pairs(legacy) do
+			if config[key] == nil then
+				config[key] = value
+			end
+		end
+	end
+
+	for key, value in pairs(config) do
+		if key == "animations" and type(value) == "string" then
+			self.AnimationGunType = value
+		elseif key ~= "name" and type(value) ~= "function" and key ~= "methods" then
+			self[key] = value
+		end
+	end
+
+	local capacity = config.capacity or config.Max_Capacity or self.Max_Capacity
+	local ammoType = config.ammo_give or config.ammoGive or config.ammoType or config.Ammo_Type or self.Ammo_Type
+	local reserveClips = config.ammo_reserves or config.reserveClips or 2
+	local maxReserveClips = config.ammo_reserves_max or config.maxReserveClips or 3
+
+	self.tooltype = config.tooltype or "gun"
+	self.Display_Name = config.Display_Name or config.name or self.Display_Name
+	self.desc = config.desc or self.desc
+	self.lore = config.lore or self.lore
+	self.assists = config.assists or self.assists
+	self.icon = config.icon or self.icon
+	self.item_image = config.Tool_Image or config.item_image or (config.icon and ("rbxassetid://" .. config.icon)) or self.item_image
+	self.damage = config.damage or self.damage
+	self.Max_Capacity = capacity or self.Max_Capacity
+	self.Capacity = config.Capacity or capacity or self.Capacity or self.Max_Capacity
+	self.Ammo_Type = ammoType or self.Ammo_Type
+	self.recoil = config.recoil or self.recoil
+	self.recoil_count = config.recoil_count or config.recoilCount or self.recoil_count
+	self.Penetration_Level = config.pen or config.penetration or self.Penetration_Level
+	self.Armor_Penetration_Level = config.armor_pen or config.armorPenetration or self.Armor_Penetration_Level
+	self.KnockBack_Force = config.knockback or config.KnockBack_Force or self.KnockBack_Force
+	self.Melee_Damage = config.melee_damage or config.meleeDamage or self.Melee_Damage
+	self.Melee_Distance = config.melee_range or config.meleeDistance or self.Melee_Distance
+	self.Melee_Swing_Speed = config.melee_swing_speed or self.Melee_Swing_Speed
+	self.Accuracy = config.accuracy or self.Accuracy
+	self.Moving_Accuracy = config.moving_accuracy or config.movingAccuracy or self.Moving_Accuracy
+	self.FireInterval = config.fire_rate or config.fireInterval or config.FireInterval or self.FireInterval
+	self.BulletSpeed = config.bullet_speed or config.bulletSpeed or self.BulletSpeed
+	self.capacity = capacity
+	self.ammo_give = ammoType
+	self.ammo_reserves = reserveClips
+	self.ammo_reserves_max = maxReserveClips
+	self.fire_rate = config.fire_rate or config.fireInterval or config.FireInterval or self.FireInterval
+	self.cycle = config.cycle or self.cycle or 0
+	self.cycle_rest = config.cycle_rest or self.cycle_rest or 0
+	self.draw_speed = config.draw_speed or config.drawSpeed or self.draw_speed
+	self.aim_speed = config.aim_speed or config.aimSpeed or self.aim_speed
+	self.reload_start = config.reload_start or config.reloadStart or self.reload_start
+	self.reload_loop = config.reload_loop or config.reloadLoop or self.reload_loop
+	self.reload_end = config.reload_end or config.reloadEnd or self.reload_end
+	self.require_full_load = config.require_full_load or self.require_full_load or false
+	self.hidereserves = config.hidereserves or self.hidereserves or false
+	self.pellets = config.pellets or config.pelletCount or self.PelletCount or 1
+	self.size = config.size or self.size or 2
+	self.movement = config.movement or self.movement or 1
+	self.firing_movement = config.firing_movement or self.firing_movement or self.movement
+	self.firing_movement_last = config.firing_movement_last or self.firing_movement_last or self.firing_movement
+	self.display_fire_rate = config.display_fire_rate or self.display_fire_rate
+	self.range = config.range or self.range
+	self.range_damage = config.range_damage or self.range_damage
+	self.far = config.far or self.far
+	self.far_damage = config.far_damage or self.far_damage
+	self.wallpen_distance = config.wallpen_distance or self.wallpen_distance
+	self.wallpen_studs = config.wallpen_studs or self.wallpen_studs
+	self.wound = config.wound or self.wound
+	self.length = config.length or self.length
+	self.melee_sound = config.melee_sound or self.melee_sound
+	self.reload_empty = config.reload_empty or self.reload_empty
+	self.reload_loop_after = config.reload_loop_after or self.reload_loop_after
+	self.reload_alt = config.reload_alt or self.reload_alt
+	self.reload_full = config.reload_full or self.reload_full
+	self.chamber = config.chamber or self.chamber or false
+	self.blacklist = config.blacklist or self.blacklist or false
+	self.auto = config.auto or self.auto or false
+	self.alt_name = config.alt_name or self.alt_name
+	self.Starting_Reserve_Ammo = config.startingReserve or config.Starting_Reserve_Ammo or capacity * reserveClips
+	self.Max_Reserve_Ammo = config.maxReserve or config.Max_Reserve_Ammo or capacity * maxReserveClips
+	self.animation_speeds = self.animation_speeds or {}
+	if config.draw_speed and self.animation_speeds.Draw == nil then self.animation_speeds.Draw = 1 / config.draw_speed end
+	if config.aim_speed and self.animation_speeds.Aim == nil then self.animation_speeds.Aim = 1 / config.aim_speed end
+	if config.aim_speed and self.animation_speeds.Aim_Left == nil then self.animation_speeds.Aim_Left = 1 / config.aim_speed end
+	if config.cycle and config.cycle > 0 and self.animation_speeds.Cycle == nil then self.animation_speeds.Cycle = 1 / config.cycle end
+	if config.reload_start and config.reload_start > 0 and self.animation_speeds.Reload_Start == nil then self.animation_speeds.Reload_Start = 1 / config.reload_start end
+	if config.reload_empty and config.reload_empty > 0 and self.animation_speeds.Reload_Empty == nil then self.animation_speeds.Reload_Empty = 1 / config.reload_empty end
+	if config.reload_loop and config.reload_loop > 0 and self.animation_speeds.Reload_Loop == nil then self.animation_speeds.Reload_Loop = 1 / config.reload_loop end
+	if config.reload_end and config.reload_end > 0 and self.animation_speeds.Reload_End == nil then self.animation_speeds.Reload_End = 1 / config.reload_end end
+	if config.reload_alt and config.reload_alt > 0 and self.animation_speeds.Reload_Alt == nil then self.animation_speeds.Reload_Alt = 1 / config.reload_alt end
+	self.LegacyWeaponAttributes = {
+		tooltype = self.tooltype,
+		capacity = self.capacity,
+		ammo_give = self.ammo_give,
+		ammo_reserves = self.ammo_reserves,
+		ammo_reserves_max = self.ammo_reserves_max,
+		fire_rate = self.fire_rate,
+		cycle = self.cycle,
+		cycle_rest = self.cycle_rest,
+		draw_speed = self.draw_speed,
+		aim_speed = self.aim_speed,
+		reload_start = self.reload_start,
+		reload_loop = self.reload_loop,
+		reload_end = self.reload_end,
+		require_full_load = self.require_full_load,
+		hidereserves = self.hidereserves,
+		pellets = self.pellets,
+		size = self.size,
+		movement = self.movement,
+		firing_movement = self.firing_movement,
+		firing_movement_last = self.firing_movement_last,
+		display_fire_rate = self.display_fire_rate,
+		range = self.range,
+		range_damage = self.range_damage,
+		far = self.far,
+		far_damage = self.far_damage,
+		wallpen_distance = self.wallpen_distance,
+		wallpen_studs = self.wallpen_studs,
+		wound = self.wound,
+		length = self.length,
+		melee_sound = self.melee_sound,
+		reload_empty = self.reload_empty,
+		reload_loop_after = self.reload_loop_after,
+		reload_alt = self.reload_alt,
+		reload_full = self.reload_full,
+		chamber = self.chamber,
+		blacklist = self.blacklist,
+		auto = self.auto,
+		alt_name = self.alt_name,
+		damage = self.damage,
+		accuracy = self.Accuracy,
+		moving_accuracy = self.Moving_Accuracy,
+		recoil = self.recoil,
+		recoil_count = self.recoil_count,
+	}
+
+	return self
+end
+
+function BaseFirearm:_getReserveAmmo(): NumberValue?
+	local reserveAmmo = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
+	if reserveAmmo and reserveAmmo:IsA("NumberValue") then
+		return reserveAmmo
+	end
+	return nil
+end
+
+function BaseFirearm:_hasReserveAmmo(): boolean
+	local reserveAmmo = self:_getReserveAmmo()
+	if not reserveAmmo then
+		warn(("%s: Cannot use reserve ammo because Reserve_Ammo is missing"):format(self.className))
+		return false
+	end
+	if reserveAmmo.Value <= 0 then
+		self:notify("I don't have any more ammo...")
+		return false
+	end
+	return true
+end
+
+function BaseFirearm:_withUnequipLock(callback: () -> ())
+	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
+	local ok, err = pcall(callback)
+	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
+	if not ok then
+		error(err, 2)
+	end
+end
+
+function BaseFirearm:_playCycle(options): boolean
+	if self.Cycling then return false end
+	self.Cycling = true
+	self.Cycled = false
+
+	if not self.RegisteredAnimations then
+		self.Cycling = false
+		return false
+	end
+
+	local cycleDelay = options and options.delay or self.CycleDelay or 0
+	local cycleAnim = options and options.animation or self.CycleAnimation or "Cycle"
+	local complete = options and options.complete
+
+	task.delay(cycleDelay, function()
+		self:_stopAllExcept()
+		local cycleTrack = self:_playAnim(cycleAnim)
+		if cycleTrack then
+			cycleTrack.Stopped:Once(function()
+				if complete then
+					complete(self)
+				else
+					self.Cycled = true
+				end
+				self.Cycling = false
+				self:_restoreBase()
+			end)
+		else
+			if complete then
+				complete(self)
+			else
+				self.Cycled = true
+			end
+			self.Cycling = false
+			self:_restoreBaseDeferred()
+		end
+	end)
+
+	return true
+end
+
+function BaseFirearm:_fireAnimationName(): string
+	if self.FireAnimation then return self.FireAnimation end
+	if self.Capacity <= 1 then
+		local last = (self.current_shoulder == "Right") and "Fire_Last" or "Fire_Last_Left"
+		if self.RegisteredAnimations and self.RegisteredAnimations[last] then
+			return last
+		end
+	end
+	return (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
+end
+
+function BaseFirearm:_fireOptions()
+	return {
+		bulletSpeed = self.BulletSpeed,
+		distance = self.FireRayDistance,
+		fireAnimation = self:_fireAnimationName(),
+		sound = self.FireSound,
+		soundPitchVariation = self.FireSoundPitchVariation,
+		fireDelay = self.FireInterval or self.fire_rate,
+	}
+end
+
+function BaseFirearm:fire(): boolean
+	local fired = self:_fireSingleShot(self:_fireOptions())
+	if fired and self.CycleAfterFire then
+		self:_playCycle({
+			delay = self.CycleDelay or self.cycle_rest or 0,
+			animation = self.CycleAnimation or "Cycle",
+		})
+	end
+	return fired
+end
+
+function BaseFirearm:_reloadOptions()
+	local startAnim = if self.ReloadStartAnimation ~= nil then self.ReloadStartAnimation else "Reload_Start"
+	local loopAnim = if self.ReloadLoopAnimation ~= nil then self.ReloadLoopAnimation else "Reload_Loop"
+	local endAnim = if self.ReloadEndAnimation ~= nil then self.ReloadEndAnimation else "Reload_End"
+
+	return {
+		startAnim = startAnim,
+		loopAnim = loopAnim,
+		endAnim = endAnim,
+		loopWait = self.reload_loop,
+		ammoCost = self.ReloadAmmoCost or 1,
+	}
+end
+
+function BaseFirearm:reload(): boolean
+	return self:_reloadByRound(self:_reloadOptions())
+end
+
+function BaseFirearm:activate()
+	if self.Reloading then
+		if self.CanCancelReload ~= false then
+			self._reloadCancelled = true
+		end
+		return
+	end
+	if not self.actual_model or self:_isBusy() then return end
+	if self.Aiming then self:fire() else self:melee() end
+end
+
+function BaseFirearm:_on_equip()
+	self.Equipped = true
+	self:_cacheMotor6D()
+	self:_connectInput()
+	self:_initShoulderTracking()
+
+	local fxFolder = self.FxFolder or ReplicatedStorage.Shared.Assets.Guns.Effects
+	self:_setupFastCast(fxFolder, function(cast, result, velocity)
+		local muzzle = self:_findModelPart(self.MuzzlePartName)
+		local origin = cast.UserData and cast.UserData.Origin
+		local distance = origin and (result.Position - origin).Magnitude or 0
+		self:_onBulletHit(cast, result, velocity, muzzle, self.Penetration_Level,
+			self:_damageAtDistance(distance), self.KnockBack_Force)
+	end)
+end
+
+function BaseFirearm:_on_unequip()
+	self.Equipped = false
+	self.Firing = false
+	self.Cycling = false
+	self.Reloading = false
+	self.Alting = false
+	self._reloadCancelled = true
+	self:_disconnectInput()
+	self:_stopShoulderTracking()
+	self:_stopAimTracking()
+	self:_resetMotor6D()
+	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
+end
+
+function BaseFirearm:_damageAtDistance(distance: number): number
+	if self.range and distance < self.range then
+		return self.damage
+	end
+	if self.far and distance <= self.far then
+		return self.range_damage or self.damage
+	end
+	return self.far_damage or self.range_damage or self.damage
 end
 
 -- Empty firearms only make a mechanical click. Keep this in the firearm base so
@@ -168,6 +485,163 @@ function BaseFirearm:_fireProjectile(bulletSpeed, penetrationLevel, damage, knoc
 	activeCast.UserData.Shooter    = LOCAL_PLAYER
 
 	self:_connect_FastCast(muzzle.Position, shootDir, bulletSpeed)
+	return true
+end
+
+function BaseFirearm:_getAimedShot(muzzle: BasePart, distance: number?): (Vector3?, RaycastResult?)
+	local camera = workspace.CurrentCamera
+	if not camera then return nil, nil end
+
+	local mousePos = UserInputService:GetMouseLocation()
+	local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
+
+	local maxDistance = distance or self.FireRayDistance or 5000
+	local result = utilities_module.raycastSkipTransparent(ray.Origin, ray.Direction * maxDistance, raycastParams)
+	local targetPos = result and result.Position or (ray.Origin + ray.Direction * maxDistance)
+	local shootDir = (targetPos - muzzle.Position).Unit
+
+	if self.get_spread then
+		shootDir = self:get_spread(muzzle, shootDir)
+	end
+
+	return shootDir, result
+end
+
+function BaseFirearm:_fireCastFromMuzzle(muzzle: BasePart, direction: Vector3, bulletSpeed: number)
+	local activeCast = self.Caster:Fire(muzzle.Position, direction, bulletSpeed, self.CasterBehavior)
+	activeCast.UserData = {
+		Direction = direction,
+		Penetrated = false,
+		Origin = muzzle.Position,
+		Shooter = LOCAL_PLAYER,
+	}
+
+	self:_connect_FastCast(muzzle.Position, direction, bulletSpeed, {
+		bulletTemplate = ReplicatedStorage.Shared.Assets.Guns.Effects.Bullet,
+		bulletContainer = workspace.Game_Details.Effects.Bullets,
+		isPenetration = false,
+		penetrationLevel = self.Penetration_Level,
+		damage = self.damage,
+		knockbackForce = self.KnockBack_Force,
+	})
+
+	return activeCast
+end
+
+function BaseFirearm:_playShotFeedback(muzzle: BasePart, sound: Sound?, soundPitchVariation: number?)
+	if sound then
+		self:_play_sfx(sound, muzzle, nil, soundPitchVariation)
+	end
+	self:_bounce_scoped_ui()
+	self:_fireMuzzleFlash()
+	utilities_module.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
+end
+
+function BaseFirearm:_fireSingleShot(options): boolean
+	if self.Firing or self.Reloading or self.Cycling then return false end
+	if options and options.requireAiming ~= false and not self.Aiming then return false end
+	if self.ForceBlockFire or self:_if_sprinting() or self:_if_jumping() then return false end
+	if self.Capacity <= 0 then
+		self:_dryFire()
+		return false
+	end
+
+	local muzzle = if self._getMuzzlePart then self:_getMuzzlePart() else self:_findModelPart(self.MuzzlePartName or "Muzzle")
+	if not muzzle or not muzzle:IsA("BasePart") then return false end
+	if not self.Caster or not self.CasterBehavior then return false end
+
+	local direction = self:_getAimedShot(muzzle, options and options.distance)
+	if not direction then return false end
+
+	self.Firing = true
+	self:_fireCastFromMuzzle(muzzle, direction, options and options.bulletSpeed or self.BulletSpeed or 1000)
+	if not options or options.consumeCapacity ~= false then
+		self.Capacity -= options and options.capacityCost or 1
+	end
+
+	self:_stopAllExcept()
+	local fireAnim = options and options.fireAnimation
+	if not fireAnim then
+		fireAnim = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
+	end
+	local fireTrack = self:_playFireAnimation(fireAnim)
+	self:_playShotFeedback(muzzle, options and options.sound or self.FireSound, options and options.soundPitchVariation)
+
+	if fireTrack then
+		fireTrack.Stopped:Once(function()
+			if not self.Cycling then
+				self:_restoreBase()
+			end
+		end)
+	else
+		self:_restoreBaseDeferred()
+	end
+
+	local fireDelay = options and options.fireDelay
+	if fireDelay and fireDelay > 0 then
+		task.wait(self.getFireDelay and self:getFireDelay(fireDelay) or fireDelay)
+	end
+
+	self.Firing = false
+	if self.Equipped and not self.Cycling and not self.Reloading then
+		self:_restoreBaseDeferred()
+	end
+	return true
+end
+
+function BaseFirearm:_reloadByRound(options): boolean
+	if not self.Equipped or self.Reloading or self.Equipping then return false end
+	if self.Capacity >= self.Max_Capacity then return false end
+
+	local reserveAmmo = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
+	if not reserveAmmo or not reserveAmmo:IsA("NumberValue") then
+		warn(self.className .. ": Cannot reload because Reserve_Ammo is missing")
+		return false
+	end
+	if reserveAmmo.Value <= 0 then
+		self:notify("I don't have any more ammo...")
+		self:_restoreBase()
+		return false
+	end
+
+	self:_stopAllExcept()
+	self.Reloading = true
+	self._reloadCancelled = false
+	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
+
+	local startAnim = if options and options.startAnim ~= nil then options.startAnim else "Reload_Start"
+	local loopAnim = if options and options.loopAnim ~= nil then options.loopAnim else "Reload_Loop"
+	local endAnim = if options and options.endAnim ~= nil then options.endAnim else "Reload_End"
+	local startTrack = startAnim and self:_playAnim(startAnim) or nil
+	if startTrack then startTrack.Stopped:Wait() end
+
+	while self.Equipped and self.Capacity < self.Max_Capacity and reserveAmmo.Value > 0 and not self._reloadCancelled do
+		local loopTrack = loopAnim and self:_playAnim(loopAnim) or nil
+		if loopTrack then
+			loopTrack.Stopped:Wait()
+		elseif options and options.loopWait then
+			task.wait(self.getFireDelay and self:getFireDelay(options.loopWait) or options.loopWait)
+		end
+		if self._reloadCancelled then break end
+		if options and options.stopAfterLoop and options.stopAfterLoop(self) then break end
+
+		self.Capacity += 1
+		self:_fire_ammo(options and options.ammoCost or 1)
+	end
+
+	if not self._reloadCancelled then
+		local endTrack = endAnim and self:_playAnim(endAnim) or nil
+		if endTrack then endTrack.Stopped:Wait() end
+	end
+
+	self.Reloading = false
+	self._reloadCancelled = false
+	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
+	self:_restoreBaseDeferred()
 	return true
 end
 

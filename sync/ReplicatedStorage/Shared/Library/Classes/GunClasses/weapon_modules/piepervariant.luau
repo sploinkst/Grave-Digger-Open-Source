@@ -1,0 +1,22 @@
+local v1 = require(game.ReplicatedStorage.shared.bFunctions):deepCopy(require(game.ReplicatedStorage.weapon_modules.pieper))
+v1.name = "\'Knell\' Bandit Revolver"
+v1.variant = "pieper"
+v1.desc = "Modification of the \'Knell\' Silenced Revolver."
+v1.lore = "Suppressors, though expensive to manufacture, are efficient implements and an upgrade to one\226\128\153s weapon in most cases. The extended barrel length increases accuracy and velocity, at the cost of some maneuverability, and the boon of not deafening oneself via the echoes of the caves is a potent one, not to mention its ability to pick off enemies without alerting others.\n\nUnfortunately, these boons are less so apparent with pistols, which are typically emergency weapons for when one has already been compromised. In these situations, dexterity and ease of use are key - a suppressor interferes heavily with both of these, by moving the center of gravity forward making aiming more difficult and making holstering and drawing from a holster more cumbersome.\n\nAs such, though the \226\128\152Knell\226\128\153 Silenced Revolver is unique in its ability to be suppressed as a revolver, it is often discarded in favor of these more practical uses. Such a \226\128\152modification\226\128\153 is popular with Bandits, who have no regard for stealth or hearing damage.\n\nWritten by Deceased_Rabbit and Lazarubius."
+v1.icon = "128547123001673"
+v1.assists = { "Superior fire rate and handling due to the lack of a suppressor.", "Inferior range, accuracy and recoil control due to the lack of a suppressor." }
+v1.damage = 105
+v1.range = 40
+v1.range_damage = 95
+v1.far = 60
+v1.far_damage = 80
+v1.accuracy = 10
+v1.moving_accuracy = 80
+v1.fire_rate = 0.34
+v1.draw_speed = 0.2
+v1.aim_speed = 0.15
+v1.length = 4
+v1.recoil = 12
+v1.recoil_count = 6
+v1.special = {}
+return v1;
