@@ -126,7 +126,9 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 	print("ItemService: Object is", object)
     -- create roblox tool
 	local tool = Instance.new("Tool")
-	tool.Name = object.name
+	-- Runtime Tool names are controller/module keys. Display names can include
+	-- quotes/spaces and must not be used for GunClasses lookup on the client.
+	tool.Name = class_item
 	tool.TextureId = object.item_image or ""
 
 	tool.RequiresHandle = false
@@ -158,7 +160,7 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 	weaponValue("BoolValue", "left_aiming", false)
 	weaponValue("StringValue", "model", object.model_reference and object.model_reference.Name or object.name)
 	weaponValue("StringValue", "slot", object.Designation or "")
-	weaponValue("StringValue", "weapon", object.name)
+	weaponValue("StringValue", "weapon", class_item)
 	local weaponEvent = Instance.new("RemoteEvent")
 	weaponEvent.Name = "event"
 	weaponEvent.Parent = tool

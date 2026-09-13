@@ -61,6 +61,8 @@ local WEAPON_STATS = {
 	fire_rate = FIRE_INTERVAL,
 	cycle = 0.7,
 	cycle_rest = 0.2,
+	post_cycle_delay = 0.2,
+	post_reload_delay = 0.15,
 	draw_speed = 1,
 	aim_speed = 0.35,
 	wound = 1,
@@ -104,6 +106,12 @@ local function findSound(...: string): Sound?
 		local found = SoundFolder:FindFirstChild(name, true)
 		if found and found:IsA("Sound") then return found end
 	end
+	return nil
+end
+
+local function animation(name: string): Animation?
+	local found = volkAnimations and volkAnimations:FindFirstChild(name)
+	if found and found:IsA("Animation") then return found end
 	return nil
 end
 
@@ -162,29 +170,23 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 
 	self.AnimationGunType = "mosin"
 	self.animations = {
-		Draw = volkAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
-		Hold = volkAnimations.held,
-		Unequip = volkAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
+		Draw = animation("draw"),
+		Hold = animation("held"),
 
-		Aim      = volkAnimations.aim,
-		Aim_Left = volkAnimations.Parent.PrinceRifle.PrinceRifle_Aim_Left,
+		Aim      = animation("aim"),
+		Aim_Left = animation("aim_left"),
 
-		Fire      = volkAnimations.fire,
-		Fire_Left = volkAnimations.Parent.PrinceRifle.PrinceRifle_Fire_Left,
+		Fire      = animation("fire"),
+		Fire_Left = animation("fire_left"),
 
-		Cycle = volkAnimations.cycle,
+		Cycle = animation("cycle"),
 
-		Reload_Empty = volkAnimations.reload_empty,
-		Reload_Start = volkAnimations.reload_start,
-		Reload_Loop  = volkAnimations.reload_loop,
-		Reload_End   = volkAnimations.reload_end,
+		Reload_Empty = animation("reload_empty"),
+		Reload_Start = animation("reload_start"),
+		Reload_Loop  = animation("reload_loop"),
+		Reload_End   = animation("reload_end"),
 
-		Check  = volkAnimations.check,
-		Melee1 = volkAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
-		Melee2 = volkAnimations.Parent.PrinceRifle.PrinceRifle_Melee2,
-
-		Drop  = volkAnimations.Parent.Parent.Misc.Drop_Rifle,
-		Short = volkAnimations.Parent.PrinceRifle.PrinceRifle_Short,
+		Check = animation("check"),
 	}
 
 	self.animation_speeds = {
@@ -211,7 +213,7 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 	self.KnockBack_Force = 12
 	self.Aiming_Number = 35
 	self.MuzzlePartName = "muzzle"
-	self.BulletSpeed = BULLET_SPEED
+	self.BulletSpeed = WEAPON_STATS.bullet_speed
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
 	self.Short_Distance = 3.5
@@ -357,10 +359,18 @@ function VolkRifle:_getMuzzlePart(): BasePart?
 end
 
 function VolkRifle:fire()
+	local left = self.current_shoulder ~= "Right"
+	local fireAnimation = left
+		and self.RegisteredAnimations
+		and self.RegisteredAnimations.Fire_Left
+		and "Fire_Left"
+		or "Fire"
 	local fireSound = findSound("fire", "Fire")
 	local fired = self:_fireSingleShot({
 		bulletSpeed = self.BulletSpeed,
+		fireAnimation = fireAnimation,
 		sound = fireSound,
+		fireDelay = 0,
 	})
 	if not fired then return end
 
@@ -377,7 +387,7 @@ function VolkRifle:fire()
 		end
 		if cycleTrack then cycleTrack.Stopped:Wait() end
 	end
-	task.wait(self.cycle_rest or 0)
+	task.wait(self.PostCycleDelay or self.cycle_rest or 0)
 
 	self.Cycling = false
 	self:_restoreBaseDeferred()

@@ -86,6 +86,9 @@ function BaseFirearm:applyFirearmConfig(config)
 	self.Moving_Accuracy = config.moving_accuracy or config.movingAccuracy or self.Moving_Accuracy
 	self.FireInterval = config.fire_rate or config.fireInterval or config.FireInterval or self.FireInterval
 	self.BulletSpeed = config.bullet_speed or config.bulletSpeed or self.BulletSpeed
+	self.PostFireDelay = config.post_fire_delay or config.postFireDelay or config.fire_recovery or self.PostFireDelay
+	self.PostCycleDelay = config.post_cycle_delay or config.postCycleDelay or config.cycle_recovery or self.PostCycleDelay
+	self.PostReloadDelay = config.post_reload_delay or config.postReloadDelay or config.reload_recovery or self.PostReloadDelay
 	self.capacity = capacity
 	self.ammo_give = ammoType
 	self.ammo_reserves = reserveClips
@@ -184,6 +187,22 @@ function BaseFirearm:applyFirearmConfig(config)
 	return self
 end
 
+function BaseFirearm:_effectiveFireDelay(delay: number?): number
+	local fireDelay = delay or self.PostFireDelay or self.FireInterval or self.fire_rate or 0
+	if fireDelay <= 0 then return 0 end
+	return self.getFireDelay and self:getFireDelay(fireDelay) or fireDelay
+end
+
+function BaseFirearm:_blockFireFor(delay: number?)
+	local fireDelay = self:_effectiveFireDelay(delay)
+	if fireDelay <= 0 then return end
+	self._nextFireAt = math.max(self._nextFireAt or 0, os.clock() + fireDelay)
+end
+
+function BaseFirearm:_canFireNow(): boolean
+	return os.clock() >= (self._nextFireAt or 0)
+end
+
 function BaseFirearm:_getReserveAmmo(): NumberValue?
 	local reserveAmmo = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
 	if reserveAmmo and reserveAmmo:IsA("NumberValue") then
@@ -227,28 +246,30 @@ function BaseFirearm:_playCycle(options): boolean
 	local cycleDelay = options and options.delay or self.CycleDelay or 0
 	local cycleAnim = options and options.animation or self.CycleAnimation or "Cycle"
 	local complete = options and options.complete
+	local recoveryDelay = options and options.recoveryDelay or self.PostCycleDelay or self.cycle_rest or 0
+
+	local function finishCycle()
+		if recoveryDelay > 0 then
+			task.wait(self:_effectiveFireDelay(recoveryDelay))
+		end
+		if complete then
+			complete(self)
+		else
+			self.Cycled = true
+		end
+		self.Cycling = false
+		self:_restoreBase()
+	end
 
 	task.delay(cycleDelay, function()
 		self:_stopAllExcept()
 		local cycleTrack = self:_playAnim(cycleAnim)
 		if cycleTrack then
 			cycleTrack.Stopped:Once(function()
-				if complete then
-					complete(self)
-				else
-					self.Cycled = true
-				end
-				self.Cycling = false
-				self:_restoreBase()
+				finishCycle()
 			end)
 		else
-			if complete then
-				complete(self)
-			else
-				self.Cycled = true
-			end
-			self.Cycling = false
-			self:_restoreBaseDeferred()
+			finishCycle()
 		end
 	end)
 
@@ -543,6 +564,7 @@ end
 
 function BaseFirearm:_fireSingleShot(options): boolean
 	if self.Firing or self.Reloading or self.Cycling then return false end
+	if not self:_canFireNow() then return false end
 	if options and options.requireAiming ~= false and not self.Aiming then return false end
 	if self.ForceBlockFire or self:_if_sprinting() or self:_if_jumping() then return false end
 	if self.Capacity <= 0 then
@@ -582,11 +604,15 @@ function BaseFirearm:_fireSingleShot(options): boolean
 	end
 
 	local fireDelay = options and options.fireDelay
+	if fireDelay == nil then
+		fireDelay = self.PostFireDelay or self.FireInterval or self.fire_rate
+	end
 	if fireDelay and fireDelay > 0 then
-		task.wait(self.getFireDelay and self:getFireDelay(fireDelay) or fireDelay)
+		task.wait(self:_effectiveFireDelay(fireDelay))
 	end
 
 	self.Firing = false
+	self:_blockFireFor(self.PostFireDelay or 0)
 	if self.Equipped and not self.Cycling and not self.Reloading then
 		self:_restoreBaseDeferred()
 	end
@@ -641,6 +667,7 @@ function BaseFirearm:_reloadByRound(options): boolean
 	self.Reloading = false
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
+	self:_blockFireFor(self.PostReloadDelay or 0)
 	self:_restoreBaseDeferred()
 	return true
 end

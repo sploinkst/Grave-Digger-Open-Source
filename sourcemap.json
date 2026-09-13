@@ -8761,17 +8761,6 @@
                           ]
                         },
                         {
-                          "name": "casing",
-                          "className": "Folder",
-                          "children": [
-                            {
-                              "name": "bullet",
-                              "className": "MeshPart",
-                              "guid": "9256215"
-                            }
-                          ]
-                        },
-                        {
                           "name": "TalonRevolver_Round",
                           "className": "MeshPart",
                           "guid": "9256214",
@@ -315337,14 +315326,6 @@
                           ]
                         },
                         {
-                          "name": "HonourPistol",
-                          "className": "ModuleScript",
-                          "guid": "74542",
-                          "filePaths": [
-                            "sync/ReplicatedStorage/Shared/Library/Classes/GunClasses/HonourPistol.luau"
-                          ]
-                        },
-                        {
                           "name": "HopePistol",
                           "className": "ModuleScript",
                           "guid": "74543",
@@ -399595,6 +399576,659 @@
               "name": "StudioHats",
               "className": "Folder",
               "guid": "15557"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ReplicatedStorage",
+      "className": "ReplicatedStorage",
+      "guid": "235354",
+      "children": [
+        {
+          "name": "Shared",
+          "className": "Folder",
+          "guid": "15666",
+          "children": [
+            {
+              "name": "Assets",
+              "className": "Folder",
+              "guid": "15720",
+              "children": [
+                {
+                  "name": "Guns",
+                  "className": "Folder",
+                  "guid": "15721",
+                  "children": [
+                    {
+                      "name": "Rounds",
+                      "className": "Folder",
+                      "guid": "15724",
+                      "children": [
+                        {
+                          "name": "HellionShotgun_Round",
+                          "className": "MeshPart",
+                          "guid": "4358972",
+                          "children": [
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4358973"
+                            },
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4358974"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "casing",
+                          "className": "Folder",
+                          "children": [
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4359087"
+                            },
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4359305"
+                            },
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4359304"
+                            },
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4359383"
+                            },
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4359735"
+                            },
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4359907"
+                            },
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4359906"
+                            },
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4359996"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "JesseRifle_Round",
+                          "className": "MeshPart",
+                          "guid": "4359085",
+                          "children": [
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4359086"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "AuclairPistol_Round",
+                          "className": "MeshPart",
+                          "guid": "4359204",
+                          "children": [
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4359205"
+                            },
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4359206"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "HonourPistol_Round",
+                          "className": "MeshPart",
+                          "guid": "4359303"
+                        },
+                        {
+                          "name": "Mondragon_Round",
+                          "className": "MeshPart",
+                          "guid": "4359382",
+                          "children": [
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4359384"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "VolkRifle_Round",
+                          "className": "MeshPart",
+                          "guid": "4359474",
+                          "children": [
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4359475"
+                            },
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4359476"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "MpRifle_Round",
+                          "className": "MeshPart",
+                          "guid": "4359553",
+                          "children": [
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4359554"
+                            },
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4359555"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "WhisperRifle_Round",
+                          "className": "MeshPart",
+                          "guid": "4359734",
+                          "children": [
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4359736"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "LeverRifle_Round",
+                          "className": "MeshPart",
+                          "guid": "4359821",
+                          "children": [
+                            {
+                              "name": "bullet",
+                              "className": "MeshPart",
+                              "guid": "4359822"
+                            },
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4359823"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "AdjudicatorRifle_Round",
+                          "className": "MeshPart",
+                          "guid": "4359905"
+                        },
+                        {
+                          "name": "EquineShotgun_Round",
+                          "className": "MeshPart",
+                          "guid": "4359995",
+                          "children": [
+                            {
+                              "name": "Weld",
+                              "className": "Weld",
+                              "guid": "4359997"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "name": "Sounds",
+                      "className": "Folder",
+                      "guid": "15726",
+                      "children": [
+                        {
+                          "name": "HonourPistol",
+                          "className": "Folder",
+                          "guid": "15744",
+                          "children": [
+                            {
+                              "name": "clip_load1",
+                              "className": "Sound",
+                              "guid": "9777011",
+                              "children": [
+                                {
+                                  "name": "clip_place",
+                                  "className": "Sound",
+                                  "guid": "9777016",
+                                  "children": [
+                                    {
+                                      "name": "aimed",
+                                      "className": "Sound",
+                                      "guid": "9777020",
+                                      "children": [
+                                        {
+                                          "name": "open_bolt",
+                                          "className": "Sound",
+                                          "guid": "9777024",
+                                          "children": [
+                                            {
+                                              "name": "check_forward",
+                                              "className": "Sound",
+                                              "guid": "9777028",
+                                              "children": [
+                                                {
+                                                  "name": "clip_remove",
+                                                  "className": "Sound",
+                                                  "guid": "9777033",
+                                                  "children": [
+                                                    {
+                                                      "name": "clip_load2",
+                                                      "className": "Sound",
+                                                      "guid": "9777037",
+                                                      "children": [
+                                                        {
+                                                          "name": "stock",
+                                                          "className": "Sound",
+                                                          "guid": "9777045",
+                                                          "children": [
+                                                            {
+                                                              "name": "grabrounds",
+                                                              "className": "Sound",
+                                                              "guid": "9777052",
+                                                              "children": [
+                                                                {
+                                                                  "name": "fire",
+                                                                  "className": "Sound",
+                                                                  "guid": "9777059",
+                                                                  "children": [
+                                                                    {
+                                                                      "name": "round_place",
+                                                                      "className": "Sound",
+                                                                      "guid": "9777068",
+                                                                      "children": [
+                                                                        {
+                                                                          "name": "close_bolt",
+                                                                          "className": "Sound",
+                                                                          "guid": "9777082",
+                                                                          "children": [
+                                                                            {
+                                                                              "name": "draw",
+                                                                              "className": "Sound",
+                                                                              "guid": "9777091",
+                                                                              "children": [
+                                                                                {
+                                                                                  "name": "check_back",
+                                                                                  "className": "Sound",
+                                                                                  "guid": "9777097",
+                                                                                  "children": [
+                                                                                    {
+                                                                                      "name": "stock_place",
+                                                                                      "className": "Sound",
+                                                                                      "guid": "9777108",
+                                                                                      "children": [
+                                                                                        {
+                                                                                          "name": "fireold",
+                                                                                          "className": "Sound",
+                                                                                          "guid": "9777122"
+                                                                                        }
+                                                                                      ]
+                                                                                    }
+                                                                                  ]
+                                                                                }
+                                                                              ]
+                                                                            }
+                                                                          ]
+                                                                        }
+                                                                      ]
+                                                                    }
+                                                                  ]
+                                                                }
+                                                              ]
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "name": "stock_place",
+                              "className": "Sound",
+                              "guid": "9777108",
+                              "children": [
+                                {
+                                  "name": "fireold",
+                                  "className": "Sound",
+                                  "guid": "9777122"
+                                }
+                              ]
+                            },
+                            {
+                              "name": "close_bolt",
+                              "className": "Sound",
+                              "guid": "9777082",
+                              "children": [
+                                {
+                                  "name": "draw",
+                                  "className": "Sound",
+                                  "guid": "9777091",
+                                  "children": [
+                                    {
+                                      "name": "check_back",
+                                      "className": "Sound",
+                                      "guid": "9777097"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "name": "clip_place",
+                              "className": "Sound",
+                              "guid": "9777016",
+                              "children": [
+                                {
+                                  "name": "aimed",
+                                  "className": "Sound",
+                                  "guid": "9777020",
+                                  "children": [
+                                    {
+                                      "name": "open_bolt",
+                                      "className": "Sound",
+                                      "guid": "9777024",
+                                      "children": [
+                                        {
+                                          "name": "check_forward",
+                                          "className": "Sound",
+                                          "guid": "9777028",
+                                          "children": [
+                                            {
+                                              "name": "clip_remove",
+                                              "className": "Sound",
+                                              "guid": "9777033",
+                                              "children": [
+                                                {
+                                                  "name": "clip_load2",
+                                                  "className": "Sound",
+                                                  "guid": "9777037",
+                                                  "children": [
+                                                    {
+                                                      "name": "stock",
+                                                      "className": "Sound",
+                                                      "guid": "9777045",
+                                                      "children": [
+                                                        {
+                                                          "name": "grabrounds",
+                                                          "className": "Sound",
+                                                          "guid": "9777052",
+                                                          "children": [
+                                                            {
+                                                              "name": "fire",
+                                                              "className": "Sound",
+                                                              "guid": "9777059",
+                                                              "children": [
+                                                                {
+                                                                  "name": "round_place",
+                                                                  "className": "Sound",
+                                                                  "guid": "9777068"
+                                                                }
+                                                              ]
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "name": "aimed",
+                              "className": "Sound",
+                              "guid": "9777020",
+                              "children": [
+                                {
+                                  "name": "open_bolt",
+                                  "className": "Sound",
+                                  "guid": "9777024",
+                                  "children": [
+                                    {
+                                      "name": "check_forward",
+                                      "className": "Sound",
+                                      "guid": "9777028",
+                                      "children": [
+                                        {
+                                          "name": "clip_remove",
+                                          "className": "Sound",
+                                          "guid": "9777033",
+                                          "children": [
+                                            {
+                                              "name": "clip_load2",
+                                              "className": "Sound",
+                                              "guid": "9777037",
+                                              "children": [
+                                                {
+                                                  "name": "stock",
+                                                  "className": "Sound",
+                                                  "guid": "9777045",
+                                                  "children": [
+                                                    {
+                                                      "name": "grabrounds",
+                                                      "className": "Sound",
+                                                      "guid": "9777052",
+                                                      "children": [
+                                                        {
+                                                          "name": "fire",
+                                                          "className": "Sound",
+                                                          "guid": "9777059",
+                                                          "children": [
+                                                            {
+                                                              "name": "round_place",
+                                                              "className": "Sound",
+                                                              "guid": "9777068"
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "name": "clip_load2",
+                              "className": "Sound",
+                              "guid": "9777037",
+                              "children": [
+                                {
+                                  "name": "stock",
+                                  "className": "Sound",
+                                  "guid": "9777045",
+                                  "children": [
+                                    {
+                                      "name": "grabrounds",
+                                      "className": "Sound",
+                                      "guid": "9777052",
+                                      "children": [
+                                        {
+                                          "name": "fire",
+                                          "className": "Sound",
+                                          "guid": "9777059",
+                                          "children": [
+                                            {
+                                              "name": "round_place",
+                                              "className": "Sound",
+                                              "guid": "9777068"
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "name": "round_place",
+                              "className": "Sound",
+                              "guid": "9777068"
+                            },
+                            {
+                              "name": "fire",
+                              "className": "Sound",
+                              "guid": "9777059"
+                            },
+                            {
+                              "name": "grabrounds",
+                              "className": "Sound",
+                              "guid": "9777052"
+                            },
+                            {
+                              "name": "clip_remove",
+                              "className": "Sound",
+                              "guid": "9777033"
+                            },
+                            {
+                              "name": "fireold",
+                              "className": "Sound",
+                              "guid": "9777122"
+                            },
+                            {
+                              "name": "stock",
+                              "className": "Sound",
+                              "guid": "9777045"
+                            },
+                            {
+                              "name": "draw",
+                              "className": "Sound",
+                              "guid": "9777091",
+                              "children": [
+                                {
+                                  "name": "check_back",
+                                  "className": "Sound",
+                                  "guid": "9777097"
+                                }
+                              ]
+                            },
+                            {
+                              "name": "check_forward",
+                              "className": "Sound",
+                              "guid": "9777028"
+                            },
+                            {
+                              "name": "check_back",
+                              "className": "Sound",
+                              "guid": "9777097"
+                            },
+                            {
+                              "name": "open_bolt",
+                              "className": "Sound",
+                              "guid": "9777024"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "Animations",
+                  "className": "Folder",
+                  "guid": "16160",
+                  "children": [
+                    {
+                      "name": "Tools",
+                      "className": "Folder",
+                      "guid": "16176",
+                      "children": [
+                        {
+                          "name": "Guns",
+                          "className": "Folder",
+                          "guid": "16189",
+                          "children": [
+                            {
+                              "name": "HonourPistol",
+                              "className": "Folder",
+                              "guid": "9774380"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Library",
+              "className": "Folder",
+              "guid": "15681",
+              "children": [
+                {
+                  "name": "Classes",
+                  "className": "Folder",
+                  "guid": "15682",
+                  "children": [
+                    {
+                      "name": "GunClasses",
+                      "className": "Folder",
+                      "guid": "15687",
+                      "children": [
+                        {
+                          "name": "HonourPistol",
+                          "className": "ModuleScript",
+                          "guid": "10369395",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/GunClasses/HonourPistol.luau"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }

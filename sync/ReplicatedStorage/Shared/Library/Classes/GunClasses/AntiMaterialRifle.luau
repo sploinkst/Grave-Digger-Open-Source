@@ -18,10 +18,13 @@ local FxFolder = GunAssets.Effects
 local antimaterialAnimations = Assets.Animations.Tools.Guns:FindFirstChild("AntiMaterialRifle")
 local SoundFolder = GunAssets.Sounds:WaitForChild("AntiMaterialRifle")
 
-local FIRE_INTERVAL = 60 / 30
+local FIRE_INTERVAL = 0.5
 local BULLET_SPEED = 1400
+local CYCLE_TIME = 1.2
+local CYCLE_REST_TIME = 0.3
 local HIP_BRACE_SWITCH_TIME = 0.33
-local RELOAD_ROUND_TIME = 5.75 / 6
+local STANDARD_FULL_RELOAD_TIME = 5.75
+local ROOK_FULL_RELOAD_TIME = 4.6
 local HIP_BRACE_CROSSHAIR_SPREAD = 20
 local ANTIMATERIAL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
@@ -42,6 +45,10 @@ local WEAPON_STATS = {
 	aiming_number = 80,
 	bullet_speed = BULLET_SPEED,
 	fire_rate = FIRE_INTERVAL,
+	cycle = CYCLE_TIME,
+	cycle_rest = CYCLE_REST_TIME,
+	post_cycle_delay = CYCLE_REST_TIME,
+	post_reload_delay = 0.15,
 	melee_damage = 105,
 	melee_range = 5,
 	accuracy = 2,
@@ -54,28 +61,15 @@ local ANIM_LAYERS: { [string]: number } = {
 	Aim_Left = 0,
 	Fire = 1,
 	Fire_Left = 1,
-	Fire_Empty = 1,
-	Fire_Empty_Left = 1,
-	Fire_Last = 1,
-	Fire_Last_Left = 1,
-	Hip_Hold = 0,
-	Hip_Aim = 0,
-	Hip_Aim_Left = 0,
-	Hip_Fire = 1,
-	Hip_Fire_Left = 1,
-	Hip_Fire_Empty = 1,
-	Hip_Fire_Empty_Left = 1,
-	Hip_Fire_Last = 1,
-	Hip_Fire_Last_Left = 1,
+	Reload_Bolt = 1,
 	Draw = 2,
-	Unequip = 2,
 	Reload_Start = 2,
 	Reload_Loop = 2,
 	Reload_End = 2,
 	Check = 2,
-	Melee1 = 2,
 	Melee2 = 2,
 	Short = 2,
+	Sprint = 2,
 }
 
 local Antimaterial = {}
@@ -149,44 +143,31 @@ function Antimaterial.new(info: Types.BaseToolCreateInfo): Antimaterial
 	self.animations = {
 		Draw = animation(antimaterialAnimations, { "draw", "Draw" }),
 		Hold = animation(antimaterialAnimations, { "held", "Hold" }),
-		Unequip = animation(antimaterialAnimations, { "unequip", "Unequip" }),
 
 		Aim      = animation(antimaterialAnimations, { "aim", "Aim" }),
 		Aim_Left = animation(antimaterialAnimations, { "aim_left", "Aim_Left" }),
 
 		Fire      = animation(antimaterialAnimations, { "fire", "Fire" }),
 		Fire_Left = animation(antimaterialAnimations, { "fire_left", "Fire_Left" }),
-		Fire_Last = animation(antimaterialAnimations, { "fire_last", "Fire_Last", "fire", "Fire" }),
-		Fire_Last_Left = animation(antimaterialAnimations, { "fire_last_left", "Fire_Last_Left", "fire_left", "Fire_Left" }),
 
-		Cycle = animation(antimaterialAnimations, { "cycle", "Cycle", "reload_bolt", "Reload_Bolt" }),
+		Cycle = animation(antimaterialAnimations, { "cycle" }),
+		Reload_Bolt = animation(antimaterialAnimations, { "reload_bolt" }),
 
-		Reload_Start = animation(antimaterialAnimations, { "reload_start", "Reload_Start" }),
-		Reload_Loop  = animation(antimaterialAnimations, { "reload_loop", "Reload_Loop", "reload_insert", "Reload_Insert", "reload_round", "Reload_Round" }),
-		Reload_End = animation(antimaterialAnimations, { "reload_end", "Reload_End" }),
+		Reload_Start = animation(antimaterialAnimations, { "reload_start" }),
+		Reload_Loop  = animation(antimaterialAnimations, { "reload_loop" }),
+		Reload_End = animation(antimaterialAnimations, { "reload_end" }),
 
-		Check  = animation(antimaterialAnimations, { "check", "Check" }),
-		Melee1 = animation(antimaterialAnimations, { "melee1", "Melee1" }),
-		Melee2 = animation(antimaterialAnimations, { "melee2", "Melee2" }),
+		Check  = animation(antimaterialAnimations, { "check" }),
+		Melee2 = animation(antimaterialAnimations, { "melee2" }),
 
-		Drop  = Assets.Animations.Tools.Misc.Drop_Rifle,
-		Short = animation(antimaterialAnimations, { "short", "Short" }),
-
-		Hip_Hold = animation(antimaterialAnimations, { "locked", "hip_held", "Hip_Hold", "held", "Hold" }),
-		Hip_Aim = animation(antimaterialAnimations, { "alt_changeaim", "hip_aim", "Hip_Aim", "aim", "Aim" }),
-		Hip_Aim_Left = animation(antimaterialAnimations, { "alt_changeaim_left", "hip_aim_left", "Hip_Aim_Left", "aim_left", "Aim_Left" }),
-		Hip_Fire = animation(antimaterialAnimations, { "alt_changefire", "hip_fire", "Hip_Fire", "fire", "Fire" }),
-		Hip_Fire_Left = animation(antimaterialAnimations, { "alt_changefire_left", "hip_fire_left", "Hip_Fire_Left", "fire_left", "Fire_Left" }),
-		Hip_Fire_Last = animation(antimaterialAnimations, { "alt_changefire_last", "hip_fire_last", "Hip_Fire_Last", "fire_last", "Fire_Last", "fire", "Fire" }),
-		Hip_Fire_Last_Left = animation(antimaterialAnimations, { "alt_changefire_last_left", "hip_fire_last_left", "Hip_Fire_Last_Left", "fire_last_left", "Fire_Last_Left", "fire_left", "Fire_Left" }),
+		Short = animation(antimaterialAnimations, { "short" }),
+		Sprint = animation(antimaterialAnimations, { "sprint" }),
 	}
 
 	self.animation_speeds = {
 		Draw = 1 / 1.3,
 		Aim = 1 / 0.5,
 		Aim_Left = 1 / 0.5,
-		Cycle = 1 / FIRE_INTERVAL,
-		Reload_Loop = 1 / ((isRook and 4.6 or 5.75) / 6),
 	}
 
 	self.damage = WEAPON_STATS.damage
@@ -225,6 +206,9 @@ function Antimaterial.new(info: Types.BaseToolCreateInfo): Antimaterial
 	self.Alting = false
 	self.HipBraced = false
 	self.FireInterval = WEAPON_STATS.fire_rate / (isRook and 1.075 or 1)
+	self.CycleTime = WEAPON_STATS.cycle * (isRook and 0.85 or 1)
+	self.CycleRestTime = WEAPON_STATS.cycle_rest
+	self.FullReloadTime = isRook and ROOK_FULL_RELOAD_TIME or STANDARD_FULL_RELOAD_TIME
 	self.IsRook = isRook
 	self._reloadCancelled = false
 	self.unequip_wait = false
@@ -278,32 +262,16 @@ function Antimaterial:endAiming()
 end
 
 function Antimaterial:_aimTrack(): AnimationTrack?
-	if self.HipBraced and self.RegisteredAnimations then
-		return (self.current_shoulder == "Right")
-			and self.RegisteredAnimations.Hip_Aim
-			or self.RegisteredAnimations.Hip_Aim_Left
-	end
 	return BaseRifle._aimTrack(self)
 end
 
 function Antimaterial:_killAimTracks()
 	BaseRifle._killAimTracks(self)
-	local anims = self.RegisteredAnimations
-	if not anims then return end
-	for _, name in ipairs({ "Hip_Aim", "Hip_Aim_Left" }) do
-		local track = anims[name]
-		if track and track.IsPlaying then track:Stop(0.15) end
-	end
 end
 
 -- Use the shared held pose outside ADS, including alternate firing modes.
 
 function Antimaterial:_getFireAnim(): AnimationTrack?
-	if self.HipBraced and self.RegisteredAnimations then
-		return (self.current_shoulder == "Right")
-			and self.RegisteredAnimations.Hip_Fire
-			or self.RegisteredAnimations.Hip_Fire_Left
-	end
 	return BaseRifle._getFireAnim(self)
 end
 
@@ -313,25 +281,13 @@ end
 
 function Antimaterial:fire()
 	local left = self.current_shoulder ~= "Right"
-	local fireAnimation
-	if self.HipBraced then
-		if self.Capacity <= 1 then
-			fireAnimation = left and "Hip_Fire_Last_Left" or "Hip_Fire_Last"
-		else
-			fireAnimation = left and "Hip_Fire_Left" or "Hip_Fire"
-		end
-	else
-		if self.Capacity <= 1 then
-			fireAnimation = left and "Fire_Last_Left" or "Fire_Last"
-		else
-			fireAnimation = left and "Fire_Left" or "Fire"
-		end
-	end
+	local fireAnimation = left and "Fire_Left" or "Fire"
 	local fireSound = self.SoundFolder and self.SoundFolder:FindFirstChild("fire", true)
 	local fired = self:_fireSingleShot({
 		bulletSpeed = self.BulletSpeed,
 		fireAnimation = fireAnimation,
 		sound = fireSound,
+		fireDelay = 0,
 	})
 	if not fired then return end
 
@@ -339,21 +295,83 @@ function Antimaterial:fire()
 	local cycleTrack = self.RegisteredAnimations
 		and self.RegisteredAnimations.Cycle
 		and self:_playAnim("Cycle")
-	local fireInterval = self.FireInterval or FIRE_INTERVAL
-	local effectiveInterval = self:getFireDelay(fireInterval)
-	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / effectiveInterval, 0.01)) end
-	task.wait(effectiveInterval)
+	local cycleTime = self.CycleTime or CYCLE_TIME
+	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / cycleTime, 0.01)) end
+	task.wait(cycleTime + (self.PostCycleDelay or self.CycleRestTime or CYCLE_REST_TIME))
 	self.Cycling = false
 	self:_restoreBaseDeferred()
 end
 
 function Antimaterial:reload()
-	self:_reloadByRound({
-		startAnim = "Reload_Start",
-		loopAnim = "Reload_Loop",
-		endAnim = "Reload_End",
-		loopWait = RELOAD_ROUND_TIME,
-	})
+	if not self.Equipped or self.Reloading or self.Equipping then return end
+	if self.Capacity >= self.Max_Capacity then return end
+
+	local reserveAmmo = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
+	if not reserveAmmo or not reserveAmmo:IsA("NumberValue") then
+		warn(self.className .. ": Cannot reload because Reserve_Ammo is missing")
+		return
+	end
+	if reserveAmmo.Value <= 0 then
+		self:notify("I don't have any more ammo...")
+		self:_restoreBase()
+		return
+	end
+
+	local roundsNeeded = math.min(self.Max_Capacity - self.Capacity, reserveAmmo.Value)
+	if roundsNeeded <= 0 then return end
+
+	local animations = self.RegisteredAnimations
+	local startTrack = animations and animations.Reload_Start
+	local loopTrack = animations and animations.Reload_Loop
+	local endTrack = animations and animations.Reload_End
+	local authoredLength = (startTrack and startTrack.Length or 0)
+		+ (loopTrack and loopTrack.Length or 0) * roundsNeeded
+		+ (endTrack and endTrack.Length or 0)
+	local targetDuration = (self.FullReloadTime or STANDARD_FULL_RELOAD_TIME) * (roundsNeeded / self.Max_Capacity)
+	local speed = authoredLength > 0 and authoredLength / math.max(targetDuration, 0.1) or 1
+
+	self.Reloading = true
+	self._reloadCancelled = false
+	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
+	self:_stopAllExcept()
+
+	if startTrack then
+		local track = self:_playAnim("Reload_Start")
+		if track then
+			track:AdjustSpeed(speed)
+			track.Stopped:Wait()
+		end
+	end
+
+	for _ = 1, roundsNeeded do
+		if not self.Equipped or self._reloadCancelled or reserveAmmo.Value <= 0 then break end
+		if loopTrack then
+			local track = self:_playAnim("Reload_Loop")
+			if track then
+				track:AdjustSpeed(speed)
+				track.Stopped:Wait()
+			end
+		else
+			task.wait(targetDuration / math.max(roundsNeeded, 1))
+		end
+		if self._reloadCancelled then break end
+		self.Capacity += 1
+		self:_fire_ammo(1)
+	end
+
+	if self.Equipped and not self._reloadCancelled and endTrack then
+		local track = self:_playAnim("Reload_End")
+		if track then
+			track:AdjustSpeed(speed)
+			track.Stopped:Wait()
+		end
+	end
+
+	self.Reloading = false
+	self._reloadCancelled = false
+	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
+	self:_blockFireFor(self.PostReloadDelay or 0)
+	self:_restoreBaseDeferred()
 end
 
 function Antimaterial:activate()

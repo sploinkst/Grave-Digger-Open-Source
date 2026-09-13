@@ -8,6 +8,8 @@
 --!optimize 2
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local Types    = require(script.Parent.Parent.Parent.Types)
 local BasePistol = require(script.Parent.Parent.BasePistol)
@@ -29,7 +31,11 @@ local fire_sound  = SoundFolder.fire
 -- // Tuning
 
 local FIRE_RATE    = 0.75
+local BLACK_HAND_FIRE_RATE = 60 / 92
+local FAN_FIRE_RATE = 60 / 170
 local BULLET_SPEED = 800
+local QUICKDRAW_READY_TIME = 0.75
+local QUICKDRAW_HOLD_SPEED = 0.5
 local WEAPON_STATS = {
     name = "'Talon' Army Revolver",
     desc = "A swift revolver with a bite and capable of firing from the hip.",
@@ -61,6 +67,8 @@ local WEAPON_STATS = {
     accuracy = 18,
     moving_accuracy = 38,
     fire_rate = 0.7,
+    black_hand_fire_rate = BLACK_HAND_FIRE_RATE,
+    fan_fire_rate = FAN_FIRE_RATE,
     cycle = 0,
     cycle_rest = 0,
     draw_speed = 0.05,
@@ -81,6 +89,10 @@ local WEAPON_STATS = {
     reload_loop = 1.1,
     reload_loop_after = 0.1,
     reload_end = 0.6,
+    reload_cancel_index_time = 0.3,
+    reload_index_two_time = 0.25,
+    quickdraw_ready_time = QUICKDRAW_READY_TIME,
+    quickdraw_hold_speed = QUICKDRAW_HOLD_SPEED,
     bullet_speed = BULLET_SPEED,
     holster_point = "Torso",
     holsterc0 = CFrame.new(-1.07449341, -0.18704772, -0.313476562, 0.338645965, -0.604027152, 0.721437454, 0.828506589, 0.554849684, 0.0756458044, -0.445981085, 0.572097838, 0.688336194),
@@ -104,18 +116,23 @@ local ANIM_LAYERS: { [string]: number } = {
 	Fire_Left       = 1,
 	Fire_Empty      = 1,
 	Fire_Empty_Left = 1,
+	Hip_Fire        = 1,
+	Hip_Fire_Empty  = 1,
+	Quickdraw_Fire  = 1,
 	Short           = 1,
 	Short_Alt       = 1,
 	Spin            = 1,
 	Spin_Start      = 1,
+	Quickdraw       = 1,
+	Quickdraw_Start = 1,
 
 	Draw         = 2,
-	Unequip      = 2,
 	Check        = 2,
-	Melee1       = 2,
-	Melee2       = 2,
 	Reload_Start = 2,
+	Reload_Start_Vet = 2,
 	Reload_Loop  = 2,
+	Reload_Loop_After = 2,
+	Reload_Loop_After_Twice = 2,
 	Reload_End   = 2,
 }
 
@@ -245,7 +262,6 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	self.animations = {
 		Hold    = animation("hipfire", "GraceRevolver_Held"),
 		Draw    = animation("ocelot_draw_spin", "GraceRevolver_Draw"),
-		Unequip = animation("reload_end", "GraceRevolver_Unequip"),
 
 		Aim      = animation("hipfire", "GraceRevolver_Aim"),
 		Aim_Left = animation("akimbo_fire", "GraceRevolver_Aim_left"),
@@ -254,21 +270,26 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 		Fire_Left       = animation("stock_fire_left", "GraceRevolver_Fire_Left"),
 		Fire_Empty      = animation("stock_fire_empty", "GraceRevolver_Fire_Empty"),
 		Fire_Empty_Left = animation("stock_fire_empty_left", "GraceRevolver_Fire_Empty_Left"),
+		Hip_Fire        = animation("fire"),
+		Hip_Fire_Empty  = animation("fire_empty"),
+		Quickdraw_Fire  = animation("quickdraw"),
 
 		Short     = animation("fire", "GraceRevolver_Short"),
 		Short_Alt = animation("akimbo_fire", "GraceRevolver_Short_alt"),
 
 		Spin       = animation("akimbo_saa_spins", "GraceRevolver_Spin"),
 		Spin_Start = animation("quickdraw_start", "GraceRevolver_Spin_start"),
+		Quickdraw       = animation("quickdraw"),
+		Quickdraw_Start = animation("quickdraw_start"),
 
 		Reload_Start      = animation("reload_start", "GraceRevolver_Reload_start"),
+		Reload_Start_Vet  = animation("reload_start_vet") or animation("reload_start", "GraceRevolver_Reload_start"),
 		Reload_Loop       = animation("reload_loop", "GraceRevolver_Reload_loop"),
 		Reload_Loop_After = animation("reload_loop_after", "GraceRevolver_Reload_loop_after"),
+		Reload_Loop_After_Twice = animation("reload_loop_after_twic") or animation("reload_loop_after_twice") or animation("reload_loop_after", "GraceRevolver_Reload_loop_after"),
 		Reload_End        = animation("reload_end", "GraceRevolver_Reload_end"),
 
 		Check  = animation("check", "GraceRevolver_Check"),
-		Melee1 = animation("quickdraw", "GraceRevolver_Melee1"),
-		Melee2 = animation("quickdraw", "GraceRevolver_Melee2"),
 
 		Drop = Assets.Animations.Tools.Misc.Drop_Pistol,
 	}
@@ -278,12 +299,16 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 		Melee2            = 1.43,
 		Fire              = 1.33,
 		Fire_Left         = 1.33,
+		Hip_Fire          = 1 / FAN_FIRE_RATE,
+		Hip_Fire_Empty    = 1 / FAN_FIRE_RATE,
 		Draw              = 1 / WEAPON_STATS.draw_speed,
 		Aim               = 1 / WEAPON_STATS.aim_speed,
 		Aim_Left          = 1 / WEAPON_STATS.aim_speed,
 		Reload_Start      = 1 / WEAPON_STATS.reload_start,
+		Reload_Start_Vet  = 1 / WEAPON_STATS.reload_start,
 		Reload_Loop       = 1 / WEAPON_STATS.reload_loop,
 		Reload_Loop_After = 1 / WEAPON_STATS.reload_loop_after,
+		Reload_Loop_After_Twice = 1 / WEAPON_STATS.reload_index_two_time,
 		Reload_End        = 1 / WEAPON_STATS.reload_end,
 	}
 
@@ -313,6 +338,11 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 
 	self.SoundFolder             = SoundFolder
 	self.FireInterval            = WEAPON_STATS.fire_rate
+	local localPlayer = RunService:IsClient() and Players.LocalPlayer or nil
+	local character = localPlayer and localPlayer.Character
+	if character and character:FindFirstChild("perk") and character.perk.Value == "blackhand" then
+		self.FireInterval = WEAPON_STATS.black_hand_fire_rate
+	end
 
 	self.unequip_wait     = false
 	self.Aiming           = false
@@ -322,6 +352,10 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	self.Meleeing         = false
 	self._reloadCancelled = false
 	self._spinCancelled   = false
+	self.Quickdrawing     = false
+	self._quickdrawReady  = false
+	self._quickdrawCancelled = false
+	self._cylinderIndexOffset = 0
 
 	self.FireEmissions = {
 		flash = {
@@ -371,13 +405,13 @@ end
 
 function TalonRevolver:setAltMode()
 	if not self.Equipped then return end
-	task.spawn(function() self:spin() end)
+	task.spawn(function() self:quickdraw() end)
 end
 
 -- // isBusy override (Spinning counts)
 
 function TalonRevolver:_isBusy(): boolean
-	return self.Firing or self.Reloading or self.Spinning or self.Meleeing or self.Checking
+	return self.Firing or self.Reloading or self.Spinning or self.Meleeing or self.Checking or self.Quickdrawing
 end
 
 -- // Actions
@@ -388,6 +422,62 @@ function TalonRevolver:_cancelSpin()
 	if not anims then return end
 	if anims.Spin       and anims.Spin.IsPlaying       then anims.Spin:Stop(0)       end
 	if anims.Spin_Start and anims.Spin_Start.IsPlaying then anims.Spin_Start:Stop(0) end
+end
+
+function TalonRevolver:_cancelQuickdraw()
+	self._quickdrawCancelled = true
+	local anims = self.RegisteredAnimations
+	if not anims then return end
+	for _, name in ipairs({ "Quickdraw", "Quickdraw_Start" }) do
+		local track = anims[name]
+		if track and track.IsPlaying then track:Stop(0.2) end
+	end
+end
+
+function TalonRevolver:quickdraw()
+	if not self.Equipped or self:_isBusy() or self.Capacity <= 0 then return end
+	self.Quickdrawing = true
+	self._quickdrawReady = false
+	self._quickdrawCancelled = false
+	self:_stopAllExcept()
+
+	local startTrack = self:_playAnim("Quickdraw_Start")
+	if startTrack then
+		task.wait(self.quickdraw_ready_time or WEAPON_STATS.quickdraw_ready_time)
+	end
+	if not self.Equipped or self._quickdrawCancelled then
+		self.Quickdrawing = false
+		self._quickdrawReady = false
+		self._quickdrawCancelled = false
+		self:_restoreBaseDeferred()
+		return
+	end
+
+	local holdTrack = self:_playAnim("Quickdraw")
+	if holdTrack then
+		holdTrack:AdjustSpeed(self.quickdraw_hold_speed or WEAPON_STATS.quickdraw_hold_speed)
+	end
+	self._quickdrawReady = true
+	while self.Equipped and self._quickdrawReady and not self._quickdrawCancelled do
+		task.wait()
+	end
+
+	self.Quickdrawing = false
+	self._quickdrawReady = false
+	self._quickdrawCancelled = false
+	self:_restoreBaseDeferred()
+end
+
+function TalonRevolver:get_spread(muzzle: BasePart, shootDirection: Vector3): Vector3
+	if self._quickdrawShot then return shootDirection end
+	if self._fanFiring then
+		local spread = 75
+		local random = Random.new()
+		local horizontal = random:NextNumber(-spread, spread) / 1000
+		local vertical = random:NextNumber(-spread, spread) / 1000
+		return (shootDirection + muzzle.CFrame.RightVector * horizontal + muzzle.CFrame.UpVector * vertical).Unit
+	end
+	return BasePistol.get_spread(self, muzzle, shootDirection)
 end
 
 function TalonRevolver:spin()
@@ -413,16 +503,39 @@ end
 
 function TalonRevolver:fire()
 	if self.Spinning then self:_cancelSpin() end
+	if self.Quickdrawing then self:_cancelQuickdraw() end
 
-	local fireAnim  = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
-	self:_fireSingleShot({
+	local quickdrawShot = self._quickdrawReady == true
+	local fanFiring = quickdrawShot or not self.Aiming
+	local left = self.current_shoulder ~= "Right"
+	local fireAnim
+	if fanFiring then
+		fireAnim = self.Capacity <= 1 and "Hip_Fire_Empty" or "Hip_Fire"
+		if quickdrawShot and self.RegisteredAnimations and self.RegisteredAnimations.Quickdraw_Fire then
+			fireAnim = "Quickdraw_Fire"
+		end
+	else
+		fireAnim = if self.Capacity <= 1
+			then (left and "Fire_Empty_Left" or "Fire_Empty")
+			else (left and "Fire_Left" or "Fire")
+	end
+
+	self._fanFiring = fanFiring
+	self._quickdrawShot = quickdrawShot
+	local fired = self:_fireSingleShot({
 		bulletSpeed = self.BulletSpeed,
 		distance = 1000,
 		fireAnimation = fireAnim,
 		sound = fire_sound,
-		soundPitchVariation = self.Alt_Mode and 0.5 or nil,
-		fireDelay = self.FireInterval,
+		soundPitchVariation = fanFiring and 0.5 or nil,
+		fireDelay = if fanFiring then (self.fan_fire_rate or WEAPON_STATS.fan_fire_rate) else self.FireInterval,
+		requireAiming = not fanFiring,
 	})
+	self._fanFiring = false
+	self._quickdrawShot = false
+	if fired and quickdrawShot then
+		self:_blockFireFor(self.fan_fire_rate or WEAPON_STATS.fan_fire_rate)
+	end
 end
 
 function TalonRevolver:reload()
@@ -430,8 +543,12 @@ function TalonRevolver:reload()
 
 	if self.Spinning then self:_cancelSpin() end
 
-	self.RegisteredAnimations["Reload_Start"]:AdjustWeight(1)
-	self.RegisteredAnimations["Reload_Loop"]:AdjustWeight(1)
+	local anims = self.RegisteredAnimations
+	if not anims then return end
+	if self.Quickdrawing then self:_cancelQuickdraw() end
+
+	if anims.Reload_Start then anims.Reload_Start:AdjustWeight(1) end
+	if anims.Reload_Loop then anims.Reload_Loop:AdjustWeight(1) end
 	self:_set_sprint_arms(true)
 	self:_stopLayer(2)
 
@@ -439,15 +556,25 @@ function TalonRevolver:reload()
 	self._reloadCancelled = false
 
 	game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
-	self:_playAnim("Reload_Start").Stopped:Wait()
+	local character = game.Players.LocalPlayer.Character
+	local startName = if character and character:FindFirstChild("perk") and character.perk.Value == "vet" and anims.Reload_Start_Vet
+		then "Reload_Start_Vet"
+		else "Reload_Start"
+	local startTrack = self:_playAnim(startName)
+	if startTrack then startTrack.Stopped:Wait() end
 	self.Capacity = 0
 
 	while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
-		self:_playAnim("Reload_Loop").Stopped:Wait()
+		local loopTrack = self:_playAnim("Reload_Loop")
+		if loopTrack then loopTrack.Stopped:Wait() end
 		if self._reloadCancelled then break end
 		self.Capacity += 1
 		self:_fire_ammo(1)
-		self:_playAnim("Reload_Loop_After").Stopped:Wait()
+		self._cylinderIndexOffset = (self._cylinderIndexOffset + 1) % self.Max_Capacity
+		if self.Capacity < self.Max_Capacity then
+			local afterTrack = self:_playAnim("Reload_Loop_After")
+			if afterTrack then afterTrack.Stopped:Wait() end
+		end
 	end
 
 	if not self._reloadCancelled then
@@ -470,9 +597,18 @@ function TalonRevolver:reload()
 			cylinder_motor.C0 = CFrame.new(pos)
 		end
 	else
-		local anims = self.RegisteredAnimations
 		if anims.Reload_Loop  and anims.Reload_Loop.IsPlaying  then anims.Reload_Loop:Stop(0)  end
 		if anims.Reload_Start and anims.Reload_Start.IsPlaying then anims.Reload_Start:Stop(0) end
+		local missingIndexes = math.max(0, self.Max_Capacity - self.Capacity)
+		while missingIndexes >= 2 do
+			local indexTrack = self:_playAnim("Reload_Loop_After_Twice")
+			if indexTrack then indexTrack.Stopped:Wait() else task.wait(self.reload_index_two_time or WEAPON_STATS.reload_index_two_time) end
+			missingIndexes -= 2
+		end
+		if missingIndexes == 1 then
+			local indexTrack = self:_playAnim("Reload_Loop_After")
+			if indexTrack then indexTrack.Stopped:Wait() else task.wait(self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time) end
+		end
 	end
 
 	self.Reloading        = false
@@ -480,17 +616,18 @@ function TalonRevolver:reload()
 	self:_restoreBaseDeferred()
 	self:_set_sprint_arms(false)
 	game.Players.LocalPlayer:SetAttribute("CantUnequip", false)
+	self:_blockFireFor(self.PostReloadDelay or 0)
 end
 
 function TalonRevolver:activate()
 	if not self.actual_model then return end
-	if self:_isBusy() or self.Firing then return end
-
-	if self.Aiming then
-		self:fire()
-	else
-		self:melee()
+	if self.Reloading then
+		self._reloadCancelled = true
+		return
 	end
+	if (self:_isBusy() and not self.Quickdrawing) or self.Firing then return end
+
+	self:fire()
 end
 
 -- // Lifecycle hooks
@@ -516,6 +653,7 @@ function TalonRevolver:_on_unequip()
 	self:_disconnectInput()
 	self:_stopShoulderTracking()
 	self:_cancelSpin()
+	self:_cancelQuickdraw()
 	self:_stopLayer(2)
 	self:_stopAimTracking()
 	self:_resetMotor6D()
@@ -524,6 +662,7 @@ function TalonRevolver:_on_unequip()
 	self.Firing    = false
 	self.Reloading = false
 	self.Spinning  = false
+	self.Quickdrawing = false
 
 	local char = game.Players.LocalPlayer.Character
 	if char then

@@ -47,6 +47,26 @@ local LEAN_ARM_OFFSET  = 0.35
 local LEAN_LERP_SPEED  = 6
 
 local LEAN_TORSO_ROLL = math.rad(12)
+
+local function get_prince_animation(name: string): Animation?
+	local animations = Assets:FindFirstChild("Animations")
+	local tools = animations and animations:FindFirstChild("Tools")
+	local guns = tools and tools:FindFirstChild("Guns")
+	local prince = guns and guns:FindFirstChild("PrinceRifle")
+	local clip = prince and prince:FindFirstChild(name)
+	if clip and clip:IsA("Animation") then
+		return clip
+	end
+	return nil
+end
+
+local function should_use_prince_hold(self, hold: Animation?): boolean
+	if not self.IsFirearm then return false end
+	local category = self.WeaponCategory
+	if category ~= "Rifle" and category ~= "Shotgun" then return false end
+	if not hold then return true end
+	return string.lower(hold.Name) == "locked"
+end
 -- // Class
 
 local BaseTool = {}
@@ -169,6 +189,18 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 	self._setLeftAiming = setLeftAiming
 
 	if self.animations then
+		if self.IsFirearm and not self.animations.Draw then
+			local princeDraw = get_prince_animation("PrinceRifle_Draw")
+			if princeDraw then
+				self.animations.Draw = princeDraw
+			end
+		end
+		if should_use_prince_hold(self, self.animations.Hold) then
+			local princeHold = get_prince_animation("PrinceRifle_Held")
+			if princeHold then
+				self.animations.Hold = princeHold
+			end
+		end
 		self.RegisteredAnimations = utilities_module.register_animations(LOCAL_PLAYER, self.animations, self.AnimationGunType)
 		if not self.RegisteredAnimations then
 			warn("[" .. self.className .. "] Failed to register animations")

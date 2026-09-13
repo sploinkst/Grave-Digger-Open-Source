@@ -24,6 +24,7 @@ local BULLET_SPEED = 900
 local HIP_BRACE_SWITCH_TIME = 0.33
 local RELOAD_ROUND_TIME = 9.56 / 11
 local HIP_BRACE_CROSSHAIR_SPREAD = 20
+local CUT = 0.06
 local WEAPON_STATS = {
 	name = "'Crestfall' Lever Rifle",
 	desc = "Lethal and fast firing rifle, excelling at close to mid range duels.",
@@ -43,6 +44,7 @@ local WEAPON_STATS = {
 	fire_rate = 0.7,
 	cycle = 0,
 	cycle_rest = 0,
+	post_reload_delay = 0.15,
 	draw_speed = 0.75,
 	aim_speed = 0.275,
 	recoil = 8,
@@ -58,6 +60,13 @@ local WEAPON_STATS = {
 	reload_empty = 1.9,
 	reload_loop = 0.8,
 	reload_end = 0,
+	bullet_speed = BULLET_SPEED,
+}
+local WALKING_FIRE_STATS = {
+	accuracy = 35,
+	moving_accuracy = 35,
+	movement = 0.5,
+	firing_movement = 0.5,
 }
 local CRESTFALL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 	* CFrame.Angles(0, 0, math.rad(90))
@@ -128,6 +137,12 @@ local function get_holster_reference(model_reference: Model?): Model?
 	return holster
 end
 
+local function animation(name: string): Animation?
+	local found = crestfallAnimations and crestfallAnimations:FindFirstChild(name)
+	if found and found:IsA("Animation") then return found end
+	return nil
+end
+
 function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	local self = setmetatable(BaseRifle.new(info), Crestfall)
 
@@ -148,37 +163,31 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 
 	self.AnimationGunType = "lever"
 	self.animations = {
-		Draw = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
-		Hold = crestfallAnimations.held,
-		Unequip = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
+		Draw = animation("draw"),
+		Hold = animation("held"),
 
-		Aim      = crestfallAnimations.aim,
-		Aim_Left = crestfallAnimations.aim_left,
+		Aim      = animation("aim"),
+		Aim_Left = animation("aim_left"),
 
-		Fire      = crestfallAnimations.fire,
-		Fire_Left = crestfallAnimations.fire_left,
+		Fire      = animation("fire"),
+		Fire_Left = animation("fire_left"),
 
-		Reload_Empty = crestfallAnimations.reload_empty,
-		Reload_Start = crestfallAnimations.reload_start,
-		Reload_Loop  = crestfallAnimations.reload_loop,
+		Reload_Empty = animation("reload_empty"),
+		Reload_Start = animation("reload_start"),
+		Reload_Loop  = animation("reload_loop"),
 
-		Check  = crestfallAnimations.check,
-		Melee1 = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
-		Melee2 = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Melee2,
+		Check = animation("check"),
 
-		Drop  = crestfallAnimations.Parent.Parent.Misc.Drop_Rifle,
-		Short = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Short,
-
-		Hip_Hold = crestfallAnimations.locked,
-		Hip_Aim = crestfallAnimations.alt_changeaim,
-		Hip_Aim_Left = crestfallAnimations.alt_changeaim_left,
-		Hip_Fire = crestfallAnimations.alt_changefire,
-		Hip_Fire_Left = crestfallAnimations.alt_changeaim_left,
-		Hip_Fire_Empty = crestfallAnimations.alt_changefire_empty,
-		Hip_Fire_Empty_Left = crestfallAnimations.alt_changefire_empty_left,
-		Hip_Fire_Last = crestfallAnimations.alt_changefire_last,
-		Hip_Fire_Last_Left = crestfallAnimations.alt_changefire_last_left,
-		Reload_Empty_Vet_Old = crestfallAnimations.reload_empty_vet,
+		Hip_Hold = animation("locked"),
+		Hip_Aim = animation("alt_changeaim"),
+		Hip_Aim_Left = animation("alt_changeaim_left"),
+		Hip_Fire = animation("alt_changefire"),
+		Hip_Fire_Left = animation("alt_changefire_left"),
+		Hip_Fire_Empty = animation("alt_changefire_empty"),
+		Hip_Fire_Empty_Left = animation("alt_changefire_empty_left"),
+		Hip_Fire_Last = animation("alt_changefire_last"),
+		Hip_Fire_Last_Left = animation("alt_changefire_last_left"),
+		Reload_Empty_Vet_Old = animation("reload_empty_vet"),
 	}
 
 	self.animation_speeds = {
@@ -201,7 +210,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	self.KnockBack_Force = 10
 	self.Aiming_Number = 75
 	self.MuzzlePartName = "muzzle"
-	self.BulletSpeed = BULLET_SPEED
+	self.BulletSpeed = WEAPON_STATS.bullet_speed
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
 	self.Short_Distance = 3.5
@@ -209,7 +218,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	self.Melee_Damage = WEAPON_STATS.melee_damage
 	self.Accuracy = WEAPON_STATS.accuracy
 	self.Moving_Accuracy = WEAPON_STATS.moving_accuracy
-	self.HipBraceAccuracy = self.Accuracy * 1.3
+	self.HipBraceAccuracy = WALKING_FIRE_STATS.accuracy
 	self.SoundFolder = SoundFolder
 	self.FireInterval = WEAPON_STATS.fire_rate
 
@@ -280,6 +289,17 @@ function Crestfall:setAltMode()
 		return
 	end
 	self.HipBraced = not self.HipBraced
+	if self.HipBraced then
+		self.Accuracy = WALKING_FIRE_STATS.accuracy
+		self.Moving_Accuracy = WALKING_FIRE_STATS.moving_accuracy
+		self.movement = WALKING_FIRE_STATS.movement
+		self.firing_movement = WALKING_FIRE_STATS.firing_movement
+	else
+		self.Accuracy = WEAPON_STATS.accuracy
+		self.Moving_Accuracy = WEAPON_STATS.moving_accuracy
+		self.movement = WEAPON_STATS.movement
+		self.firing_movement = WEAPON_STATS.firing_movement
+	end
 	self:_killAimTracks()
 	local hipAim = self:_aimTrack()
 	if self.HipBraced and self.Aiming and hipAim then hipAim:Play(CUT) end
@@ -343,17 +363,18 @@ end
 function Crestfall:fire()
 	local left = self.current_shoulder ~= "Right"
 	local fireAnimation
+	local animations = self.RegisteredAnimations
 	if self.HipBraced then
-		if self.Capacity <= 1 then
+		if self.Capacity <= 1 and animations and (left and animations.Hip_Fire_Last_Left or animations.Hip_Fire_Last) then
 			fireAnimation = left and "Hip_Fire_Last_Left" or "Hip_Fire_Last"
 		else
-			fireAnimation = left and "Hip_Fire_Left" or "Hip_Fire"
+			fireAnimation = left and animations and animations.Hip_Fire_Left and "Hip_Fire_Left" or "Hip_Fire"
 		end
 	else
-		if self.Capacity <= 1 then
+		if self.Capacity <= 1 and animations and (left and animations.Fire_Last_Left or animations.Fire_Last) then
 			fireAnimation = left and "Fire_Last_Left" or "Fire_Last"
 		else
-			fireAnimation = left and "Fire_Left" or "Fire"
+			fireAnimation = left and animations and animations.Fire_Left and "Fire_Left" or "Fire"
 		end
 	end
 	local fireSound = self.SoundFolder and self.SoundFolder:FindFirstChild("fire")
@@ -361,18 +382,10 @@ function Crestfall:fire()
 		bulletSpeed = self.BulletSpeed,
 		fireAnimation = fireAnimation,
 		sound = fireSound,
+		fireDelay = self.FireInterval or WEAPON_STATS.fire_rate,
 	})
 	if not fired then return end
 
-	self.Cycling = true
-	local cycleTrack = self.RegisteredAnimations
-		and self.RegisteredAnimations.Cycle
-		and self:_playAnim("Cycle")
-	local fireInterval = self.FireInterval or FIRE_INTERVAL
-	local effectiveInterval = self:getFireDelay(fireInterval)
-	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / effectiveInterval, 0.01)) end
-	task.wait(effectiveInterval)
-	self.Cycling = false
 	self:_restoreBaseDeferred()
 end
 

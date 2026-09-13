@@ -83,6 +83,8 @@ local FIREARM_CONFIG = {
 	fire_rate = FIRE_RATE,
 	cycle = 0.55,
 	cycle_rest = 0.15,
+	post_cycle_delay = 0.15,
+	post_reload_delay = 0.15,
 	draw_speed = 0.75,
 	aim_speed = 0.35,
 	wound = 1,
@@ -180,7 +182,7 @@ local FIREARM_CONFIG = {
 	Melee_Damage = 80,
 	Accuracy = 6,
 	Moving_Accuracy = 100,
-	CycleDelay = FIRE_RATE + CYCLE_REST_TIME,
+	CycleDelay = FIRE_RATE,
 	CycleAnimation = "Cycle",
 
 	unequip_wait = false,
@@ -322,8 +324,9 @@ function PrinceRifle:fire()
 	local fired = self:_fireSingleShot({
 		bulletSpeed = self.BulletSpeed,
 		consumeCapacity = self.Alt_Mode,
-		sound = fire_sound,
+		sound = self.FireSound,
 		soundPitchVariation = self.Alt_Mode and 0.5 or nil,
+		fireDelay = if self.Alt_Mode then 0 else (self.FireInterval or self.fire_rate),
 	})
 	if not fired then return end
 
@@ -331,7 +334,7 @@ function PrinceRifle:fire()
 	if self.Alt_Mode then self:_cycleAction() end
 
 	self.CantFire = true
-	task.delay(CYCLE_REST_TIME, function()
+	task.delay(self.PostCycleDelay or self.cycle_rest or CYCLE_REST_TIME, function()
 		self.CantFire = false
 	end)
 end

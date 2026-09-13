@@ -12,7 +12,6 @@ local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
-local rifleFallback = Assets.Animations.Tools.Guns:FindFirstChild("PrinceRifle")
 local Animations = Assets.Animations.Tools.Guns.AdjudicatorRifle
 
 local assetSounds = Assets:FindFirstChild("Sounds")
@@ -29,6 +28,8 @@ local VETERAN_RELOAD_TIME = 2.5
 local STANDARD_FAILED_RELOAD_TIME = 4.25
 local VETERAN_FAILED_RELOAD_TIME = 3
 local BOLT_CATCH_FAILURE_CHANCE = 0.4
+local ALT_SWITCH_TIME = 0.3
+local CUT = 0.06
 local WEAPON_STATS = {
 	name = "'Adjudicator' Repeating Rifle",
 	desc = "Semi automatic clip fed rifle firing a rifle sized cartridge.",
@@ -48,6 +49,7 @@ local WEAPON_STATS = {
 	fire_rate = 0.475,
 	cycle = 0,
 	cycle_rest = 0,
+	post_reload_delay = 0.15,
 	draw_speed = 0.8,
 	aim_speed = 0.4,
 	recoil = 8,
@@ -66,6 +68,15 @@ local WEAPON_STATS = {
 	require_full_load = true,
 }
 
+local WALKING_FIRE_STATS = {
+	recoil = 5,
+	accuracy = 30,
+	moving_accuracy = 50,
+	aim_speed = 0.3,
+	movement = 1,
+	firing_movement = 0.5,
+}
+
 local ANIM_LAYERS: { [string]: number } = {
 	Hold = 0,
 	Aim = 0,
@@ -77,15 +88,11 @@ local ANIM_LAYERS: { [string]: number } = {
 	Fire_Left = 1,
 	Hip_Fire = 1,
 	Hip_Fire_Left = 1,
-	Draw = 2,
-	Unequip = 2,
 	Reload_Start = 2,
+	Reload_Start_Vet = 2,
 	Reload_End = 2,
 	Reload_End_Locked = 2,
 	Check = 2,
-	Melee1 = 2,
-	Melee2 = 2,
-	Short = 2,
 }
 
 local AdjudicatorRifle = {}
@@ -156,30 +163,24 @@ function AdjudicatorRifle.new(info: Types.BaseToolCreateInfo): AdjudicatorRifle
 
 	self.AnimationGunType = "rsc"
 	self.animations = {
-		Hold = Animations.Parent.PrinceRifle.PrinceRifle_Held,
-		Draw = Animations.Parent.PrinceRifle.PrinceRifle_Draw,
-		Unequip = Animations.Parent.PrinceRifle.PrinceRifle_Unequip,
+		Hold = Animations.locked,
 		Aim = Animations.aim,
 		Aim_Left = Animations.aim_left,
 		Fire = Animations.fire,
 		Fire_Left = Animations.fire_left,
 		Hip_Hold = Animations.locked,
 		Hip_Aim = Animations.alt_changeaim,
-		Hip_Aim_Left = Animations.aim_left,
+		Hip_Aim_Left = Animations.alt_changeaim_left,
 		Hip_Fire = Animations.alt_changefire,
 		Hip_Fire_Left = Animations.alt_changefire_left,
 		Reload_Start = veteran and Animations.reload_start_vet or Animations.reload_start,
+		Reload_Start_Vet = Animations.reload_start_vet,
 		Reload_End = Animations.reload_end,
 		Reload_End_Locked = Animations.reload_end_locked,
 		Check = Animations.check,
-		Melee1 = Animations.Parent.PrinceRifle.PrinceRifle_Melee1,
-		Melee2 = Animations.Parent.PrinceRifle.PrinceRifle_Melee2,
-		Short = Animations.Parent.PrinceRifle.PrinceRifle_Short,
-		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 
 	self.animation_speeds = {
-		Draw = 1 / (blackHand and 0.65 or WEAPON_STATS.draw_speed),
 		Aim = 1 / (blackHand and 0.34 or WEAPON_STATS.aim_speed),
 		Aim_Left = 1 / (blackHand and 0.34 or WEAPON_STATS.aim_speed),
 		Hip_Aim = 1 / (blackHand and 0.26 or 0.3),
@@ -226,7 +227,60 @@ function AdjudicatorRifle:_damageAtDistance(distance: number): number
 end
 
 function AdjudicatorRifle:setAltMode()
-	CrestfallRifle.setAltMode(self)
+	if not self.Equipped or self:_isBusy() then return end
+	self.Alting = true
+
+	self.HipBraced = not self.HipBraced
+	self:_killAimTracks()
+	local hipAim = self:_aimTrack()
+	if self.HipBraced and self.Aiming and hipAim then hipAim:Play(CUT) end
+
+	if self.HipBraced then
+		self.recoil = WALKING_FIRE_STATS.recoil
+		self.Accuracy = WALKING_FIRE_STATS.accuracy
+		self.Moving_Accuracy = WALKING_FIRE_STATS.moving_accuracy
+		self.aim_speed = WALKING_FIRE_STATS.aim_speed
+		self.movement = WALKING_FIRE_STATS.movement
+		self.firing_movement = WALKING_FIRE_STATS.firing_movement
+		self.FixedAimingSpread = self.Aiming and self.HipBraceAccuracy or nil
+	else
+		self.recoil = WEAPON_STATS.recoil
+		self.Accuracy = WEAPON_STATS.accuracy
+		self.Moving_Accuracy = WEAPON_STATS.moving_accuracy
+		self.aim_speed = WEAPON_STATS.aim_speed
+		self.movement = WEAPON_STATS.movement
+		self.firing_movement = WEAPON_STATS.firing_movement
+		self.FixedAimingSpread = nil
+	end
+
+	if self.Aiming then
+		self:_enable_aiming_ui(self.Aiming_Number)
+	end
+
+	self:notify(self.HipBraced and "Walking Fire" or "Shouldered Fire")
+	task.wait(ALT_SWITCH_TIME)
+	self.Alting = false
+end
+
+function AdjudicatorRifle:fire()
+	local left = self.current_shoulder ~= "Right"
+	local fireAnimation
+	if self.HipBraced then
+		fireAnimation = left and "Hip_Fire_Left" or "Hip_Fire"
+	else
+		fireAnimation = left and "Fire_Left" or "Fire"
+	end
+
+	local fireSound = self.SoundFolder and self.SoundFolder:FindFirstChild("fire")
+	local fired = self:_fireSingleShot({
+		bulletSpeed = self.BulletSpeed,
+		fireAnimation = fireAnimation,
+		sound = fireSound,
+		fireDelay = self.FireInterval or WEAPON_STATS.fire_rate,
+	})
+	if not fired then return end
+
+	self:_restoreBaseDeferred()
 end
 
 function AdjudicatorRifle:reload()
@@ -259,6 +313,7 @@ function AdjudicatorRifle:reload()
 	self.Reloading = false
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
+	self:_blockFireFor(self.PostReloadDelay or 0)
 	self:_restoreBaseDeferred()
 end
 
