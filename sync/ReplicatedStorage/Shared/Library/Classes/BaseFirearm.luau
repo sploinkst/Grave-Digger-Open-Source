@@ -378,6 +378,16 @@ function BaseFirearm:_damageAtDistance(distance: number): number
 	return self.far_damage or self.range_damage or self.damage
 end
 
+function BaseFirearm:_rangeBandAtDistance(distance: number): string
+	if self.range and distance <= self.range then
+		return "Close"
+	end
+	if self.far and distance <= self.far then
+		return "FirstFalloff"
+	end
+	return "SecondFalloff"
+end
+
 -- Empty firearms only make a mechanical click. Keep this in the firearm base so
 -- every controller follows the same rule and cannot accidentally play recoil.
 function BaseFirearm:_dryFire(): boolean
@@ -426,17 +436,26 @@ function BaseFirearm:_onBulletHit(cast, result, velocity, muzzle, penetrationLev
 
 	local instance  = result.Instance
 	local direction = cast.UserData.Direction :: Vector3
+	local metadata = cast.UserData
+	if metadata then
+		local origin = metadata.Origin
+		if typeof(origin) == "Vector3" then
+			local distance = (result.Position - origin).Magnitude
+			metadata.ImpactDistance = distance
+			metadata.RangeBand = self:_rangeBandAtDistance(distance)
+		end
+	end
 
 	local hitModel    = instance:FindFirstAncestorOfClass("Model")
 	local isCharacter = hitModel and hitModel:FindFirstChildOfClass("Humanoid")
 
 	if isCharacter then
 		-- Apply damage to the character.
-		self:_applyHit(result, damage, direction, knockback_force, cast.UserData)
+		self:_applyHit(result, damage, direction, knockback_force, metadata)
 		return
 	end
 
-	self:_applyHit(result, damage, direction, knockback_force, cast.UserData)
+	self:_applyHit(result, damage, direction, knockback_force, metadata)
 
 	-- // if roblox terrain return
 	if instance:IsDescendantOf(workspace.Terrain) then
@@ -456,10 +475,15 @@ function BaseFirearm:_applyHit(result: RaycastResult, damage: number, direction:
 		Direction = direction,
 		WeaponName = self.className,
 		ArmorPenetration = self.Armor_Penetration_Level,
+		PenetrationLevel = self.Penetration_Level,
+		RangeBand = metadata and metadata.RangeBand,
+		ImpactDistance = metadata and metadata.ImpactDistance,
 		HeadshotMultiplier = self.HeadshotMultiplier,
 		ShotId = metadata and metadata.ShotId,
 		PelletIndex = metadata and metadata.PelletIndex,
 		PelletCount = metadata and metadata.PelletCount,
+		HipFire = metadata and metadata.HipFire,
+		AmmoBeforeShot = metadata and metadata.AmmoBeforeShot,
 	}, damage, knockback_force)
 end
 
@@ -532,7 +556,7 @@ function BaseFirearm:_getAimedShot(muzzle: BasePart, distance: number?): (Vector
 	return shootDir, result
 end
 
-function BaseFirearm:_fireCastFromMuzzle(muzzle: BasePart, direction: Vector3, bulletSpeed: number)
+function BaseFirearm:_fireCastFromMuzzle(muzzle: BasePart, direction: Vector3, bulletSpeed: number, metadata: any?)
 	local activeCast = self.Caster:Fire(muzzle.Position, direction, bulletSpeed, self.CasterBehavior)
 	activeCast.UserData = {
 		Direction = direction,
@@ -540,6 +564,11 @@ function BaseFirearm:_fireCastFromMuzzle(muzzle: BasePart, direction: Vector3, b
 		Origin = muzzle.Position,
 		Shooter = LOCAL_PLAYER,
 	}
+	if metadata then
+		for key, value in pairs(metadata) do
+			activeCast.UserData[key] = value
+		end
+	end
 
 	self:_connect_FastCast(muzzle.Position, direction, bulletSpeed, {
 		bulletTemplate = ReplicatedStorage.Shared.Assets.Guns.Effects.Bullet,
@@ -580,7 +609,14 @@ function BaseFirearm:_fireSingleShot(options): boolean
 	if not direction then return false end
 
 	self.Firing = true
-	self:_fireCastFromMuzzle(muzzle, direction, options and options.bulletSpeed or self.BulletSpeed or 1000)
+	local ammoBeforeShot = self.Capacity
+	local shotMetadata = options and options.metadata
+	if shotMetadata then
+		shotMetadata.AmmoBeforeShot = ammoBeforeShot
+	else
+		shotMetadata = { AmmoBeforeShot = ammoBeforeShot }
+	end
+	self:_fireCastFromMuzzle(muzzle, direction, options and options.bulletSpeed or self.BulletSpeed or 1000, shotMetadata)
 	if not options or options.consumeCapacity ~= false then
 		self.Capacity -= options and options.capacityCost or 1
 	end

@@ -301,6 +301,7 @@ function JesseRifle:setAltMode()
 		self:notify("I don't have any rifle grenades...")
 		return
 	end
+	
 	if self.Aiming then self:endAiming() end
 	self.LoadingGrenade = true
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)

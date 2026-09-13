@@ -8,6 +8,12 @@ local StatusTable = {}
 function StatusService.GiveStatus(player, status, ...)
 	local args = { ... }
 	print("Giving status:", player.Name, status, args)
+	if status ~= "DreadnoughtStatus" then
+		local character = player.Character
+		if character and character:GetAttribute("StatusImmune") == true then
+			return
+		end
+	end
 
 	local statusModuleScript = StatusFolder:FindFirstChild(status)
 	if not statusModuleScript then

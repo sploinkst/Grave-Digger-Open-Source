@@ -687,6 +687,31 @@ local transparency_table = {
 
 local transparency_connections  = {}
 local original_transparencies   = {}
+local original_local_transparencies = {}
+
+local function is_helmet_view_part(part: BasePart): boolean
+	local current: Instance? = part
+	while current do
+		if current:GetAttribute("ClassHelmet")
+			or current:GetAttribute("HelmetSpent")
+			or current.Name == "ClassHelmet"
+			or string.find(current.Name, "Helmet", 1, true)
+			or string.find(current.Name, "helmet", 1, true) then
+			return true
+		end
+		current = current.Parent
+	end
+	return false
+end
+
+local function restore_local_helmet_transparency()
+	for part, modifier in pairs(original_local_transparencies) do
+		if part and part.Parent then
+			part.LocalTransparencyModifier = modifier
+		end
+	end
+	original_local_transparencies = {}
+end
 
 local function should_hide(part)
 	if transparency_table[part.Name] or part.Name == "Handle" then
@@ -722,6 +747,14 @@ end
 local function handle_object(part, isFirstPerson)
 	if not part:IsA("BasePart") then return end
 	if part:GetAttribute("Transparency_Skip") then return end
+
+	if is_helmet_view_part(part) then
+		if original_local_transparencies[part] == nil then
+			original_local_transparencies[part] = part.LocalTransparencyModifier
+		end
+		part.LocalTransparencyModifier = if isFirstPerson then 1 else original_local_transparencies[part]
+		return
+	end
 
 	local hide        = should_hide(part)
 	local parent      = part.Parent
@@ -813,6 +846,7 @@ local function first_person_transparency(character: Instance, isFirstPerson: boo
 	-- When leaving first person, restore ONLY parts we personally hid,
 	-- then bail out without touching anything else or setting up watchers.
 	if not isFirstPerson then
+		restore_local_helmet_transparency()
 		for part, originalTransparency in pairs(original_transparencies) do
 			if part and part.Parent then
 				TweenService:Create(part, first_person_transparency_tween, { Transparency = originalTransparency }):Play()
@@ -1063,7 +1097,7 @@ function BaseCamera:FirstPerson()
 		self:_applyTransition(root, targetCFrame, dt)
 
 		InputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-	end)
+	end) 
 end
 
 function BaseCamera:OverTheShoulder()
@@ -1210,6 +1244,11 @@ end
 -- // CAMERA SWITCHING
 
 function BaseCamera:Switch_Camera(target: string)
+	local character = LocalPlayer.Character
+	if target ~= "FirstPerson" and character and character:GetAttribute("ForceFirstPerson") == true then
+		target = "FirstPerson"
+	end
+	
 	if not Presets[target] then return end
 
 	local look = Camera.CFrame.LookVector
@@ -1407,6 +1446,7 @@ function BaseCamera:End()
 		connection:Disconnect()
 		transparency_connections[part] = nil
 	end
+	restore_local_helmet_transparency()
 end
 
 function BaseCamera:Cut()

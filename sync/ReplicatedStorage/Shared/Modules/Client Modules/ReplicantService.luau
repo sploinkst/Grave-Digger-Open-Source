@@ -1375,7 +1375,10 @@ function Module.HandleSfxReplication(...)
 	local args = { ... }
 	local player = args[1]
 	local soundInstance = args[2]
-	if player == "BeginRound" then
+	if player == "DreadnoughtMusic" then
+		MusicService.PlayDreadnought(soundInstance)
+		return
+	elseif player == "BeginRound" then
 		local clone
 		if game.Players.LocalPlayer.Team.Name == "Golden Empire" then
 			clone = EmpireStart:Clone()

@@ -50,6 +50,7 @@ Classes.EliteDefinitions = {
 	-- with the standard firearm controllers in GunClasses.
 	["Storm Trooper"] = { Primary = "StormRifle", Secondary = "GraceRevolver", RequiredClass = "Soldat", OutfitClass = "Soldat" },
 	["Anti-Material Trooper"] = { Primary = "AntiMaterialRifle", Secondary = "GraceRevolver", RequiredClass = "Rook", OutfitClass = "Rook" },
+	OcelotTrooper = { Primary = "", Secondary = "TalonRevolver", RequiredClass = "Officer", OutfitClass = "Officer", RequiresUnlock = "OcelotTrooper" },
 }
 
 function Classes.Get(name)
@@ -118,6 +119,15 @@ function Classes.GetElite(name)
 		end
 	end
 	return nil
+end
+
+function Classes.CanUseElite(player: Player, eliteName: string): boolean
+	local elite, canonicalName = Classes.GetElite(eliteName)
+	if not elite or not canonicalName then return false end
+	if not elite.RequiresUnlock then return true end
+	if player:GetAttribute(elite.RequiresUnlock .. "Unlocked") == true then return true end
+	local unlocked = player:FindFirstChild("UnlockedShockTroopers")
+	return unlocked ~= nil and unlocked:FindFirstChild(elite.RequiresUnlock) ~= nil
 end
 
 return Classes

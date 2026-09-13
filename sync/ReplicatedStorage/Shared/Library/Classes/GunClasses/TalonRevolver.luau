@@ -33,6 +33,8 @@ local fire_sound  = SoundFolder.fire
 local FIRE_RATE    = 0.75
 local BLACK_HAND_FIRE_RATE = 60 / 92
 local FAN_FIRE_RATE = 60 / 170
+local OCELOT_FIRE_RATE = 60 / 170
+local OCELOT_HIP_SPREAD = 25
 local BULLET_SPEED = 800
 local QUICKDRAW_READY_TIME = 0.75
 local QUICKDRAW_HOLD_SPEED = 0.5
@@ -340,6 +342,7 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	self.FireInterval            = WEAPON_STATS.fire_rate
 	local localPlayer = RunService:IsClient() and Players.LocalPlayer or nil
 	local character = localPlayer and localPlayer.Character
+	local isOcelotTrooper = character and character:GetAttribute("EliteClass") == "OcelotTrooper"
 	if character and character:FindFirstChild("perk") and character.perk.Value == "blackhand" then
 		self.FireInterval = WEAPON_STATS.black_hand_fire_rate
 	end
@@ -383,6 +386,16 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	
 	self:_initShoulderTracking()
 	self:applyFirearmConfig(WEAPON_STATS)
+	if isOcelotTrooper then
+		self.FireInterval = OCELOT_FIRE_RATE
+		self.fire_rate = OCELOT_FIRE_RATE
+		self.fan_fire_rate = OCELOT_FIRE_RATE
+		self.Accuracy = 0
+		self.Moving_Accuracy = OCELOT_HIP_SPREAD
+		self.OcelotHipSpread = OCELOT_HIP_SPREAD
+		self.Starting_Reserve_Ammo = 20000
+		self.Max_Reserve_Ammo = 20000
+	end
 	self.FireSound = fire_sound
 	self.SoundFolder = SoundFolder
 
@@ -471,7 +484,7 @@ end
 function TalonRevolver:get_spread(muzzle: BasePart, shootDirection: Vector3): Vector3
 	if self._quickdrawShot then return shootDirection end
 	if self._fanFiring then
-		local spread = 75
+		local spread = self.OcelotHipSpread or 75
 		local random = Random.new()
 		local horizontal = random:NextNumber(-spread, spread) / 1000
 		local vertical = random:NextNumber(-spread, spread) / 1000
@@ -530,6 +543,9 @@ function TalonRevolver:fire()
 		soundPitchVariation = fanFiring and 0.5 or nil,
 		fireDelay = if fanFiring then (self.fan_fire_rate or WEAPON_STATS.fan_fire_rate) else self.FireInterval,
 		requireAiming = not fanFiring,
+		metadata = {
+			HipFire = fanFiring and not quickdrawShot,
+		},
 	})
 	self._fanFiring = false
 	self._quickdrawShot = false

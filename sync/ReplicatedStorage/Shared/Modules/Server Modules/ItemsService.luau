@@ -130,6 +130,7 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 	-- quotes/spaces and must not be used for GunClasses lookup on the client.
 	tool.Name = class_item
 	tool.TextureId = object.item_image or ""
+	tool:SetAttribute("EquipInstantly", object.EquipInstantly == true or object.InstantEquip == true)
 
 	tool.RequiresHandle = false
 	tool.CanBeDropped = false
@@ -353,8 +354,8 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 				string_value.Value = true
 			end
 
-			if player.Character.CharacterData.Equipment:FindFirstChild(object.model_reference.Name) then
-				player.Character.CharacterData.Equipment:FindFirstChild(object.model_reference.Name):Destroy()
+			if player.Character:WaitForChild("CharacterData").Equipment:FindFirstChild(object.model_reference.Name) then
+				player.Character:WaitForChild("CharacterData").Equipment:FindFirstChild(object.model_reference.Name):Destroy()
 			end
 
 			if object.Round then

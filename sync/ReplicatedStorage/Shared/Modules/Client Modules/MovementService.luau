@@ -116,6 +116,22 @@ local function getOrderSpeedMultiplier()
 	return Character:GetAttribute("OrderSpeedMultiplier") or 1
 end
 
+local function getMovementSpeedMultiplier()
+	if not Character then
+		return 1
+	end
+
+	return Character:GetAttribute("MovementSpeedMultiplier") or 1
+end
+
+local function getSprintSpeedMultiplier()
+	if not Character then
+		return 1
+	end
+
+	return Character:GetAttribute("SprintSpeedMultiplier") or 1
+end
+
 local function isAiming()
 	return Character
 		and Character:GetAttribute("Aiming") == true
@@ -139,10 +155,11 @@ local function getAimingSpeed()
 		return BaseSpeed
 			* RestrictedSpeedMultiplier
 			* orderSpeed
+			* getMovementSpeedMultiplier()
 	end
 
 	-- Special tools that explicitly allow normal movement while aiming.
-	return BaseSpeed * orderSpeed
+	return BaseSpeed * orderSpeed * getMovementSpeedMultiplier()
 end
 
 local function getNormalSpeed()
@@ -152,9 +169,10 @@ local function getNormalSpeed()
 		return BaseSpeed
 			* RestrictedSpeedMultiplier
 			* orderSpeed
+			* getMovementSpeedMultiplier()
 	end
 
-	return BaseSpeed * orderSpeed
+	return BaseSpeed * orderSpeed * getMovementSpeedMultiplier()
 end
 
 local function setSprintAttribute(state: boolean)
@@ -819,12 +837,16 @@ local function sprintLoop()
 			local elapsed =
 				tick() - SprintTicker
 
-			local t =
-				math.clamp(
+			local t
+			if Character:GetAttribute("InstantSprintAcceleration") == true then
+				t = 1
+			else
+				t = math.clamp(
 					elapsed / SprintRampTime,
 					0,
 					1
 				)
+			end
 
 			-- FINAL AIM CHECK BEFORE WALK SPEED WRITE
 			if isAiming() then
@@ -849,6 +871,8 @@ local function sprintLoop()
 			local sprintWalkSpeed =
 				(BaseSpeed + sprintSpeed)
 				* getOrderSpeedMultiplier()
+				* getMovementSpeedMultiplier()
+				* getSprintSpeedMultiplier()
 
 			-- One last protection against an aiming state
 			-- changing during this iteration.

@@ -238,7 +238,8 @@ local function ApplyUniform(character: Model, player: Player)
 	shirt.Parent = character
 	local pants = pantsTemplate:Clone()
 	pants.Parent = character
-	ClassAppearance.Apply(character, player.Team and player.Team.Name, character:GetAttribute("Class") or "Soldat")
+	local outfitClass = if character:GetAttribute("IsDreadnought") then "dread" else character:GetAttribute("Class") or "Soldat"
+	ClassAppearance.Apply(character, player.Team and player.Team.Name, outfitClass)
 end
 
 local function ApplyFullAppearance(character: Model, player: Player)
@@ -442,7 +443,7 @@ local function HandleCharacter(player: Player, character: Model, ragdollObject)
 	local humanoid: Humanoid = character:WaitForChild("Humanoid")
 	humanoid.BreakJointsOnDeath = false
 
-	local maxHealth = character:GetAttribute("IsShockTrooper") and 300 or 200
+	local maxHealth = if character:GetAttribute("IsDreadnought") then 11000 elseif character:GetAttribute("IsShockTrooper") then 300 else 200
 	humanoid.MaxHealth = maxHealth
 	humanoid.Health = maxHealth
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
@@ -506,6 +507,7 @@ local function SetupPlayer(player: Player)
 	local ragdollObject = RagdollStatus.new()
 
 	player.CharacterAdded:Connect(function(character)
+		player:SetAttribute("CantUnequip", nil)
 		HandleCharacter(player, character, ragdollObject)
 		StatusService.RemoveAllStatuses(player)
 	end)

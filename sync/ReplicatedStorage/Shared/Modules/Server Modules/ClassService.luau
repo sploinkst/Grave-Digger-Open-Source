@@ -2,10 +2,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Classes = require(ReplicatedStorage.Shared.Library.ClassDefinitions)
 local Service = {}
 local Players = game:GetService("Players")
-local intel = ReplicatedStorage.Shared.Library.Events:FindFirstChild("ClassIntel")
+local events = ReplicatedStorage.Shared.Library.Events
+local intel = events:FindFirstChild("ClassIntel")
 if not intel then
 	intel = Instance.new("RemoteEvent"); intel.Name = "ClassIntel"
-	intel.Parent = ReplicatedStorage.Shared.Library.Events
+	intel.Parent = events
 end
 local function hasPerk(player, name)
 	if player:GetAttribute(name) then return true end
@@ -33,6 +34,25 @@ local function weight(name)
 	if not source or not source:IsA("ModuleScript") then return 0 end
 	local ok, item = pcall(require, source)
 	return ok and type(item.Weight) == "number" and item.Weight or 0
+end
+
+local function maxToolAmmo(tool: Tool?)
+	if not tool then return end
+	local reserve = tool:FindFirstChild("Reserve_Ammo")
+	local maximum = tool:FindFirstChild("Max_Ammo")
+	if reserve and reserve:IsA("NumberValue") then reserve.Value = 20000 end
+	if maximum and maximum:IsA("NumberValue") then maximum.Value = 20000 end
+end
+
+local function findSound(name: string): Sound?
+	local soundsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Sounds")
+	local gunsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Guns")
+	local gunSounds = gunsFolder and gunsFolder:FindFirstChild("Sounds")
+	for _, root in { soundsFolder, gunSounds } do
+		local sound = root and root:FindFirstChild(name, true)
+		if sound and sound:IsA("Sound") then return sound end
+	end
+	return nil
 end
 
 local function setValue(parent: Instance, className: string, name: string, value: any)
@@ -129,14 +149,47 @@ function Service.ApplySpawn(player, character)
 	local definition = Classes.Get(name)
 	local eliteName = player:GetAttribute("ShockTrooper")
 	local elite = type(eliteName) == "string" and Classes.GetElite(eliteName) or nil
+	local isDreadnought = player:GetAttribute("PendingDreadnought") == true
+	if isDreadnought then
+		player:SetAttribute("PendingDreadnought", nil)
+		player:SetAttribute("Dreadnought", nil)
+		events.Sounds:FireAllClients("DreadnoughtMusic", player.Team and player.Team.Name or "")
+		eliteName = nil
+		elite = nil
+	end
 	character:SetAttribute("Class", name)
 	local runtimeClass = character:FindFirstChild("class")
 	if runtimeClass and runtimeClass:IsA("StringValue") then runtimeClass.Value = name end
 	character:SetAttribute("EliteClass", eliteName)
 	character:SetAttribute("IsShockTrooper", elite ~= nil)
-	character:SetAttribute("ClassOutfit", if elite then elite.OutfitClass or elite.RequiredClass else name)
+	character:SetAttribute("IsDreadnought", isDreadnought)
+	if isDreadnought then
+		character:SetAttribute("ClassOutfit", "dread")
+		character:SetAttribute("ForceFirstPerson", true)
+		character:SetAttribute("CanSprint", false)
+		character:SetAttribute("StatusImmune", true)
+		character:SetAttribute("GasImmune", true)
+		local marker = Instance.new("BoolValue")
+		marker.Name = "dreadnought"
+		marker.Value = true
+		marker.Parent = character
+	end
+	if not isDreadnought then
+		character:SetAttribute("ClassOutfit", if elite then elite.OutfitClass or elite.RequiredClass else name)
+	end
+	if eliteName == "OcelotTrooper" then
+		character:SetAttribute("MovementSpeedMultiplier", 1.15)
+		character:SetAttribute("SprintSpeedMultiplier", 1.25)
+		character:SetAttribute("InstantSprintAcceleration", true)
+		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		local theme = findSound("theme")
+		if rootPart and theme then
+			events.Sounds:FireAllClients(player, theme, rootPart, theme.PlaybackSpeed, theme.Volume, 0, 0)
+		end
+	end
+
 	publishCharacterData(player, character, name, equipment)
-	character:SetAttribute("InventoryWeight", definition.MaxWeight)
+	character:SetAttribute("InventoryWeight", if isDreadnought then 0 else definition.MaxWeight)
 	character:SetAttribute("OfficerOrderCapacity", if name == "Officer" and hasPerk(player, "Survivalist") then 2 else 1)
 	for _, attribute in {"DrawSpeed", "AimSpeed", "SpreadMultiplier", "CaptureWeight", "AllyHealHealth",
 		"SurgerySpeed", "MobileSurgery", "SuppressionImmune", "MeleeDamageMultiplier"} do
@@ -146,9 +199,9 @@ function Service.ApplySpawn(player, character)
 	local loadout = Classes.GetLoadout(player, name)
 	local primary = loadout and loadout:FindFirstChild("Primary")
 	local secondary = loadout and loadout:FindFirstChild("Secondary")
-	local primaryName = if elite then elite.Primary else definition.FixedPrimary or (primary and primary.Value or "PrinceRifle")
-	local secondaryName = if elite then elite.Secondary else if definition.NoFirearms then "" else (secondary and secondary.Value or "")
-	if not elite then
+	local primaryName = if isDreadnought then "BrowningMachineGun" elseif elite then elite.Primary else definition.FixedPrimary or (primary and primary.Value or "PrinceRifle")
+	local secondaryName = if isDreadnought then "" elseif elite then elite.Secondary else if definition.NoFirearms then "" else (secondary and secondary.Value or "")
+	if not elite and not isDreadnought then
 		if weight(primaryName) > definition.MaxWeight and not definition.FixedPrimary then primaryName = "" end
 		if weight(primaryName) + weight(secondaryName) > definition.MaxWeight then secondaryName = "" end
 	end
@@ -157,14 +210,39 @@ function Service.ApplySpawn(player, character)
 	character:SetAttribute("ClassSnapshotReady", true)
 end
 
-function Service.SetShockTrooper(player: Player, eliteName: string): (boolean, string)
+function Service.SetShockTrooper(player: Player, eliteName: string, bypassRequirements: boolean?): (boolean, string)
 	local elite, canonicalName = Classes.GetElite(eliteName)
 	if not elite or not canonicalName then
 		return false, "Unknown Shock Trooper kit: " .. eliteName
 	end
+	if not bypassRequirements and not Classes.CanUseElite(player, canonicalName) then
+		return false, canonicalName .. " has not been unlocked."
+	end
+	if not bypassRequirements and elite.RequiredClass and Classes.Selected(player) ~= elite.RequiredClass then
+		return false, canonicalName .. " requires " .. elite.RequiredClass .. "."
+	end
 	player:SetAttribute("ShockTrooper", canonicalName)
 	if player.Character then player:LoadCharacter() end
 	return true, canonicalName
+end
+
+function Service.UnlockShockTrooper(player: Player, eliteName: string): boolean
+	local elite, canonicalName = Classes.GetElite(eliteName)
+	if not elite or not canonicalName then return false end
+	local unlocked = player:FindFirstChild("UnlockedShockTroopers")
+	if not unlocked then
+		unlocked = Instance.new("Folder")
+		unlocked.Name = "UnlockedShockTroopers"
+		unlocked.Parent = player
+	end
+	if not unlocked:FindFirstChild(canonicalName) then
+		local marker = Instance.new("BoolValue")
+		marker.Name = canonicalName
+		marker.Value = true
+		marker.Parent = unlocked
+	end
+	player:SetAttribute(canonicalName .. "Unlocked", true)
+	return true
 end
 
 function Service.ClearShockTrooper(player: Player)
@@ -179,28 +257,34 @@ function Service.GiveLoadout(player, character)
 	character:SetAttribute("ClassEquipmentGranted", true)
 	local definition = Classes.Get(character:GetAttribute("Class"))
 	local Items = require(script.Parent.ItemsService)
-	local names = {character:GetAttribute("ClassPrimary") or "", character:GetAttribute("ClassSecondary") or "",
-		"Compass", "Medkit"}
-	for _, name in definition.Tools do table.insert(names, name) end
+	local names
+	if character:GetAttribute("IsDreadnought") then
+		names = { character:GetAttribute("ClassPrimary") or "BrowningMachineGun" }
+	else
+		names = {character:GetAttribute("ClassPrimary") or "", character:GetAttribute("ClassSecondary") or "",
+			"Compass", "Medkit"}
+		for _, name in definition.Tools do table.insert(names, name) end
+	end
 	local given = {}
 	for _, name in names do
 		if player.Character ~= character or not character.Parent then return end
-		if name ~= "" and not given[name] then
-			given[name] = true
-			local source = findItemController(name)
-			if source then
-				local ok, err = pcall(Items.give_item, player, name)
-				if not ok then warn("[Classes] Could not grant " .. name .. ": " .. tostring(err)) end
-				if character:GetAttribute("IsShockTrooper") then
-					local tool = player.Backpack:FindFirstChild(name)
-					local reserve = tool and tool:FindFirstChild("Reserve_Ammo")
-					local maximum = tool and tool:FindFirstChild("Max_Ammo")
-					if reserve and reserve:IsA("NumberValue") then reserve.Value = 20000 end
-					if maximum and maximum:IsA("NumberValue") then maximum.Value = 20000 end
-				end
-			else
-				warn("[Classes] Missing item controller: " .. name)
-			end
+		if name == "" or given[name] then continue end
+
+		given[name] = true
+		local source = findItemController(name)
+		if not source then
+			warn("[Classes] Missing item controller: " .. name)
+			continue
+		end
+
+		local ok, err = pcall(Items.give_item, player, name)
+		if not ok then
+			warn("[Classes] Could not grant " .. name .. ": " .. tostring(err))
+			continue
+		end
+
+		if character:GetAttribute("IsShockTrooper") or character:GetAttribute("IsDreadnought") then
+			maxToolAmmo(player.Backpack:FindFirstChild(name))
 		end
 	end
 	local toolsLoaded = character:FindFirstChild("tools_loaded")

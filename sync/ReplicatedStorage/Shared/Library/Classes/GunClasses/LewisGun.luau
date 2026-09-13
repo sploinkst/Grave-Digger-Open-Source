@@ -1,4 +1,4 @@
-return require(script.Parent.LegacyGunFactory).create({
+return require(script.Parent.LegacyGunFactory).create({ -- THIS IS THE BULWARK WEAPON
 	className = "LewisGun",
 	assetName = "lewis",
 	AnimationGunType = "lewis",

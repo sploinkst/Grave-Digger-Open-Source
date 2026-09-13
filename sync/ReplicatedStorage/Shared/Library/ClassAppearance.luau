@@ -38,6 +38,15 @@ function Appearance.GetOutfit(teamName: string?, className: string?, isElite: bo
 	return if class and class:IsA("Folder") then class else nil
 end
 
+local function getEliteTorso(className: string?): Instance?
+	local assets = ReplicatedStorage.Shared:FindFirstChild("Assets")
+	local outfits = childIgnoreCase(assets, "outfits")
+	local elites = outfits and (childIgnoreCase(outfits, "elites") or childIgnoreCase(outfits, "elite"))
+	if not elites then return nil end
+	local key = string.lower(className or "Soldat") .. "_elitetorso"
+	return childIgnoreCase(elites, key)
+end
+
 local function attachModel(character: Model, clone: Model, helmet: boolean)
 	local primary = if helmet then (childIgnoreCase(clone, "helmet") :: BasePart?) else nil
 	if primary and not primary:IsA("BasePart") then primary = nil end
@@ -174,10 +183,150 @@ local function attachPart(character: Model, clone: BasePart, helmet: boolean): b
 	return true
 end
 
+local function attachRigGroup(character: Model, source: Instance): boolean
+	local anchor = character:FindFirstChild(source.Name)
+	if not anchor or not anchor:IsA("BasePart") then return false end
+
+	local clone = source:Clone()
+	clone:SetAttribute("ClassAppearance", true)
+	clone.Parent = character:FindFirstChild("CharacterData")
+		and character.CharacterData:FindFirstChild("Equipment")
+		or character
+
+	local parts = {}
+	for _, descendant in clone:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.Anchored = false
+			descendant.CanCollide = false
+			descendant.CanQuery = false
+			descendant.CanTouch = false
+			descendant.Massless = true
+			table.insert(parts, descendant)
+		elseif descendant:IsA("JointInstance") then
+			descendant:SetAttribute("ClassAppearance", true)
+		end
+	end
+
+	if #parts == 0 then
+		clone:Destroy()
+		return false
+	end
+
+	for _, part in parts do
+		if part.Name == anchor.Name then
+			part.Transparency = 1
+			part.CanTouch = false
+			part.CanQuery = false
+			part.CanCollide = false
+		else
+			local weld = Instance.new("Weld")
+			weld.Name = "DreadArmourWeld"
+			weld.Part0 = anchor
+			weld.Part1 = part
+			weld.C0 = anchor.CFrame:ToObjectSpace(part.CFrame)
+			weld.Parent = anchor
+			weld:SetAttribute("ClassAppearance", true)
+		end
+	end
+
+	return true
+end
+
+local function attachRigOutfit(character: Model, container: Instance): boolean
+	local equipped = false
+	for _, group in container:GetChildren() do
+		if attachRigGroup(character, group) then
+			equipped = true
+		end
+	end
+	return equipped
+end
+
+local function attachEliteTorso(character: Model, className: string?): boolean
+	local source = getEliteTorso(className)
+	if not source then return false end
+
+	local torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+	if not torso or not torso:IsA("BasePart") then return false end
+
+	local clone = source:Clone()
+	clone:SetAttribute("ClassAppearance", true)
+	clone.Name = "EliteTorso"
+	clone.Parent = character:FindFirstChild("CharacterData")
+		and character.CharacterData:FindFirstChild("Equipment")
+		or character
+
+	local parts = {}
+	local rootPart: BasePart?
+	if clone:IsA("BasePart") then
+		rootPart = clone
+		table.insert(parts, clone)
+	else
+		rootPart = (clone :: Instance):FindFirstChild("Torso", true) :: BasePart?
+			or (clone :: Instance):FindFirstChildWhichIsA("BasePart", true)
+		if not rootPart and clone:IsA("Model") then
+			rootPart = clone.PrimaryPart
+		end
+		for _, descendant in clone:GetDescendants() do
+			if descendant:IsA("BasePart") then
+				table.insert(parts, descendant)
+			elseif descendant:IsA("JointInstance") or descendant:IsA("Constraint") then
+				descendant:SetAttribute("ClassAppearance", true)
+			end
+		end
+	end
+
+	if not rootPart or #parts == 0 then
+		clone:Destroy()
+		return false
+	end
+
+	local rootCFrame = rootPart.CFrame
+	local offsets = {}
+	for _, part in parts do
+		offsets[part] = rootCFrame:ToObjectSpace(part.CFrame)
+	end
+
+	if clone:IsA("Model") then
+		clone.PrimaryPart = rootPart
+		clone:PivotTo(torso.CFrame * rootCFrame:ToObjectSpace(clone:GetPivot()))
+	else
+		rootPart.CFrame = torso.CFrame
+	end
+
+	for _, part in parts do
+		part.Anchored = false
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+		part.Massless = true
+		part:SetAttribute("ClassAppearance", true)
+		if part ~= rootPart then
+			part.CFrame = rootPart.CFrame * offsets[part]
+			local weld = Instance.new("Weld")
+			weld.Name = "EliteTorsoInternalWeld"
+			weld.Part0 = rootPart
+			weld.Part1 = part
+			weld.C0 = offsets[part]
+			weld.Parent = rootPart
+			weld:SetAttribute("ClassAppearance", true)
+		end
+	end
+
+	local weld = Instance.new("Weld")
+	weld.Name = "EliteTorsoWeld"
+	weld.Part0 = torso
+	weld.Part1 = rootPart
+	weld.Parent = torso
+	weld:SetAttribute("ClassAppearance", true)
+
+	return true
+end
+
 -- Some exported kits (Nation Soldat) keep their head rig as sibling parts.
 -- Clone the folder together before regrouping so cross-part weld references
 -- point at cloned parts, never at the source outfit or separate loose clones.
-local function attachFlatHelmet(character: Model, outfit: Folder): boolean
+local function attachFlatHelmet(character: Model, outfit: Folder, className: string): boolean
 	local sourceHead = outfit:FindFirstChild("Head")
 	local sourceShell = outfit:FindFirstChild("knock")
 	if not sourceHead or not sourceHead:IsA("BasePart") or not sourceShell or not sourceShell:IsA("BasePart") then return false end
@@ -185,6 +334,8 @@ local function attachFlatHelmet(character: Model, outfit: Folder): boolean
 	local assembly = Instance.new("Model")
 	assembly.Name = "ClassHelmet"
 	assembly:SetAttribute("ClassAppearance", true)
+	assembly:SetAttribute(className .. "Helmet", true)
+	if className == "Lancer" then assembly:SetAttribute("Unknockable", true) end
 	for _, child in copied:GetChildren() do
 		if child:IsA("BasePart") or child:IsA("JointInstance") or child:IsA("Constraint") then
 			child.Parent = assembly
@@ -252,6 +403,7 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 		return
 	end
 	helmetDebug("apply", "team=", tostring(teamName), "class=", tostring(className), "outfit=", outfit:GetFullName())
+	local helmetClassName = className or "Soldat"
 
 	for _, child in character:GetDescendants() do
 		if child:GetAttribute("ClassAppearance") then child:Destroy() end
@@ -259,13 +411,18 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 	restoreHair(character)
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local flatHelmet = attachFlatHelmet(character, outfit)
+	local flatHelmet = attachFlatHelmet(character, outfit, helmetClassName)
 	local helmetEquipped = flatHelmet
+	local nestedOutfit = childIgnoreCase(outfit, "outfit")
+	if nestedOutfit then
+		attachRigOutfit(character, nestedOutfit)
+	end
 	-- Class kits are deliberately flat: pants, shirt, helmet and any class
 	-- accessories live directly under outfits/<team>/<class>.  Walking every
 	-- descendant made model kits unreliable because their internal mesh/weld
 	-- hierarchy could be mistaken for a second outfit item.
 	for _, source in outfit:GetChildren() do
+		if source == nestedOutfit then continue end
 		if flatHelmet and (source:IsA("BasePart") or source:IsA("JointInstance") or source:IsA("Constraint")) then continue end
 		if Appearance.DebugHelmets then helmetDebug("outfit child", source.Name, source.ClassName, "isHelmet=", isHelmet(source)) end
 		if source:IsA("Shirt") or source:IsA("Pants") or source:IsA("ShirtGraphic") then
@@ -280,7 +437,8 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 			clone:SetAttribute("ClassAppearance", true)
 			if isHelmet(clone) then
 				helmetEquipped = true
-				if className == "Lancer" then clone:SetAttribute("Unknockable", true) end
+				if helmetClassName == "Lancer" then clone:SetAttribute("Unknockable", true) end
+				clone:SetAttribute(helmetClassName .. "Helmet", true)
 			end
 			humanoid:AddAccessory(clone)
 		elseif source:IsA("Model") then
@@ -288,15 +446,24 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 			clone:SetAttribute("ClassAppearance", true)
 			local helmet = isHelmet(clone)
 			if helmet then helmetDebug("found model helmet", source:GetFullName()) end
-			if helmet and className == "Lancer" then clone:SetAttribute("Unknockable", true) end
+			if helmet then
+				if helmetClassName == "Lancer" then clone:SetAttribute("Unknockable", true) end
+				clone:SetAttribute(helmetClassName .. "Helmet", true)
+			end
 			if attachModel(character, clone, helmet) and helmet then helmetEquipped = true end
 		elseif source:IsA("BasePart") then
 			local clone = source:Clone()
 			local helmet = isHelmet(clone)
 			if helmet then helmetDebug("found part helmet", source:GetFullName()) end
-			if helmet and className == "Lancer" then clone:SetAttribute("Unknockable", true) end
+			if helmet then
+				if helmetClassName == "Lancer" then clone:SetAttribute("Unknockable", true) end
+				clone:SetAttribute(helmetClassName .. "Helmet", true)
+			end
 			if attachPart(character, clone, helmet) and helmet then helmetEquipped = true end
 		end
+	end
+	if elite then
+		attachEliteTorso(character, helmetClassName)
 	end
 	if helmetEquipped and className ~= "Officer" then hideHair(character) end
 end

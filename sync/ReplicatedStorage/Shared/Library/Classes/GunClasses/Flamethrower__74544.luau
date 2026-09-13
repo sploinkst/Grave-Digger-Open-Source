@@ -1,8 +1,7 @@
 return require(script.Parent.LegacyGunFactory).create({
-	className = "WexFlamethrower",
+	className = "Flamethrower",
 	assetName = "wex",
-	AnimationGunType = "wex",
-	WeaponCategory = "Flamer",
+	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 3,
 	LegacyStats = {

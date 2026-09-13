@@ -54,10 +54,50 @@ if not WhistleEquipEvent then
 end
 local Helmet_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Helmet
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
+local HelmetRules = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("HelmetRules"))
 local hellionHelmetHits = {}
 -- Replace this asset when the final helmet-pop sound is uploaded.  The shooter
 -- is recorded now so the client-only sound can be played for them later.
 local HELMET_POP_SOUND_ID = "rbxassetid://0"
+local function canDamageThroughHelmet(weaponName: string?, attackerCharacter: Model?): boolean
+	if not attackerCharacter then return false end
+	return (weaponName == "AntiMaterialRifle" and attackerCharacter:FindFirstChild("AntiMaterialRifle") ~= nil)
+		or (weaponName == "JudgementRifle" and attackerCharacter:FindFirstChild("JudgementRifle") ~= nil)
+end
+
+local function helmetShotKey(player: Player, hitData): string?
+	if type(hitData.ShotId) ~= "string" then return nil end
+	return tostring(player.UserId) .. ":" .. hitData.ShotId
+end
+
+local function markHelmetProtectedShot(character: Model, player: Player, hitData)
+	local shotKey = helmetShotKey(player, hitData)
+	if not shotKey then return end
+	character:SetAttribute("HelmetProtectedShotKey", shotKey)
+	task.delay(2, function()
+		if character:GetAttribute("HelmetProtectedShotKey") == shotKey then
+			character:SetAttribute("HelmetProtectedShotKey", nil)
+		end
+	end)
+end
+
+local function tryUnlockOcelotTrooper(player: Player, attacker: Model, targetPlayer: Player?, weaponName: string?, hitData)
+	if player:GetAttribute("OcelotTrooperUnlocked") == true then return end
+	if not targetPlayer or targetPlayer == player then return end
+	if weaponName ~= "TalonRevolver" then return end
+	if attacker:GetAttribute("Class") ~= "Officer" then return end
+	if hitData.HipFire ~= true then return end
+	if tonumber(hitData.AmmoBeforeShot) ~= 1 then return end
+	if not attacker:FindFirstChild("TalonRevolver") then return end
+	require(script.Parent.ClassService).UnlockShockTrooper(player, "OcelotTrooper")
+end
+
+local function handleLethalHipfireHeadshot(player: Player, attacker: Model, targetPlayer: Player?, weaponName: string?, hitData, position: Vector3)
+	if hitData.HipFire ~= true then return end
+	playSoundAtPosition(player, "headspike", position, 1.2)
+	tryUnlockOcelotTrooper(player, attacker, targetPlayer, weaponName, hitData)
+end
+
 local jesseGrenadeEvent=replicant_folder:FindFirstChild("JesseGrenade")::RemoteEvent?
 if not jesseGrenadeEvent then jesseGrenadeEvent=Instance.new("RemoteEvent"); jesseGrenadeEvent.Name="JesseGrenade"; jesseGrenadeEvent.Parent=replicant_folder end
 local dualWieldEvent = replicant_folder:FindFirstChild("DualWield") :: RemoteEvent?
@@ -119,6 +159,89 @@ local function getDistanceScaledForce(baseForce: number, distance: number)
 	return math.max(scaled, MIN_FORCE)
 end
 
+local function soundParent(character: Model?): BasePart?
+	if not character then return nil end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if root and root:IsA("BasePart") then return root end
+	local head = character:FindFirstChild("Head")
+	if head and head:IsA("BasePart") then return head end
+	return nil
+end
+
+local function voicePrefix(player: Player?, character: Model?): string
+	local selected = player and (
+		player:GetAttribute("VoiceGender")
+		or player:GetAttribute("Gender")
+		or player:GetAttribute("BodyType")
+	)
+	if selected == nil and character then
+		selected = character:GetAttribute("VoiceGender")
+			or character:GetAttribute("Gender")
+			or character:GetAttribute("BodyType")
+	end
+	if type(selected) == "string" then
+		local lowered = string.lower(selected)
+		if string.sub(lowered, 1, 1) == "f" then return "f" end
+	end
+	return "m"
+end
+
+local function playCharacterSound(character: Model?, soundName: string, playerHint: Player?)
+	local parent = soundParent(character)
+	local soundsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Sounds")
+	local playerSounds = soundsFolder and soundsFolder:FindFirstChild("PlayerSounds")
+	local sound = playerSounds and playerSounds:FindFirstChild(soundName)
+	if not parent or not sound or not sound:IsA("Sound") then return end
+	local sourcePlayer = playerHint
+		or (character and player_service:GetPlayerFromCharacter(character))
+		or player_service:GetPlayers()[1]
+	if not sourcePlayer then return end
+	sfx_replicant:FireAllClients(sourcePlayer, sound, parent, sound.PlaybackSpeed, sound.Volume, 0, 0.08)
+end
+
+function module.play_damage_sound(character: Model?, amount: number?, playerHint: Player?)
+	local targetPlayer = character and player_service:GetPlayerFromCharacter(character)
+	local prefix = voicePrefix(targetPlayer, character)
+	local weight = ((amount or 0) > 100) and "heavy" or "hurt"
+	playCharacterSound(character, prefix .. "_" .. weight, playerHint or targetPlayer)
+end
+
+function module.play_headshot_sound(character: Model?, playerHint: Player?)
+	playCharacterSound(character, "headshot", playerHint)
+end
+
+local function findSound(name: string): Sound?
+	local soundsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Sounds")
+	local gunsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Guns")
+	local gunSounds = gunsFolder and gunsFolder:FindFirstChild("Sounds")
+	for _, root in { soundsFolder, gunSounds } do
+		local sound = root and root:FindFirstChild(name, true)
+		if sound and sound:IsA("Sound") then return sound end
+	end
+	return nil
+end
+
+local function playSoundAtPosition(playerHint: Player, soundName: string, position: Vector3, volumeScale: number?)
+	local sound = findSound(soundName)
+	if not sound then return end
+	local anchor = Instance.new("Part")
+	anchor.Name = soundName .. "SoundAnchor"
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.new(0.1, 0.1, 0.1)
+	anchor.CFrame = CFrame.new(position)
+	anchor.Parent = workspace.Game_Details.Effects
+	sfx_replicant:FireAllClients(playerHint, sound, anchor, sound.PlaybackSpeed, sound.Volume * (volumeScale or 1), 0, 0.08)
+	Debris:AddItem(anchor, math.max(sound.TimeLength + 0.5, 2))
+end
+
+local function playRandomRicochet(player: Player, position: Vector3)
+	playSoundAtPosition(player, "ricochet" .. math.random(1, 6), position)
+end
+
 
 
 function module.stumble_player(character)
@@ -137,6 +260,7 @@ function module.pop_helmet(character, helmet_model, knockable: boolean, shooter:
 
 	if knockable then
 		if shooter then shooter:SetAttribute("LastHelmetPopSound", HELMET_POP_SOUND_ID) end
+		module.play_headshot_sound(character, shooter)
 		print("[POP_HELMET] Helmet is knockable.")
 		local head_part = helmet_model:FindFirstChild("Head")
 		-- Outfit helmets mount directly to the character Head through an
@@ -562,7 +686,11 @@ function module.start_module()
 		local model    = getModelFromInstance(instance)
 		local humanoid = getHumanoid(model)
 
-		if not humanoid or humanoid.Health <= 0 then return end
+		if not humanoid then
+			playRandomRicochet(player, position)
+			return
+		end
+		if humanoid.Health <= 0 then return end
 
 		local hitCharacter = model
 		if require(script.Parent.ClassCombatService).Blocks(hitCharacter, hrp.Position) then return end
@@ -570,12 +698,8 @@ function module.start_module()
 		local weaponName = hitData.WeaponName
 		local isJudgement = weaponName == "JudgementRifle"
 			and character:FindFirstChild("JudgementRifle") ~= nil
-		local isAMR = weaponName == "AntiMaterialRifle"
-			and character:FindFirstChild("AntiMaterialRifle") ~= nil
 		local isHellion = weaponName == "HellionShotgun"
 			and character:FindFirstChild("HellionShotgun") ~= nil
-		local isUnion = weaponName == "UnionPistol"
-			and character:FindFirstChild("UnionPistol") ~= nil
 
 		-- Prevent self-damage
 		if hitPlayer and player.Team == hitPlayer.Team then return end
@@ -609,86 +733,69 @@ function module.start_module()
 
 		if isHeadshot then
 			local helmet, knockable = Util.check_for_helmet(hitCharacter)
-			-- A helmet absorbs only its first non-penetrating headshot. It may remain
-			-- visibly attached, but no longer protects a second hit.
-			if helmet and helmet:GetAttribute("HelmetSpent") then helmet = nil end
+			local shotKey = helmetShotKey(player, hitData)
+			if not helmet and shotKey and hitCharacter:GetAttribute("HelmetProtectedShotKey") == shotKey then
+				return
+			end
 
 			if helmet then
-				-- AMR defeats every helmet at every distance. Judgement does the same
-				-- inside its close-range penetration band.
-				if isAMR then
-					if not helmet:GetAttribute("Knocked") then module.pop_helmet(hitCharacter, helmet, true, player) end
-					humanoid:TakeDamage(humanoid.MaxHealth)
-					return
+				local rawPenetration = tonumber(hitData.ArmorPenetration) or tonumber(hitData.PenetrationLevel) or 0
+				local penetration = math.max(rawPenetration, tonumber(hitData.PenetrationLevel) or 0)
+				local rangeBand = hitData.RangeBand
+				if rangeBand ~= "Close" and rangeBand ~= "FirstFalloff" and rangeBand ~= "SecondFalloff" then
+					rangeBand = if distance <= 30 then "Close" elseif distance <= 100 then "FirstFalloff" else "SecondFalloff"
 				end
-				-- Union's weak 9mm knocks ordinary helmets only at point-blank range.
-				-- At 30 studs and beyond, the helmet deflects the shot untouched.
-				if isUnion then
-					if distance < 30 and knockable and not helmet:GetAttribute("Knocked") then
-						module.pop_helmet(hitCharacter, helmet, true, player)
-					end
-					return
+				local action = HelmetRules.ResolveBullet(penetration, rangeBand, hitCharacter, helmet)
+
+				if hitPlayer then
+					status_service.GiveStatus(hitPlayer, "ConcussionStatus")
 				end
-				local hellionCannotPenetrate = isHellion and (not knockable or distance > 35)
-				if hellionCannotPenetrate and type(hitData.ShotId) == "string" then
+				markHelmetProtectedShot(hitCharacter, player, hitData)
+
+				if isHellion and type(hitData.ShotId) == "string" then
 					local shotKey = tostring(player.UserId) .. ":" .. hitData.ShotId .. ":" .. tostring(hitCharacter)
 					local pelletHits = (hellionHelmetHits[shotKey] or 0) + 1
 					hellionHelmetHits[shotKey] = pelletHits
 					if pelletHits == 1 then
 						task.delay(2, function() hellionHelmetHits[shotKey] = nil end)
 					end
-					if pelletHits >= 4 then
+					if pelletHits == 1 and action == HelmetRules.Action.KnockOff and knockable and not helmet:GetAttribute("Knocked") then
+						module.pop_helmet(hitCharacter, helmet, true, player)
+					elseif action == HelmetRules.Action.Obliterate then
 						hellionHelmetHits[shotKey] = nil
-						-- Four close pellets strip a resistant Shock Trooper helmet. At
-						-- long range ordinary helmets deflect the pattern and stay on.
-						if not knockable and distance <= 35 and not helmet:GetAttribute("Knocked") then
-							module.pop_helmet(hitCharacter, helmet, true, player)
-						end
-						humanoid:TakeDamage(100)
-						if hitPlayer then
-							status_service.GiveStatus(hitPlayer, "RagdollStatus", direction)
-							task.delay(2, function()
-								if hitPlayer.Parent then status_service.RemoveStatus(hitPlayer, "RagdollStatus") end
-							end)
-						end
+						if not helmet:GetAttribute("Knocked") then module.pop_helmet(hitCharacter, helmet, true, player) end
 					end
 					return
 				end
 
-				-- Judgement's .577 Alloy round punches through any helmet inside 60 studs.
-				if isJudgement and distance < 60 then
-					if not helmet:GetAttribute("Knocked") then module.pop_helmet(hitCharacter, helmet, true, player) end
-					humanoid:TakeDamage(humanoid.MaxHealth)
-					player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
-					return
-				end
-
-				-- Standard rounds are absorbed once. Close/high-energy hits are more
-				-- likely to knock it off, while a distant shot can leave it visibly on.
-				helmet:SetAttribute("HelmetSpent", true)
-				local popChance = math.clamp(0.8 - (distance / 250), 0.2, 0.8)
-				if knockable and not helmet:GetAttribute("Knocked") and math.random() < popChance then
+				if action == HelmetRules.Action.Obliterate then
 					module.pop_helmet(hitCharacter, helmet, true, player)
-				end
-
-				if hitPlayer then
-					status_service.GiveStatus(hitPlayer, "ConcussionStatus")
-					task.delay(3, function()
-						if hitPlayer.Character and
-							hitPlayer.Character:FindFirstChildOfClass("Humanoid") and
-							hitPlayer.Character.Humanoid.Health >= 100 then
-							status_service.RemoveStatus(hitPlayer, "ConcussionStatus")
-						end
-					end)
+					if canDamageThroughHelmet(weaponName, character) then
+						humanoid:TakeDamage(humanoid.MaxHealth)
+						player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
+					end
+				elseif action == HelmetRules.Action.KnockOff then
+					if knockable and not helmet:GetAttribute("Knocked") then
+						module.pop_helmet(hitCharacter, helmet, true, player)
+					else
+						module.stumble_player(hitCharacter)
+					end
+				else
+					module.stumble_player(hitCharacter)
 				end
 				return
 			elseif isHellion then
-				humanoid:TakeDamage((damage or 0) * 1.2)
+				local finalDamage = (damage or 0) * 1.2
+				module.play_damage_sound(hitCharacter, finalDamage, player)
+				humanoid:TakeDamage(finalDamage)
 				if humanoid.Health <= 0 then
+					handleLethalHipfireHeadshot(player, character, hitPlayer, weaponName, hitData, position)
 					player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
 				end
 				return
 			else
+				module.play_damage_sound(hitCharacter, humanoid.Health, player)
+				handleLethalHipfireHeadshot(player, character, hitPlayer, weaponName, hitData, position)
 				humanoid.Health = 0
 				player:SetAttribute("RoundKills", player:GetAttribute("RoundKills") + 1)
 				return
@@ -696,6 +803,7 @@ function module.start_module()
 		end
 
 		-- Normal damage
+		module.play_damage_sound(hitCharacter, damage, player)
 		humanoid:TakeDamage(damage or 0)
 		
 		if humanoid.Health < 100 and hitPlayer then

@@ -75,7 +75,9 @@ local function damage(player, target, amount, instant)
 	end
 	
 	if targetPlayer then targetPlayer:SetAttribute("LastTagged", player.Name) end
-	humanoid:TakeDamage(instant and humanoid.Health or amount * (target:GetAttribute("MeleeDamageMultiplier") or 1))
+	local finalDamage = instant and humanoid.Health or amount * (target:GetAttribute("MeleeDamageMultiplier") or 1)
+	require(script.Parent.ReplicantManager).play_damage_sound(target, finalDamage, player)
+	humanoid:TakeDamage(finalDamage)
 end
 
 local function visible(character, target, origin, position)

@@ -15,3 +15,4 @@ return require(script.Parent.LegacyGunFactory).create({
 	bulletSpeed = 950,
 	cycles = true,
 })
+-- THIS IS THE WEAPON MOD!

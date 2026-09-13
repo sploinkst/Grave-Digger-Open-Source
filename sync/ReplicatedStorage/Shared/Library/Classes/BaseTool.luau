@@ -189,13 +189,13 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 	self._setLeftAiming = setLeftAiming
 
 	if self.animations then
-		if self.IsFirearm and not self.animations.Draw then
+		if self.IsFirearm and not self.StrictAnimations and not self.animations.Draw then
 			local princeDraw = get_prince_animation("PrinceRifle_Draw")
 			if princeDraw then
 				self.animations.Draw = princeDraw
 			end
 		end
-		if should_use_prince_hold(self, self.animations.Hold) then
+		if not self.StrictAnimations and should_use_prince_hold(self, self.animations.Hold) then
 			local princeHold = get_prince_animation("PrinceRifle_Held")
 			if princeHold then
 				self.animations.Hold = princeHold

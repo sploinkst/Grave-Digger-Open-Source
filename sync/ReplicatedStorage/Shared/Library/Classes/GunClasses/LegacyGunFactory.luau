@@ -3,6 +3,8 @@
 --!optimize 2
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 
 local BasePistol = require(script.Parent.Parent.BasePistol)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
@@ -85,12 +87,15 @@ local function sound(folder: Instance?, names: { string }): Sound?
 	return found and found:IsA("Sound") and found or nil
 end
 
-local function buildAnimations(animationId: string): { [string]: Animation }?
+local function buildAnimations(animationId: string, strict: boolean?): { [string]: Animation }?
 	local guns = Assets:FindFirstChild("Animations")
 		and Assets.Animations:FindFirstChild("Tools")
 		and Assets.Animations.Tools:FindFirstChild("Guns")
 	local folder = firstChild(guns, { animationId })
 	local prince = guns and guns:FindFirstChild("PrinceRifle")
+	if strict then
+		prince = nil
+	end
 	local result = {
 		Hold = animation(folder, { "held", "Hold" }) or animation(prince, { "PrinceRifle_Held" }),
 		Draw = animation(folder, { "draw", "Draw" }) or animation(prince, { "PrinceRifle_Draw" }),
@@ -212,7 +217,7 @@ function Factory.create(config)
 		self.ANIM_LAYERS = config.ANIM_LAYERS or DEFAULT_LAYERS
 		self.AnimationGunType = animationId
 		for _, candidate in animationNames do
-			self.animations = buildAnimations(candidate)
+			self.animations = buildAnimations(candidate, config.StrictAnimations == true)
 			if self.animations then
 				self.AnimationGunType = candidate
 				break
@@ -222,6 +227,8 @@ function Factory.create(config)
 		local toolModels = GunAssets:FindFirstChild("ToolModels")
 		local holsters = GunAssets:FindFirstChild("Holsters")
 		local sounds = GunAssets:FindFirstChild("Sounds")
+		local sharedSounds = Assets:FindFirstChild("Sounds")
+		local toolSounds = sharedSounds and (sharedSounds:FindFirstChild("Tools") or sharedSounds:FindFirstChild("tools"))
 		self.model_reference = firstChild(toolModels, modelNames)
 		local holsterNames = {}
 		for _, name in aliasNames(config.holsterNames or {}, assetName, className) do
@@ -230,6 +237,8 @@ function Factory.create(config)
 		end
 		self.holster_reference = firstChild(holsters, holsterNames)
 		self.SoundFolder = firstChild(sounds, soundNames)
+			or firstChild(toolSounds, soundNames)
+			or firstChild(sharedSounds, soundNames)
 		self.FireSound = sound(self.SoundFolder, { "fire", "Fire", "shot" })
 
 		self.motor_6d_data = {
@@ -264,24 +273,57 @@ function Factory.create(config)
 			smoke_medium = function() return math.random(2, 4) end,
 			smoke_forward = function() return math.random(3, 5) end,
 		}
-
+		self.InstantEquip = config.InstantEquip or false
 		if config.WeaponCategory == "Shotgun" then
 			self.PelletCount = config.pelletCount or config.pellets or self.PelletCount
 			self.ShotgunSpread = config.shotgunSpread or self.ShotgunSpread
 		end
 
 		self:applyFirearmConfig(config)
+		if config.initialCapacityMin and config.initialCapacityMax then
+			self.Capacity = math.random(config.initialCapacityMin, config.initialCapacityMax)
+			self.Max_Capacity = math.max(self.Max_Capacity, self.Capacity)
+		end
 		self.Equipped = false
 		self.Firing = false
 		self.Cycling = false
 		self.Reloading = false
 		self.Alting = false
 		self._reloadCancelled = false
+		self._autoFireHeld = false
+		self._autoFireLoopActive = false
 		self:_initShoulderTracking()
+		
 		return self
 	end
 
-	function Class:fire()
+	function Class:_playConfiguredSound(soundName: string?)
+		if not soundName or not self.SoundFolder then return end
+		local source = sound(self.SoundFolder, { soundName })
+		local origin = self:_findModelPart(self.MuzzlePartName or "muzzle")
+			or (self.actual_model and self.actual_model:FindFirstChildWhichIsA("BasePart", true))
+		if source and origin and origin:IsA("BasePart") then
+			self:_play_sfx(source, origin, nil, 0.1)
+		end
+	end
+
+	function Class:_playRandomConfiguredSound(soundNames: { string }?)
+		if not soundNames or #soundNames == 0 then return end
+		self:_playConfiguredSound(soundNames[math.random(1, #soundNames)])
+	end
+
+	function Class:_isBusyForActivation(): boolean
+		if not config.ignoreDrawBusy then
+			return self:_isBusy()
+		end
+		return self.Firing or self.Reloading or self.Cycling or self.Alting or self.Spinning
+			or self.Checking or self.Meleeing or self.Mining or false
+	end
+
+	function Class:_fireConfiguredShot(fireDelay: number?)
+		if config.overheatAt and self.Capacity == config.overheatAt then
+			self:_playRandomConfiguredSound(config.steamSounds)
+		end
 		local left = self.current_shoulder ~= "Right"
 		local fireAnimation = if self.Capacity <= 1
 			then (left and "Fire_Last_Left" or "Fire_Last")
@@ -290,7 +332,8 @@ function Factory.create(config)
 			bulletSpeed = self.BulletSpeed,
 			fireAnimation = fireAnimation,
 			sound = self.FireSound,
-			fireDelay = config.cycles and nil or self.FireInterval,
+			fireDelay = fireDelay,
+			requireAiming = config.requireAiming,
 		}
 		local fired = if config.WeaponCategory == "Shotgun"
 			then self:_fireShotgunBlast(options)
@@ -304,6 +347,93 @@ function Factory.create(config)
 		task.wait(math.max(0, self.FireInterval - 0.25))
 		self.Cycling = false
 		self:_restoreBaseDeferred()
+		return fired
+	end
+
+	function Class:_reloadMagazine()
+		if not self.Equipped or self.Reloading or self.Equipping then return false end
+		if self.Capacity >= self.Max_Capacity then return false end
+
+		local reserveAmmo = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
+		if not reserveAmmo or not reserveAmmo:IsA("NumberValue") then
+			warn(self.className .. ": Cannot reload because Reserve_Ammo is missing")
+			return false
+		end
+		if reserveAmmo.Value <= 0 then
+			self:notify("I don't have any more ammo...")
+			self:_restoreBase()
+			return false
+		end
+
+		self:_stopAllExcept()
+		self.Reloading = true
+		self.Firing = false
+		self._reloadCancelled = false
+		Players.LocalPlayer:SetAttribute("CantUnequip", true)
+		self:_playConfiguredSound(config.ReloadStartSound or "charge_forward")
+
+		local startTrack = self:_playAnim("Reload_Start")
+		if startTrack then
+			startTrack.Stopped:Wait()
+		else
+			task.wait(config.reload_start or 0.8)
+		end
+
+		if self.Equipped and not self._reloadCancelled then
+			local targetCapacity = self.Max_Capacity
+			if config.initialCapacityMin and config.initialCapacityMax then
+				targetCapacity = math.random(config.initialCapacityMin, config.initialCapacityMax)
+				self.Max_Capacity = math.max(self.Max_Capacity, targetCapacity)
+			end
+			local missingAmmo = targetCapacity - self.Capacity
+			local loadAmount = math.min(missingAmmo, reserveAmmo.Value)
+			if loadAmount > 0 then
+				self.Capacity += loadAmount
+				self:_fire_ammo(loadAmount)
+			end
+			self:_playConfiguredSound(config.ReloadEndSound or "charge_back")
+		end
+
+		self.Reloading = false
+		self._reloadCancelled = false
+		Players.LocalPlayer:SetAttribute("CantUnequip", if config.DreadLocked then true else nil)
+		self:_blockFireFor(self.PostReloadDelay or 0)
+		self:_restoreBaseDeferred()
+		return true
+	end
+
+	function Class:_startAutoFire()
+		if self._autoFireLoopActive then return end
+		self._autoFireHeld = true
+		self._autoFireLoopActive = true
+
+		task.spawn(function()
+			while self._autoFireHeld and self.Equipped and (self.Aiming or config.requireAiming == false) do
+				if self.Reloading or self.Cycling then
+					task.wait()
+				elseif self.Capacity <= 0 then
+					if config.autoReloadOnEmpty then
+						self:_playRandomConfiguredSound(config.overheatSounds)
+						self:_reloadMagazine()
+					else
+						self:_dryFire()
+						self._autoFireHeld = false
+					end
+				else
+					self:_fireConfiguredShot(0)
+					task.wait(self:_effectiveFireDelay(self.FireInterval or config.fire_rate or 0.15))
+				end
+			end
+			self._autoFireLoopActive = false
+		end)
+	end
+
+	function Class:fire()
+		if config.auto then
+			self:_startAutoFire()
+			return
+		end
+		return self:_fireConfiguredShot(config.cycles and nil or self.FireInterval)
 	end
 
 	function Class:_damageAtDistance(distance: number): number
@@ -311,6 +441,10 @@ function Factory.create(config)
 	end
 
 	function Class:reload()
+		if config.disableManualReload then return false end
+		if config.reloadStartIsFullReload then
+			return self:_reloadMagazine()
+		end
 		self:_reloadByRound({
 			startAnim = "Reload_Start",
 			loopAnim = "Reload_Loop",
@@ -321,18 +455,30 @@ function Factory.create(config)
 
 	function Class:activate()
 		if self.Reloading then
+			if config.disableManualReload then return end
 			self._reloadCancelled = true
 			return
 		end
-		if not self.actual_model or self:_isBusy() then return end
+		if not self.actual_model or self:_isBusyForActivation() then return end
+		if config.auto then self:fire() return end
 		if self.Aiming then self:fire() else self:melee() end
 	end
 
 	function Class:_on_equip()
 		self.Equipped = true
+		if config.DreadLocked then
+			Players.LocalPlayer:SetAttribute("CantUnequip", true)
+		end
 		self:_cacheMotor6D()
 		self:_connectInput()
 		self:_initShoulderTracking()
+		if config.auto and not self._autoInputEndedConnection then
+			self._autoInputEndedConnection = UserInputService.InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					self._autoFireHeld = false
+				end
+			end)
+		end
 
 		local fxFolder = GunAssets:FindFirstChild("Effects")
 		if fxFolder then
@@ -349,15 +495,32 @@ function Factory.create(config)
 	function Class:_on_unequip()
 		self.Equipped = false
 		self.Firing = false
+		self._autoFireHeld = false
 		self.Cycling = false
 		self.Reloading = false
 		self.Alting = false
 		self._reloadCancelled = true
+		if self._autoInputEndedConnection then
+			self._autoInputEndedConnection:Disconnect()
+			self._autoInputEndedConnection = nil
+		end
 		self:_disconnectInput()
 		self:_stopShoulderTracking()
 		self:_stopAimTracking()
 		self:_resetMotor6D()
-		game.Players.LocalPlayer:SetAttribute("CantUnequip", nil)
+		local localPlayer = Players.LocalPlayer
+		local character = localPlayer.Character
+		if config.DreadLocked and character and character:GetAttribute("IsDreadnought") == true then
+			localPlayer:SetAttribute("CantUnequip", true)
+			task.defer(function()
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if humanoid and self.tool and self.tool.Parent ~= character then
+					humanoid:EquipTool(self.tool)
+				end
+			end)
+		else
+			localPlayer:SetAttribute("CantUnequip", nil)
+		end
 	end
 
 	publishStaticFields(Class, className, config)
