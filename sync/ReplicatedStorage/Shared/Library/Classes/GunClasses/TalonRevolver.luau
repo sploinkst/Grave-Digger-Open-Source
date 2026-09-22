@@ -13,6 +13,7 @@ local RunService = game:GetService("RunService")
 
 local Types    = require(script.Parent.Parent.Parent.Types)
 local BasePistol = require(script.Parent.Parent.BasePistol)
+local OcelotReloadEvent = ReplicatedStorage.Shared.Library.Events:WaitForChild("OcelotReload")
 
 -- // Assets
 
@@ -38,6 +39,12 @@ local OCELOT_HIP_SPREAD = 25
 local BULLET_SPEED = 800
 local QUICKDRAW_READY_TIME = 0.75
 local QUICKDRAW_HOLD_SPEED = 0.5
+local MODEL_ALIASES = {
+	"saa",
+	"TalonRevolver",
+	"GraceRevolver",
+	"scho",
+}
 local WEAPON_STATS = {
     name = "'Talon' Army Revolver",
     desc = "A swift revolver with a bite and capable of firing from the hip.",
@@ -118,8 +125,7 @@ local ANIM_LAYERS: { [string]: number } = {
 	Fire_Left       = 1,
 	Fire_Empty      = 1,
 	Fire_Empty_Left = 1,
-	Hip_Fire        = 1,
-	Hip_Fire_Empty  = 1,
+	hipfire         = 1,
 	Quickdraw_Fire  = 1,
 	Short           = 1,
 	Short_Alt       = 1,
@@ -136,6 +142,7 @@ local ANIM_LAYERS: { [string]: number } = {
 	Reload_Loop_After = 2,
 	Reload_Loop_After_Twice = 2,
 	Reload_End   = 2,
+	Drop         = 2,
 }
 
 local function animation(name: string, graceName: string?): Animation?
@@ -163,6 +170,36 @@ local function firstChild(parent: Instance?, names: { string }): Instance?
 		if found then return found end
 	end
 	return nil
+end
+
+local function hasUsableParts(instance: Instance?): boolean
+	return instance ~= nil and instance:FindFirstChildWhichIsA("BasePart", true) ~= nil
+end
+
+local function firstUsableChild(parent: Instance?, names: { string }): Instance?
+	if not parent then return nil end
+	for _, name in names do
+		local found = parent:FindFirstChild(name)
+		if hasUsableParts(found) then return found end
+	end
+	for _, name in names do
+		local found = parent:FindFirstChild(name, true)
+		if hasUsableParts(found) then return found end
+	end
+	return firstChild(parent, names)
+end
+
+local function firstBasePart(parent: Instance?, names: { string }): BasePart?
+	if not parent then return nil end
+	for _, name in names do
+		local found = parent:FindFirstChild(name)
+		if found and found:IsA("BasePart") then return found end
+	end
+	for _, name in names do
+		local found = parent:FindFirstChild(name, true)
+		if found and found:IsA("BasePart") then return found end
+	end
+	return parent:FindFirstChildWhichIsA("BasePart", true)
 end
 
 -- // Class
@@ -230,12 +267,7 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 		"GraceRevolverHolster",
 		"schoHolster",
 	})
-	self.model_reference = firstChild(Tool_Folder, {
-		"TalonRevolver",
-		"saa",
-		"GraceRevolver",
-		"scho",
-	})
+	self.model_reference = firstUsableChild(Tool_Folder, MODEL_ALIASES)
 	self.Round = firstChild(Assets.Guns.Rounds, {
 		"TalonRevolver_Round",
 		"saa_Round",
@@ -253,10 +285,12 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	self.motor_6d_data = {
 		Parent = "Right Arm",
 		Part0  = "Right Arm",
-		Part1  = self.model_reference and firstChild(self.model_reference, {
+		Part1  = self.model_reference and firstBasePart(self.model_reference, {
 			"TalonRevolver_Middle",
 			"GraceRevolver_Middle",
 			"hitbox",
+			"body",
+			"barrel",
 		}),
 		C0 = CFrame.new(-0.258, -1.438, -0.506) * CFrame.Angles(0, math.rad(-90), math.rad(90)),
 	}
@@ -272,8 +306,7 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 		Fire_Left       = animation("stock_fire_left", "GraceRevolver_Fire_Left"),
 		Fire_Empty      = animation("stock_fire_empty", "GraceRevolver_Fire_Empty"),
 		Fire_Empty_Left = animation("stock_fire_empty_left", "GraceRevolver_Fire_Empty_Left"),
-		Hip_Fire        = animation("fire"),
-		Hip_Fire_Empty  = animation("fire_empty"),
+		hipfire         = animation("hipfire"),
 		Quickdraw_Fire  = animation("quickdraw"),
 
 		Short     = animation("fire", "GraceRevolver_Short"),
@@ -301,8 +334,7 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 		Melee2            = 1.43,
 		Fire              = 1.33,
 		Fire_Left         = 1.33,
-		Hip_Fire          = 1 / FAN_FIRE_RATE,
-		Hip_Fire_Empty    = 1 / FAN_FIRE_RATE,
+		hipfire           = 1 / FAN_FIRE_RATE,
 		Draw              = 1 / WEAPON_STATS.draw_speed,
 		Aim               = 1 / WEAPON_STATS.aim_speed,
 		Aim_Left          = 1 / WEAPON_STATS.aim_speed,
@@ -343,6 +375,9 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	local localPlayer = RunService:IsClient() and Players.LocalPlayer or nil
 	local character = localPlayer and localPlayer.Character
 	local isOcelotTrooper = character and character:GetAttribute("EliteClass") == "OcelotTrooper"
+	if isOcelotTrooper then
+		self.animations.Hold = animation("quickdraw") or self.animations.Hold
+	end
 	if character and character:FindFirstChild("perk") and character.perk.Value == "blackhand" then
 		self.FireInterval = WEAPON_STATS.black_hand_fire_rate
 	end
@@ -390,6 +425,7 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 		self.FireInterval = OCELOT_FIRE_RATE
 		self.fire_rate = OCELOT_FIRE_RATE
 		self.fan_fire_rate = OCELOT_FIRE_RATE
+		self.IsOcelotTrooper = true
 		self.Accuracy = 0
 		self.Moving_Accuracy = OCELOT_HIP_SPREAD
 		self.OcelotHipSpread = OCELOT_HIP_SPREAD
@@ -417,8 +453,18 @@ function TalonRevolver:_getKeyBindings()
 end
 
 function TalonRevolver:setAltMode()
-	if not self.Equipped then return end
-	task.spawn(function() self:quickdraw() end)
+	if not self.Equipped or self:_isBusy() then return end
+
+	if self.IsOcelotTrooper then
+		-- Ocelot's alternate action remains a direct shot. Its fire method
+		-- selects hip-fire while unaimed and standard fire while ADS.
+		self:fire()
+		return
+	end
+
+	-- Match the legacy Talon behavior: Q toggles a persistent hip-fire mode.
+	-- Every shot uses the hip-fire animation until the mode is toggled off.
+	self.HipFireMode = not self.HipFireMode
 end
 
 -- // isBusy override (Spinning counts)
@@ -519,11 +565,11 @@ function TalonRevolver:fire()
 	if self.Quickdrawing then self:_cancelQuickdraw() end
 
 	local quickdrawShot = self._quickdrawReady == true
-	local fanFiring = quickdrawShot or not self.Aiming
+	local fanFiring = self.HipFireMode == true or quickdrawShot or not self.Aiming
 	local left = self.current_shoulder ~= "Right"
 	local fireAnim
 	if fanFiring then
-		fireAnim = self.Capacity <= 1 and "Hip_Fire_Empty" or "Hip_Fire"
+		fireAnim = "hipfire"
 		if quickdrawShot and self.RegisteredAnimations and self.RegisteredAnimations.Quickdraw_Fire then
 			fireAnim = "Quickdraw_Fire"
 		end
@@ -562,6 +608,22 @@ function TalonRevolver:reload()
 	local anims = self.RegisteredAnimations
 	if not anims then return end
 	if self.Quickdrawing then self:_cancelQuickdraw() end
+
+	if self.IsOcelotTrooper then
+		self:_set_sprint_arms(true)
+		self:_stopLayer(2)
+		self.Reloading = true
+		self._reloadCancelled = false
+
+		self:_playAnim("Drop")
+		OcelotReloadEvent:FireServer(self.tool, self.model_reference)
+
+		self.Reloading = false
+		self._reloadCancelled = false
+		self:_set_sprint_arms(false)
+		self:_blockFireFor(0.1)
+		return
+	end
 
 	if anims.Reload_Start then anims.Reload_Start:AdjustWeight(1) end
 	if anims.Reload_Loop then anims.Reload_Loop:AdjustWeight(1) end
@@ -633,6 +695,42 @@ function TalonRevolver:reload()
 	self:_set_sprint_arms(false)
 	game.Players.LocalPlayer:SetAttribute("CantUnequip", false)
 	self:_blockFireFor(self.PostReloadDelay or 0)
+end
+
+function TalonRevolver:_resolveEquippedModel()
+	if hasUsableParts(self.actual_model) then
+		return
+	end
+
+	local character = Players.LocalPlayer and Players.LocalPlayer.Character
+	local equipment = character
+		and character:FindFirstChild("CharacterData")
+		and character.CharacterData:FindFirstChild("Equipment")
+	if not equipment then
+		return
+	end
+
+	local modelValue = self.tool and self.tool:FindFirstChild("model")
+	if modelValue and modelValue:IsA("StringValue") then
+		local model = equipment:FindFirstChild(modelValue.Value)
+		if hasUsableParts(model) then
+			self.actual_model = model
+			return
+		end
+	end
+
+	for _, modelName in MODEL_ALIASES do
+		local model = equipment:FindFirstChild(modelName)
+		if hasUsableParts(model) then
+			self.actual_model = model
+			return
+		end
+	end
+end
+
+function TalonRevolver:equip()
+	BasePistol.equip(self)
+	self:_resolveEquippedModel()
 end
 
 function TalonRevolver:activate()

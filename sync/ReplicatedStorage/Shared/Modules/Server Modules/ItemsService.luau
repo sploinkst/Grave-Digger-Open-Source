@@ -65,6 +65,21 @@ local function authoredGrip(clone, part1)
 	return nil, nil
 end
 
+local function findMatchingBasePart(root: Instance, reference: BasePart?): BasePart?
+	if not reference then return nil end
+	local direct = root:FindFirstChild(reference.Name, true)
+	if direct and direct:IsA("BasePart") then
+		return direct
+	end
+	for _, descendant in root:GetDescendants() do
+		if descendant:IsA("BasePart")
+			and (descendant.Name == reference.Name or descendant:GetAttribute("OriginalPartName") == reference.Name) then
+			return descendant
+		end
+	end
+	return nil
+end
+
 local function findItemModule(item: string)
 	for _, itemName in weapon_ids.Aliases(item) do
 		local direct = item_classes:FindFirstChild(itemName)
@@ -94,7 +109,7 @@ local function findItemModule(item: string)
 	return nil, item
 end
 
-function module.give_item(player: Player, item: string, given_ammo: number)
+function module.give_item(player: Player, item: string, given_ammo: number?, inventory_designation: string?, equip_through_inventory: boolean?)
 	print("Received with:", player.Name, item)
 	local stage = "waiting for character"
 	local function run()
@@ -122,6 +137,9 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 		name = item,
 		player = player,
     })
+	if inventory_designation then
+		object.Designation = inventory_designation
+	end
 
 	print("ItemService: Object is", object)
     -- create roblox tool
@@ -130,7 +148,8 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 	-- quotes/spaces and must not be used for GunClasses lookup on the client.
 	tool.Name = class_item
 	tool.TextureId = object.item_image or ""
-	tool:SetAttribute("EquipInstantly", object.EquipInstantly == true or object.InstantEquip == true)
+	tool:SetAttribute("InventoryId", game:GetService("HttpService"):GenerateGUID(false))
+	tool:SetAttribute("EquipThroughInventory", equip_through_inventory == true)
 
 	tool.RequiresHandle = false
 	tool.CanBeDropped = false
@@ -264,7 +283,7 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 
 				-- Resolve Part1 from cloned model
 				local rootReference = object.motor_6d_data.Part1
-				local part1 = rootReference and clone:FindFirstChild(rootReference.Name, true)
+				local part1 = findMatchingBasePart(clone, rootReference)
 
 				if not part1 then
 					print("No Part1 found")
@@ -400,7 +419,19 @@ function module.give_item(player: Player, item: string, given_ammo: number)
 	return result, extra
 end
 
-function module.remove_item(player: Player, item: string, model_name: string?)
+function module.remove_item(player: Player, item: any, model_name: string?)
+	if typeof(item) == "Instance" and item:IsA("Tool") then
+		local backpack = player:FindFirstChild("Backpack")
+		local character = player.Character
+		if item.Parent ~= backpack and item.Parent ~= character then return "Item not found." end
+		if item.Parent == character then
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if humanoid then humanoid:UnequipTools() end
+		end
+		item:Destroy()
+		return "Successfully removed item."
+	end
+	if type(item) ~= "string" then return "Item not found." end
 	local itemAliases = weapon_ids.Aliases(item)
 
 	local backpack = player:FindFirstChild("Backpack")

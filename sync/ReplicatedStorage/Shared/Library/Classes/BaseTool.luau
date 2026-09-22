@@ -547,6 +547,9 @@ function BaseTool:equip()
 
 	character:SetAttribute("GunEquipped", self.IsFirearm == true)
 	character:SetAttribute("Sprint_Animation", self.className)
+	-- Camera handling uses the same per-weapon draw duration as the legacy
+	-- master tool script. A shorter draw duration therefore turns faster.
+	character:SetAttribute("WeaponDrawSpeed", if self.IsFirearm then self.draw_speed else nil)
 	humanoid:EquipTool(self.tool)
 
 	if self._on_equip then self:_on_equip() end
@@ -754,6 +757,7 @@ function BaseTool:unequip()
 	LOCAL_PLAYER:SetAttribute("CantUnequip", false)
 	character:SetAttribute("GunEquipped", nil)
 	character:SetAttribute("Sprint_Animation", nil)
+	character:SetAttribute("WeaponDrawSpeed", nil)
 	character:SetAttribute("No_Sprint_Animation", nil)
 	character:SetAttribute("Aiming", nil)
 	character:SetAttribute("ADSMovementExempt", nil)
@@ -1978,6 +1982,7 @@ function BaseTool:drop()
 	if character then
 		character:SetAttribute("GunEquipped", nil)
 		character:SetAttribute("Sprint_Animation", nil)
+		character:SetAttribute("WeaponDrawSpeed", nil)
 		character:SetAttribute("No_Sprint_Animation", nil)
 		character:SetAttribute("Aiming", nil)
 		character:SetAttribute("ADSMovementExempt", nil)
@@ -1988,7 +1993,7 @@ function BaseTool:drop()
 
 	self:_stopItemAnimations()
 
-	drop_connection:FireServer(self.className, self.model_reference, true)
+	drop_connection:FireServer(self.tool, self.model_reference, true)
 	self:destroy()
 end
 

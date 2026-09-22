@@ -317,7 +317,8 @@ local function create_weapon_options(slot_name: string)
 			continue
 		end
 
-		if child.Name == "AnimationResolver" then
+		if child.Name == "AnimationResolver"
+			or child.Name == "LegacyGunFactory" then
 			continue
 		end
 		if Classes.IsEliteWeapon(child.Name) then
@@ -337,7 +338,7 @@ local function create_weapon_options(slot_name: string)
 			continue
 		end
 
-		if weapon_module.Designation ~= slot_name then
+		if weapon_module.HiddenFromLoadout == true then
 			continue
 		end
 
@@ -364,7 +365,7 @@ local function create_weapon_options(slot_name: string)
 
 		local too_heavy =
 			weapon_weight + other_weight
-			> definition.MaxWeight
+			> Classes.GetMaxWeight(local_player)
 
 		local scrolling_clone =
 			scrolling_list_example:Clone()
@@ -789,17 +790,28 @@ local function refresh_class()
 		)
 
 	if weights then
-		local index = 0
+		local max_weight = Classes.GetMaxWeight(local_player)
+		local template = weights:FindFirstChild("ex")
+		local indicators = {}
 
 		for _, child in weights:GetChildren() do
 			if child:IsA("GuiObject")
 				and child.Name ~= "ex" then
-
-				index += 1
-
-				child.Visible =
-					index <= definition.MaxWeight
+				table.insert(indicators, child)
 			end
+		end
+
+		if template and template:IsA("GuiObject") then
+			for index = #indicators + 1, max_weight do
+				local indicator = template:Clone()
+				indicator.Name = "Weight_" .. index
+				indicator.Parent = weights
+				table.insert(indicators, indicator)
+			end
+		end
+
+		for index, indicator in indicators do
+			indicator.Visible = index <= max_weight
 		end
 	end
 

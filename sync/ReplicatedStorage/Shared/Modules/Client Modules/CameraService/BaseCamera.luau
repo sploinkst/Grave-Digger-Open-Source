@@ -69,6 +69,12 @@ local RECOIL_SNAPPINESS     = 100
 local SHOULDER_SWITCH_SPEED = 6
 local TRANSITION_SPEED      = 0.5
 
+-- Weapon handling is derived from the legacy draw-speed duration. A weapon
+-- with a 0.5 second draw keeps the old 180 degree/second turn rate.
+local HANDLING_RATE_SCALE = 90
+local MIN_WEAPON_TURN_RATE = 45
+local MAX_WEAPON_TURN_RATE = 720
+
 local LEAN_MAX_ROLL   = math.rad(3)
 local LEAN_MAX_OFFSET = 0.5
 local LEAN_LERP_SPEED = 6
@@ -539,7 +545,17 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 		maxRate = math.rad(2)
 
 	else
-		maxRate = self.MaxTurnRate
+		local drawSpeed = character:GetAttribute("WeaponDrawSpeed")
+		if typeof(drawSpeed) == "number" and drawSpeed > 0 then
+			local degreesPerSecond = math.clamp(
+				HANDLING_RATE_SCALE / drawSpeed,
+				MIN_WEAPON_TURN_RATE,
+				MAX_WEAPON_TURN_RATE
+			)
+			maxRate = math.rad(degreesPerSecond)
+		else
+			maxRate = self.MaxTurnRate
+		end
 	end
 
 	local responsivenessAlpha = math.clamp(
@@ -707,62 +723,136 @@ end
 local function restore_local_helmet_transparency()
 	for part, modifier in pairs(original_local_transparencies) do
 		if part and part.Parent then
-			part.LocalTransparencyModifier = modifier
+			part.Transparency = modifier
 		end
 	end
 	original_local_transparencies = {}
 end
 
 local function should_hide(part)
-	if transparency_table[part.Name] or part.Name == "Handle" then
+	print("[SHOULD_HIDE] Checking:", part:GetFullName())
+
+	if transparency_table[part.Name] then
+		print("[SHOULD_HIDE] Hidden because part name is in transparency_table:", part.Name)
 		return true
 	end
 
-	local parent      = part.Parent
+	if part.Name == "Handle" then
+		print("[SHOULD_HIDE] Hidden because part is a Handle")
+		return true
+	end
+
+	local parent = part.Parent
 	local grandparent = parent and parent.Parent
 
 	if parent and transparency_table[parent.Name] then
+		print(
+			"[SHOULD_HIDE] Hidden because parent is in transparency_table:",
+			parent.Name
+		)
 		return true
 	end
 
 	if grandparent and transparency_table[grandparent.Name] then
+		print(
+			"[SHOULD_HIDE] Hidden because grandparent is in transparency_table:",
+			grandparent.Name
+		)
 		return true
 	end
 
 	local current = part
+
 	while current do
 		if string.find(current.Name, "Helmet", 1, true) then
-			local p  = current.Parent
+			print(
+				"[SHOULD_HIDE] Found Helmet ancestor:",
+				current:GetFullName()
+			)
+
+			local p = current.Parent
 			local gp = p and p.Parent
-			if (p and p.Name == "Equipment") or (gp and gp.Name == "Equipment") then
+
+			if p and p.Name == "Equipment" then
+				print(
+					"[SHOULD_HIDE] Hidden because Helmet parent is Equipment:",
+					p:GetFullName()
+				)
+
+				return true
+			end
+
+			if gp and gp.Name == "Equipment" then
+				print(
+					"[SHOULD_HIDE] Hidden because Helmet grandparent is Equipment:",
+					gp:GetFullName()
+				)
+
 				return true
 			end
 		end
+
 		current = current.Parent
 	end
+
+	print("[SHOULD_HIDE] Not hidden:", part:GetFullName())
 
 	return false
 end
 
 local function handle_object(part, isFirstPerson)
-	if not part:IsA("BasePart") then return end
-	if part:GetAttribute("Transparency_Skip") then return end
-
-	if is_helmet_view_part(part) then
-		if original_local_transparencies[part] == nil then
-			original_local_transparencies[part] = part.LocalTransparencyModifier
-		end
-		part.LocalTransparencyModifier = if isFirstPerson then 1 else original_local_transparencies[part]
+	if not part:IsA("BasePart") then
 		return
 	end
 
-	local hide        = should_hide(part)
-	local parent      = part.Parent
+	if part:GetAttribute("Transparency_Skip") then
+		return
+	end
+
+	if is_helmet_view_part(part) then
+		if original_local_transparencies[part] == nil then
+			original_local_transparencies[part] = part.Transparency
+		end
+
+		part.Transparency = if isFirstPerson
+			then 1
+			else original_local_transparencies[part]
+
+		return
+	end
+
+	local hide = should_hide(part)
+
+	-- // Explicitly hide class-applied helmet parts in first person.
+	local current = part
+	local class_helmet = false
+
+	while current do
+		if current:GetAttribute("ClassHelmet")
+			or current:GetAttribute("SoldatHelmet")
+			or current:GetAttribute("LancerHelmet")
+			or current:GetAttribute("OfficerHelmet")
+			or current:GetAttribute("ClassAppearance")
+			and string.find(current.Name, "Helmet", 1, true) then
+
+			class_helmet = true
+			break
+		end
+
+		current = current.Parent
+	end
+
+	if class_helmet then
+		hide = true
+	end
+
+	local parent = part.Parent
 	local grandparent = parent and parent.Parent
 	local grandparent2 = grandparent and grandparent.Parent
 
 	if grandparent and grandparent.Name == "Rendered_Holsters" then
 		hide = true
+
 		for part_name in pairs(transparency_table) do
 			if string.find(part.Name, part_name, 1, true) then
 				hide = false
@@ -800,18 +890,29 @@ local function handle_object(part, isFirstPerson)
 					break
 				end
 			end
-		end	
+		end
 	end
 
-	if not hide then return end
+	if not hide then
+		return
+	end
 
 	if original_transparencies[part] == nil then
 		original_transparencies[part] = part.Transparency
 	end
 
-	local targetTransparency = isFirstPerson and 1 or original_transparencies[part]
+	local targetTransparency =
+		isFirstPerson
+		and 1
+		or original_transparencies[part]
 
-	TweenService:Create(part, first_person_transparency_tween, { Transparency = targetTransparency }):Play()
+	TweenService:Create(
+		part,
+		first_person_transparency_tween,
+		{
+			Transparency = targetTransparency
+		}
+	):Play()
 
 	if transparency_connections[part] then
 		transparency_connections[part]:Disconnect()
@@ -819,13 +920,17 @@ local function handle_object(part, isFirstPerson)
 	end
 
 	if isFirstPerson then
-		transparency_connections[part] = part:GetPropertyChangedSignal("Transparency"):Connect(function()
-			if part.Parent and part.Transparency ~= 1 then
+		transparency_connections[part] =
+			part:GetPropertyChangedSignal("Transparency"):Connect(function()
+
+				if not part.Parent then
+					return
+				end
+
 				if part.Transparency < 0.95 then
 					part.Transparency = 1
 				end
-			end
-		end)
+			end)
 	end
 end
 
@@ -862,10 +967,8 @@ local function first_person_transparency(character: Instance, isFirstPerson: boo
 
 	transparency_descendant_connection = character.DescendantAdded:Connect(function(descendant)
 		task.defer(function()
-			if not descendant.Parent then return end
-			handle_object(descendant, isFirstPerson)
-			for _, obj in ipairs(descendant:GetDescendants()) do
-				handle_object(obj, isFirstPerson)
+			for _, part in ipairs(character:GetDescendants()) do
+				handle_object(part, isFirstPerson)
 			end
 		end)
 	end)

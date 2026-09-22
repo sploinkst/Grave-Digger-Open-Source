@@ -117,6 +117,20 @@ local function UpdateSlotUI(slot)
 	image.Image = img
 end
 
+local function UpdateInventoryWeight()
+	local currentWeight = 0
+	for _, key in { "1", "2" } do
+		local tool = InventorySlots[key].Tool
+		if tool then
+			currentWeight += tonumber(tool.Weight) or 0
+		end
+	end
+	local character = LocalPlayer.Character
+	if character then
+		character:SetAttribute("CurrentInventoryWeight", currentWeight)
+	end
+end
+
 -- // Slot Colors
 
 local function SetSlotWhite(key)
@@ -318,6 +332,7 @@ local function AssignTool(toolObject)
 	end
 
 	UpdateSlotUI(slot)
+	UpdateInventoryWeight()
 
 	fadeToken += 1
 	local myToken = fadeToken
@@ -352,6 +367,7 @@ local function RemoveTool(toolObject)
 			end
 		end
 	end
+	UpdateInventoryWeight()
 end
 
 -- // Respawn Reset
@@ -393,6 +409,7 @@ local function OnCharacterAdded(character)
 			slot.UI = nil
 		end
 	end
+	UpdateInventoryWeight()
 
 	for _, key in ipairs(SlotOrder) do
 		local slot = InventorySlots[key]
@@ -534,6 +551,20 @@ function Module.AssignTool(tool)
 	AssignTool(tool)
 end
 
+function Module.EquipTool(tool)
+	if not FindExistingTool(tool) then return false end
+	if not EquipTool(tool) then return false end
+	for _, key in ipairs(SlotOrder) do
+		if InventorySlots[key].Tool == tool then
+			selectedKey = key
+			OnInventoryKey(key)
+			UpdateHighlight(key)
+			break
+		end
+	end
+	return currentEquipped == tool
+end
+
 function Module.UnequipCurrent()
 	if EquipTool(nil) then
 		selectedKey = nil
@@ -543,6 +574,12 @@ end
 
 function Module.RemoveTool(tool)
 	RemoveTool(tool)
+end
+
+function Module.GetWeightState(): (number, number)
+	local character = LocalPlayer.Character
+	return character and character:GetAttribute("CurrentInventoryWeight") or 0,
+		character and character:GetAttribute("InventoryWeight") or 0
 end
 
 return Module

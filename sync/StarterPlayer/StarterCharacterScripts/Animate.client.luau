@@ -111,6 +111,11 @@ local climb_connection
 
 local ORIGINAL_HIP_HEIGHT = humanoid.HipHeight
 
+local SPRINT_TRANSITION_START = 13 
+local SPRINT_START = 17 
+local SPRINT_TRANSITION_END = 12.5
+local SPRINT_END = 16.5
+
 -- // Sprint overlays
 local SPRINT_OVERLAY_NAMES = {
 	"Sprint_Lean",
@@ -316,51 +321,41 @@ end
 -- // (Base / Overlay)
 
 local function play_base(
-	name: string,
-	fade: number?,
-	reversed: boolean?,
-	speed: number?
+	animation_name: string,
+	fade_time: number?,
+	weight: number?,
+	playback_speed: number?
 )
-	local track = loaded_animations[name]
+	local animation = loaded_animations[animation_name]
 
-	if not track then
+	if not animation then
 		return
 	end
 
-	fade = fade or 0.18
+	fade_time = fade_time or 0.1
+	weight = weight or 1
+	playback_speed = playback_speed or 1
 
-	if current_base_name == name
-		and active_base
-		and active_base.IsPlaying then
-
-		if speed then
-			active_base:AdjustSpeed(speed)
-
-		elseif reversed ~= nil then
-			active_base:AdjustSpeed(
-				reversed and -1 or 1
-			)
+	-- // Don't restart the animation if it's already active.
+	if active_base == animation then
+		if not animation.IsPlaying then
+			animation:Play(fade_time, weight, playback_speed)
+		else
+			animation:AdjustSpeed(playback_speed)
 		end
 
 		return
 	end
 
+	-- // Stop the previous base animation only when changing animations.
 	if active_base then
-		active_base:Stop(fade)
+		active_base:Stop(fade_time)
 	end
 
-	track:Play(fade)
+	active_base = animation
+	current_base_name = animation_name
 
-	if speed then
-		track:AdjustSpeed(speed)
-	else
-		track:AdjustSpeed(
-			reversed and -1 or 1
-		)
-	end
-
-	active_base = track
-	current_base_name = name
+	animation:Play(fade_time, weight, playback_speed)
 end
 
 local function play_overlay(
@@ -474,7 +469,7 @@ end
 
 local function update_movement(speed: number)
 
-	-- HARD BLOCKS
+	-- // HARD BLOCKS
 	if is_airborne then
 		return
 	end
@@ -487,8 +482,12 @@ local function update_movement(speed: number)
 		humanoid.MoveDirection.Magnitude > 0.1
 		and speed > 1
 
-	-- IDLE
+	local freelook =
+		local_player:GetAttribute("FreeLook") == true
+
+	-- // IDLE
 	if not moving then
+
 		local target =
 			crouching
 			and "CROUCH_IDLE"
@@ -497,10 +496,11 @@ local function update_movement(speed: number)
 		if set_state(target) then
 
 			if crouching then
+
 				play_base(
 					"Crouch_Idle",
-					nil,
-					nil,
+					0.1,
+					1,
 					1
 				)
 
@@ -509,11 +509,13 @@ local function update_movement(speed: number)
 				clear_overlays()
 
 				play_overlay("Crouch_Arms")
+
 			else
+
 				play_base(
 					"Stand_Idle",
-					nil,
-					nil,
+					0.1,
+					1,
 					1
 				)
 
@@ -526,10 +528,7 @@ local function update_movement(speed: number)
 		return
 	end
 
-	local freelook =
-		local_player:GetAttribute("FreeLook") == true
-
-	-- CROUCH
+	-- // CROUCH
 	if crouching then
 
 		if set_state("CROUCH_WALK") then
@@ -541,24 +540,27 @@ local function update_movement(speed: number)
 		end
 
 		if freelook then
-			play_base("CrouchWalk_Forward")
+			play_base(
+				"CrouchWalk_Forward",
+				0.08,
+				1,
+				1
+			)
 		else
-			play_base(get_crouch_animation())
+			play_base(
+				get_crouch_animation(),
+				0.08,
+				1,
+				1
+			)
 		end
 
 		return
 	end
 
-	-- AIMING
-	--
-	-- Aiming takes priority over sprint buildup.
-	-- If the movement controller hasn't lowered WalkSpeed yet,
-	-- we still prevent the sprint animation from playing.
-
+	-- // AIMING
+	-- // Aiming always takes priority over sprint buildup.
 	if is_aiming() then
-
-		-- If we were previously sprinting or transitioning,
-		-- immediately clear those animations.
 
 		if current_state == "SPRINT_TRANSITION"
 			or current_state == "SPRINT" then
@@ -567,49 +569,28 @@ local function update_movement(speed: number)
 		end
 
 		if set_state("WALK") then
+
 			set_target_hip_offset(0)
 
 			clear_sprint_overlays()
 
-			-- Don't clear every overlay here because
-			-- the weapon system may have its own overlays.
 			stop_overlay("Sprint_Lean")
-
-			if freelook then
-				play_base(
-					"Walk_Forward",
-					0.08,
-					nil,
-					1
-				)
-			else
-				play_base(
-					get_walk_animation(),
-					0.08,
-					nil,
-					1
-				)
-			end
 
 			play_overlay("Walk_Arms")
 		end
-
-		-- Keep the walking animation active while aiming,
-		-- regardless of whether WalkSpeed has visually entered
-		-- the sprint threshold yet.
 
 		if freelook then
 			play_base(
 				"Walk_Forward",
 				0.08,
-				nil,
+				1,
 				1
 			)
 		else
 			play_base(
 				get_walk_animation(),
 				0.08,
-				nil,
+				1,
 				1
 			)
 		end
@@ -617,94 +598,113 @@ local function update_movement(speed: number)
 		return
 	end
 
-	-- WALK
-	if speed < 13 then
+	-- // WALK
+	-- // Once we're already transitioning, don't immediately
+	-- // fall back to walking from tiny speed fluctuations.
+	if current_state == "SPRINT_TRANSITION" then
+
+		if speed >= SPRINT_START then
+			-- // Continue into full sprint below.
+		elseif speed > SPRINT_TRANSITION_END then
+
+			if active_base then
+				active_base:AdjustSpeed(
+					math.clamp(
+						1 - ((speed - SPRINT_TRANSITION_START) / 100),
+						0.01,
+						1
+					)
+				)
+			end
+
+			return
+		end
+	end
+
+	-- // WALKING STATE
+	if current_state ~= "SPRINT_TRANSITION"
+		and current_state ~= "SPRINT"
+		and speed < SPRINT_TRANSITION_START then
 
 		if set_state("WALK") then
+
 			set_target_hip_offset(0)
 
 			clear_overlays()
+
+			play_overlay("Walk_Arms")
 		end
 
 		if freelook then
-			play_base("Walk_Forward")
+			play_base(
+				"Walk_Forward",
+				0.08,
+				1,
+				1
+			)
 		else
-			play_base(get_walk_animation())
+			play_base(
+				get_walk_animation(),
+				0.08,
+				1,
+				1
+			)
 		end
-
-		play_overlay("Walk_Arms")
 
 		return
 	end
 
-	-- SPRINT TRANSITION
-	if speed >= 13 and speed < 17 then
+	-- // SPRINT TRANSITION
+	if speed >= SPRINT_TRANSITION_START
+		and speed < SPRINT_START then
 
-		-- AIMING CHECK
-		--
-		-- This is the important fix.
-		-- Even if WalkSpeed hasn't been reduced yet,
-		-- aiming prevents sprint buildup.
+		-- // If we are already transitioning, don't recreate the
+		-- // animation or overlays. Only update their speed.
+		if current_state ~= "SPRINT_TRANSITION" then
 
-		if is_aiming() then
-			cancel_sprint_for_aim()
-			return
-		end
-
-		if set_state("SPRINT_TRANSITION") then
+			set_state("SPRINT_TRANSITION")
 
 			set_target_hip_offset(0)
 
 			clear_overlays()
-
-			play_base(
-				"Walk_Forward",
-				0.1,
-				nil,
-				1 - speed / 100
-			)
-
-			play_overlay(
-				"Walk_Arms"
-			)
 
 			play_overlay(
 				"Sprint_Lean",
-				0.15
+				0.15,
+				1,
+				1
 			)
+			
+			play_overlay("Walk_Arms")
 		end
 
-		-- Keep transition animation synced to speed.
-		if active_base ==
-			loaded_animations["Walk_Forward"] then
+		if active_base then
 
-			active_base:AdjustSpeed(
-				1 - speed / 100
-			)
+			local transition_speed =
+				math.clamp(
+					1 - ((speed - SPRINT_TRANSITION_START) / 100),
+					0.01,
+					1
+				)
+
+			active_base:AdjustSpeed(transition_speed)
 		end
 
 		return
 	end
 
-	-- FULL SPRINT
-	if speed >= 17 then
+	-- // FULL SPRINT
+	if speed >= SPRINT_START then
 
-		-- AIMING CHECK
-		--
-		-- Never allow full sprint animation while aiming.
+		if current_state ~= "SPRINT" then
 
-		if is_aiming() then
-			cancel_sprint_for_aim()
-			return
-		end
-
-		if set_state("SPRINT") then
+			set_state("SPRINT")
 
 			set_target_hip_offset(0)
 
 			clear_overlays()
 
-			-- Stop previous base animation.
+			-- // Stop the previous base animation once.
 			if active_base then
 				active_base:Stop(0.05)
 
@@ -712,15 +712,13 @@ local function update_movement(speed: number)
 				current_base_name = nil
 			end
 
-			-- Full-body sprint.
 			play_base(
 				"Sprinting_Full",
-				0,
-				nil,
+				0.05,
+				1,
 				1
 			)
 
-			-- Sprint arms.
 			if not character:GetAttribute(
 				"No_Sprint_Animation"
 				) then
@@ -728,12 +726,42 @@ local function update_movement(speed: number)
 				play_overlay(
 					sprint_arms_overlay(),
 					0.1,
-					nil,
+					1,
 					1
 				)
-			end
 
-			playing_sprint_arms = true
+				playing_sprint_arms = true
+			end
+		end
+
+		return
+	end
+
+	-- // SPRINT EXIT
+	-- // Prevent small speed fluctuations around 17 from constantly
+	-- // switching between sprint and transition.
+	if current_state == "SPRINT" then
+
+		if speed > SPRINT_END then
+			return
+		end
+
+		-- // We have actually slowed down enough to leave sprint.
+		set_state("SPRINT_TRANSITION")
+
+		set_target_hip_offset(0)
+
+		clear_sprint_overlays()
+
+		play_overlay(
+			"Sprint_Lean",
+			0.15,
+			1,
+			1
+		)
+
+		if active_base then
+			active_base:AdjustSpeed(1)
 		end
 
 		return
@@ -1077,3 +1105,4 @@ end)
 
 load_animations()
 initialize_hips()
+

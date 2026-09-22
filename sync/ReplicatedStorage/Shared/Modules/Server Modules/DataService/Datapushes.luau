@@ -49,7 +49,9 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 
 	local success, weapon_class = pcall(require, weapon_script)
 	if not success or type(weapon_class.Weight) ~= "number" then return end
-	if weapon_class.Designation ~= slot_name then return end
+	-- Firearms can occupy either weapon slot. Non-firearm tools retain their
+	-- authored slot restriction so class equipment cannot leak into loadouts.
+	if weapon_script.Parent ~= gun_classes and weapon_class.Designation ~= slot_name then return end
 
 	local definition = Classes.Get(Classes.Selected(player))
 	if definition.NoFirearms and weapon_script.Parent == gun_classes then return end
@@ -67,7 +69,7 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 		end
 	end
 
-	if weapon_class.Weight + other_weight > definition.MaxWeight then return end
+	if weapon_class.Weight + other_weight > Classes.GetMaxWeight(player) then return end
 	slot.Value = weapon_name
 	local legacy = equipment:FindFirstChild(slot_name)
 	if legacy and legacy:IsA("StringValue") then legacy.Value = weapon_name end

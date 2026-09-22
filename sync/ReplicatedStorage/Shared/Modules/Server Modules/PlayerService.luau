@@ -82,6 +82,7 @@ local function SetupCharacterData(character: Model, player: Player)
 	value("BoolValue", "turret_mounted", false)
 	value("StringValue", "team", player.Team and player.Team.Name or "")
 	folder("wounds")
+	
 	local animSaves = character:FindFirstChild("AnimSaves")
 	if not animSaves then
 		animSaves = Instance.new("ObjectValue")

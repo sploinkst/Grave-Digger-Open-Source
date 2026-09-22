@@ -150,6 +150,7 @@ local FIREARM_CONFIG = {
 
 	animation_speeds = {
 		Cycle        = 1.818182,
+		Check        = 0.65,
 		Draw         = 1.333333,
 		Aim          = 2.857143,
 		Aim_Left     = 2.857143,

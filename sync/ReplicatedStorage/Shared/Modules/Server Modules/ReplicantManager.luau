@@ -59,6 +59,8 @@ local hellionHelmetHits = {}
 -- Replace this asset when the final helmet-pop sound is uploaded.  The shooter
 -- is recorded now so the client-only sound can be played for them later.
 local HELMET_POP_SOUND_ID = "rbxassetid://0"
+
+local CompassConnections = {}
 local function canDamageThroughHelmet(weaponName: string?, attackerCharacter: Model?): boolean
 	if not attackerCharacter then return false end
 	return (weaponName == "AntiMaterialRifle" and attackerCharacter:FindFirstChild("AntiMaterialRifle") ~= nil)
@@ -92,9 +94,11 @@ local function tryUnlockOcelotTrooper(player: Player, attacker: Model, targetPla
 	require(script.Parent.ClassService).UnlockShockTrooper(player, "OcelotTrooper")
 end
 
+local playSoundAtPosition
+
 local function handleLethalHipfireHeadshot(player: Player, attacker: Model, targetPlayer: Player?, weaponName: string?, hitData, position: Vector3)
 	if hitData.HipFire ~= true then return end
-	playSoundAtPosition(player, "headspike", position, 1.2)
+	playSoundAtPosition("headspike", position, 1.2)
 	tryUnlockOcelotTrooper(player, attacker, targetPlayer, weaponName, hitData)
 end
 
@@ -105,6 +109,12 @@ if not dualWieldEvent then
 	dualWieldEvent = Instance.new("RemoteEvent")
 	dualWieldEvent.Name = "DualWield"
 	dualWieldEvent.Parent = replicant_folder
+end
+local ocelotReloadEvent = replicant_folder:FindFirstChild("OcelotReload") :: RemoteEvent?
+if not ocelotReloadEvent then
+	ocelotReloadEvent = Instance.new("RemoteEvent")
+	ocelotReloadEvent.Name = "OcelotReload"
+	ocelotReloadEvent.Parent = replicant_folder
 end
 
 local ResetEvent = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Reset")
@@ -211,17 +221,16 @@ function module.play_headshot_sound(character: Model?, playerHint: Player?)
 end
 
 local function findSound(name: string): Sound?
-	local soundsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Sounds")
-	local gunsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Guns")
-	local gunSounds = gunsFolder and gunsFolder:FindFirstChild("Sounds")
-	for _, root in { soundsFolder, gunSounds } do
-		local sound = root and root:FindFirstChild(name, true)
-		if sound and sound:IsA("Sound") then return sound end
+	local wanted = string.lower(name)
+	for _, descendant in ReplicatedStorage.Shared:GetDescendants() do
+		if descendant:IsA("Sound") and string.lower(descendant.Name) == wanted then
+			return descendant
+		end
 	end
 	return nil
 end
 
-local function playSoundAtPosition(playerHint: Player, soundName: string, position: Vector3, volumeScale: number?)
+playSoundAtPosition = function(soundName: string, position: Vector3, volumeScale: number?)
 	local sound = findSound(soundName)
 	if not sound then return end
 	local anchor = Instance.new("Part")
@@ -234,12 +243,12 @@ local function playSoundAtPosition(playerHint: Player, soundName: string, positi
 	anchor.Size = Vector3.new(0.1, 0.1, 0.1)
 	anchor.CFrame = CFrame.new(position)
 	anchor.Parent = workspace.Game_Details.Effects
-	sfx_replicant:FireAllClients(playerHint, sound, anchor, sound.PlaybackSpeed, sound.Volume * (volumeScale or 1), 0, 0.08)
+	sfx_replicant:FireAllClients("WorldSound", sound, anchor, sound.PlaybackSpeed, sound.Volume * (volumeScale or 1), 0, 0.08)
 	Debris:AddItem(anchor, math.max(sound.TimeLength + 0.5, 2))
 end
 
-local function playRandomRicochet(player: Player, position: Vector3)
-	playSoundAtPosition(player, "ricochet" .. math.random(1, 6), position)
+local function playRandomRicochet(position: Vector3)
+	playSoundAtPosition("ricochet" .. math.random(1, 6), position)
 end
 
 
@@ -687,7 +696,11 @@ function module.start_module()
 		local humanoid = getHumanoid(model)
 
 		if not humanoid then
-			playRandomRicochet(player, position)
+			if character:GetAttribute("EliteClass") == "OcelotTrooper"
+				and hitData.WeaponName == "OcelotTalonRevolver"
+				and character:FindFirstChild("OcelotTalonRevolver") then
+				playRandomRicochet(position)
+			end
 			return
 		end
 		if humanoid.Health <= 0 then return end
@@ -850,11 +863,14 @@ function module.start_module()
 	end)
 
 	drop_connection.OnServerEvent:Connect(function(player, tool, model, remove_tool: boolean)
-		if not player or type(tool) ~= "string" or not model or not model:IsA("Model") then
+		if not player or not tool or not tool:IsA("Tool") or not model or not model:IsA("Model") then
 			warn("[ReplicantManager::] Invalid player or model in drop_connection")
 			return
 		end
-		print("Received drop_connection from", player.Name, "for tool:", tool, "model:", model.Name, "remove_tool:", remove_tool)
+		local character = player.Character
+		local backpack = player:FindFirstChild("Backpack")
+		if tool.Parent ~= character and tool.Parent ~= backpack then return end
+		print("Received drop_connection from", player.Name, "for tool:", tool.Name, "model:", model.Name, "remove_tool:", remove_tool)
 		
 		if remove_tool == true then
 			item_service.remove_item(player, tool, model.Name)
@@ -987,6 +1003,69 @@ function module.start_module()
 		motor.Parent = leftArm
 		model:SetAttribute("WeaponClass", handgunName)
 	end)
+
+	ocelotReloadEvent.OnServerEvent:Connect(function(player, tool, model)
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local backpack = player:FindFirstChild("Backpack")
+		if not character or not humanoid or humanoid.Health <= 0 or not backpack then return end
+		if character:GetAttribute("EliteClass") ~= "OcelotTrooper" then return end
+		if typeof(tool) ~= "Instance" or not tool:IsA("Tool") or tool.Name ~= "OcelotTalonRevolver" then return end
+		if tool.Parent ~= character then return end
+		if typeof(model) ~= "Instance" or not model:IsA("Model")
+			or not model:IsDescendantOf(ReplicatedStorage.Shared.Assets.Guns) then return end
+		local modelValue = tool:FindFirstChild("model")
+		if not modelValue or not modelValue:IsA("StringValue") or model.Name ~= modelValue.Value then return end
+
+		local existing = {}
+		for _, container in { backpack, character } do
+			for _, candidate in container:GetChildren() do
+				if candidate:IsA("Tool") and candidate.Name == "OcelotTalonRevolver" then
+					existing[candidate] = true
+				end
+			end
+		end
+		local slotValue = tool:FindFirstChild("slot")
+		local inventoryDesignation = slotValue and slotValue:IsA("StringValue") and slotValue.Value or nil
+		local thrownModel = model:Clone()
+		thrownModel.Parent = workspace
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if root and thrownModel.PrimaryPart then
+			thrownModel:PivotTo(root.CFrame + root.CFrame.LookVector * 3)
+			thrownModel.PrimaryPart.CanCollide = true
+			thrownModel.PrimaryPart.AssemblyLinearVelocity = root.CFrame.LookVector * 35 + root.CFrame.UpVector * 12
+		end
+		Debris:AddItem(thrownModel, 30)
+
+		humanoid:UnequipTools()
+		if tool.Parent then
+			tool:Destroy()
+		end
+
+		local Items = require(script.Parent.ItemsService)
+		local ok, err = pcall(Items.give_item, player, "OcelotTalonRevolver", 20000, inventoryDesignation, true)
+		if not ok then
+			warn("[OcelotReload] Could not grant fresh OcelotTalonRevolver: " .. tostring(err))
+			return
+		end
+
+		local replacement: Tool?
+		for _, candidate in backpack:GetChildren() do
+			if candidate:IsA("Tool") and candidate.Name == "OcelotTalonRevolver" and not existing[candidate] then
+				replacement = candidate
+				break
+			end
+		end
+		if not replacement then
+			replacement = backpack:FindFirstChild("OcelotTalonRevolver") :: Tool?
+		end
+		if replacement and replacement:IsA("Tool") then
+			local reserve = replacement:FindFirstChild("Reserve_Ammo")
+			local maximum = replacement:FindFirstChild("Max_Ammo")
+			if reserve and reserve:IsA("NumberValue") then reserve.Value = 20000 end
+			if maximum and maximum:IsA("NumberValue") then maximum.Value = 20000 end
+		end
+	end)
 	
 	ammo_connection.OnServerEvent:Connect(function(player, tool, count)
 		print("Received ammo_connection from", tool.Name, "count:", count)
@@ -1056,8 +1135,6 @@ function module.start_module()
 	end)
 
 	GiveCompassEvent.OnServerEvent:Connect(function(player, arm)
-		print("Received CompassEvent")
-		
 		local armPart, compass = getCompassData(player, arm)
 		if not armPart then
 			return
@@ -1067,7 +1144,7 @@ function module.start_module()
 		if existing then
 			existing:Destroy()
 		end
-		
+
 		local clone = compass:Clone()
 		clone.Parent = armPart
 		clone:PivotTo(armPart.CFrame)
@@ -1095,6 +1172,47 @@ function module.start_module()
 				tweenLid(lidRotate, -90)
 			end)
 		end
+
+		local compass_rotate = clone:FindFirstChild("compass_rotate", true)
+		if not compass_rotate then
+			return
+		end
+
+		local needle_weld = compass_rotate:FindFirstChildWhichIsA("Weld")
+		if not needle_weld then
+			return
+		end
+
+		local original_c0 = needle_weld.C0
+		local original_position = original_c0.Position
+		local original_rotation = original_c0 - original_position
+
+		local connection
+		connection = RunService.Heartbeat:Connect(function()
+			if not clone.Parent then
+				connection:Disconnect()
+				return
+			end
+
+			
+			local north_direction = Vector3.new(0, 0, 1)
+
+			-- Convert world north into the compass_rotate's local space
+			local local_north = compass_rotate.CFrame:VectorToObjectSpace(north_direction)
+
+			-- Find the horizontal angle to north
+			local angle = math.atan2(
+				local_north.X,
+				-local_north.Z
+			)
+
+			needle_weld.C0 =
+				CFrame.new(original_position)
+				* original_rotation
+				* CFrame.Angles(0, angle, 0)
+		end)
+
+		CompassConnections[player.Name] = connection
 	end)
 
 	RemoveCompass.OnServerEvent:Connect(function(player, arm)

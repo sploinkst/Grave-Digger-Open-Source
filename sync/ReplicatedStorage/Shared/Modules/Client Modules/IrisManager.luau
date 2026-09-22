@@ -137,24 +137,45 @@ function IrisManager.start_module()
 			if child:IsA("Vector3Value") then
 				local state = GetCameraState(child)
 
-				local slider = Iris.SliderVector3(
-					{child.Name, {0.1, 0.1, 0.1}},
-					{number = state}
-				)
+				local x = Iris.InputNum({child.Name .. " X"}, {number = state.value.X})
+				local y = Iris.InputNum({child.Name .. " Y"}, {number = state.value.Y})
+				local z = Iris.InputNum({child.Name .. " Z"}, {number = state.value.Z})
 
-				-- Keep the Iris slider synchronized with the
-				-- underlying Vector3Value.
+				-- // Keep the Iris inputs synchronized with the underlying Vector3Value.
 				if not SetState then
 					SetState = true
+
 					if child.Value ~= state.value then
 						state:set(child.Value)
 					end
 				end
 
-				-- Write changes made through Iris back to the Value.
-				if slider.numberChanged() then
-					child.Value = state.value
+				-- // Write changes made through Iris back to the Value.
+				if x.numberChanged() then
+					state:set(Vector3.new(
+						x.number,
+						state.value.Y,
+						state.value.Z
+						))
 				end
+
+				if y.numberChanged() then
+					state:set(Vector3.new(
+						state.value.X,
+						y.number,
+						state.value.Z
+						))
+				end
+
+				if z.numberChanged() then
+					state:set(Vector3.new(
+						state.value.X,
+						state.value.Y,
+						z.number
+						))
+				end
+
+				child.Value = state.value
 			end
 		end
 		Iris.End()

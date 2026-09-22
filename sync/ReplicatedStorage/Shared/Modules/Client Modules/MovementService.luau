@@ -132,6 +132,14 @@ local function getSprintSpeedMultiplier()
 	return Character:GetAttribute("SprintSpeedMultiplier") or 1
 end
 
+local function getSprintRampMultiplier()
+	if not Character then
+		return 1
+	end
+
+	return Character:GetAttribute("SprintRampMultiplier") or 1
+end
+
 local function isAiming()
 	return Character
 		and Character:GetAttribute("Aiming") == true
@@ -841,8 +849,9 @@ local function sprintLoop()
 			if Character:GetAttribute("InstantSprintAcceleration") == true then
 				t = 1
 			else
+				local rampTime = SprintRampTime * getSprintRampMultiplier()
 				t = math.clamp(
-					elapsed / SprintRampTime,
+					if rampTime > 0 then elapsed / rampTime else 1,
 					0,
 					1
 				)

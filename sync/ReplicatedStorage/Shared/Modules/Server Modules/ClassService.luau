@@ -44,13 +44,22 @@ local function maxToolAmmo(tool: Tool?)
 	if maximum and maximum:IsA("NumberValue") then maximum.Value = 20000 end
 end
 
+local function maxBackpackAmmo(player: Player, toolName: string)
+	local backpack = player:FindFirstChild("Backpack")
+	if not backpack then return end
+	for _, tool in backpack:GetChildren() do
+		if tool:IsA("Tool") and tool.Name == toolName then
+			maxToolAmmo(tool)
+		end
+	end
+end
+
 local function findSound(name: string): Sound?
-	local soundsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Sounds")
-	local gunsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Guns")
-	local gunSounds = gunsFolder and gunsFolder:FindFirstChild("Sounds")
-	for _, root in { soundsFolder, gunSounds } do
-		local sound = root and root:FindFirstChild(name, true)
-		if sound and sound:IsA("Sound") then return sound end
+	local wanted = string.lower(name)
+	for _, descendant in ReplicatedStorage.Shared:GetDescendants() do
+		if descendant:IsA("Sound") and string.lower(descendant.Name) == wanted then
+			return descendant
+		end
 	end
 	return nil
 end
@@ -126,8 +135,9 @@ function Service.Select(player, name)
 	local secondary = loadout and loadout:FindFirstChild("Secondary")
 	-- Keep the stored editable firearm selection valid for the new capacity.
 	if not definition.NoFirearms and primary and secondary then
-		if weight(primary.Value) > definition.MaxWeight then primary.Value = "" end
-		if weight(primary.Value) + weight(secondary.Value) > definition.MaxWeight then secondary.Value = "" end
+		local maxWeight = Classes.GetMaxWeight(player, name)
+		if weight(primary.Value) > maxWeight then primary.Value = "" end
+		if weight(primary.Value) + weight(secondary.Value) > maxWeight then secondary.Value = "" end
 	end
 	selected.Value = name
 	local legacyPrimary = equipment:FindFirstChild("Primary")
@@ -178,18 +188,20 @@ function Service.ApplySpawn(player, character)
 		character:SetAttribute("ClassOutfit", if elite then elite.OutfitClass or elite.RequiredClass else name)
 	end
 	if eliteName == "OcelotTrooper" then
-		character:SetAttribute("MovementSpeedMultiplier", 1.15)
-		character:SetAttribute("SprintSpeedMultiplier", 1.25)
-		character:SetAttribute("InstantSprintAcceleration", true)
-		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		character:SetAttribute("MovementSpeedMultiplier", 1.25)
+		character:SetAttribute("SprintSpeedMultiplier", 1)
+		character:SetAttribute("SprintRampMultiplier", 0.25)
+		character:SetAttribute("InstantSprintAcceleration", false)
+		local rootPart = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 5)
 		local theme = findSound("theme")
 		if rootPart and theme then
-			events.Sounds:FireAllClients(player, theme, rootPart, theme.PlaybackSpeed, theme.Volume, 0, 0)
+			events.Sounds:FireAllClients("OcelotTheme", theme, rootPart, theme.PlaybackSpeed, theme.Volume, 0, 0)
 		end
 	end
 
 	publishCharacterData(player, character, name, equipment)
-	character:SetAttribute("InventoryWeight", if isDreadnought then 0 else definition.MaxWeight)
+	local maxWeight = Classes.GetMaxWeight(player, name)
+	character:SetAttribute("InventoryWeight", if isDreadnought then 0 else maxWeight)
 	character:SetAttribute("OfficerOrderCapacity", if name == "Officer" and hasPerk(player, "Survivalist") then 2 else 1)
 	for _, attribute in {"DrawSpeed", "AimSpeed", "SpreadMultiplier", "CaptureWeight", "AllyHealHealth",
 		"SurgerySpeed", "MobileSurgery", "SuppressionImmune", "MeleeDamageMultiplier"} do
@@ -202,8 +214,8 @@ function Service.ApplySpawn(player, character)
 	local primaryName = if isDreadnought then "BrowningMachineGun" elseif elite then elite.Primary else definition.FixedPrimary or (primary and primary.Value or "PrinceRifle")
 	local secondaryName = if isDreadnought then "" elseif elite then elite.Secondary else if definition.NoFirearms then "" else (secondary and secondary.Value or "")
 	if not elite and not isDreadnought then
-		if weight(primaryName) > definition.MaxWeight and not definition.FixedPrimary then primaryName = "" end
-		if weight(primaryName) + weight(secondaryName) > definition.MaxWeight then secondaryName = "" end
+		if weight(primaryName) > maxWeight and not definition.FixedPrimary then primaryName = "" end
+		if weight(primaryName) + weight(secondaryName) > maxWeight then secondaryName = "" end
 	end
 	character:SetAttribute("ClassPrimary", primaryName)
 	character:SetAttribute("ClassSecondary", secondaryName)
@@ -265,26 +277,24 @@ function Service.GiveLoadout(player, character)
 			"Compass", "Medkit"}
 		for _, name in definition.Tools do table.insert(names, name) end
 	end
-	local given = {}
-	for _, name in names do
+	for index, name in names do
 		if player.Character ~= character or not character.Parent then return end
-		if name == "" or given[name] then continue end
-
-		given[name] = true
+		if name == "" then continue end
 		local source = findItemController(name)
 		if not source then
 			warn("[Classes] Missing item controller: " .. name)
 			continue
 		end
 
-		local ok, err = pcall(Items.give_item, player, name)
+		local inventoryDesignation = if index == 1 then "Primary" elseif index == 2 then "Secondary" else nil
+		local ok, err = pcall(Items.give_item, player, name, nil, inventoryDesignation)
 		if not ok then
 			warn("[Classes] Could not grant " .. name .. ": " .. tostring(err))
 			continue
 		end
 
 		if character:GetAttribute("IsShockTrooper") or character:GetAttribute("IsDreadnought") then
-			maxToolAmmo(player.Backpack:FindFirstChild(name))
+			maxBackpackAmmo(player, name)
 		end
 	end
 	local toolsLoaded = character:FindFirstChild("tools_loaded")

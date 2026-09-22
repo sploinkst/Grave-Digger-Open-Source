@@ -71,6 +71,10 @@ local function RegisterTool(tool: Tool, equipImmediately: boolean?)
 	Debug("Creating controller instance...")
 
 	local instance = class.new({ name = tool.Name })
+	local inventorySlot = tool:FindFirstChild("slot")
+	if inventorySlot and inventorySlot:IsA("StringValue") and inventorySlot.Value ~= "" then
+		instance.Designation = inventorySlot.Value
+	end
 
 	Debug("Controller instance created:", instance)
 
@@ -96,6 +100,7 @@ local function RegisterTool(tool: Tool, equipImmediately: boolean?)
 	tool.Destroying:Connect(function()
 		Debug("Tool.Destroying fired:", tool.Name)
 
+		InventoryService.RemoveTool(instance)
 		DestroyToolInstance(instance)
 		Module.RegisteredTools[tool] = nil
 
@@ -115,15 +120,22 @@ local function RegisterTool(tool: Tool, equipImmediately: boolean?)
 		else
 			Debug("InventoryService.AssignTool() completed successfully")
 		end
+
+		if tool:GetAttribute("EquipThroughInventory") == true then
+			task.defer(function()
+				if Module.RegisteredTools[tool] == instance then
+					InventoryService.EquipTool(instance)
+				end
+			end)
+		end
 	else
 		Debug("Skipping InventoryService.AssignTool() for whistle")
 	end
 
 	Debug("Checking InstantEquip...")
 	Debug("instance.InstantEquip =", instance.InstantEquip)
-	Debug("tool EquipInstantly attribute =", tool:GetAttribute("EquipInstantly"))
 
-	if instance.InstantEquip == true or tool:GetAttribute("EquipInstantly") == true then
+	if instance.InstantEquip and instance.InstantEquip == true then
 		Debug("InstantEquip is TRUE")
 		Debug("Scheduling automatic equip...")
 
@@ -136,15 +148,6 @@ local function RegisterTool(tool: Tool, equipImmediately: boolean?)
 
 			if not tool.Parent then
 				Debug("WARNING: Tool has no parent before equip")
-			end
-
-			if tool.Parent == LocalPlayer.Backpack and LocalPlayer.Character then
-				local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					Debug("Tool is in Backpack; calling Humanoid:EquipTool()")
-					humanoid:EquipTool(tool)
-					task.wait()
-				end
 			end
 
 			if tool.Parent ~= LocalPlayer.Character then
@@ -280,7 +283,7 @@ local function ConnectBackpack(backpack)
 			return
 		end
 
-		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild(child.Name) then
+		if LocalPlayer.Character and child.Parent == LocalPlayer.Character then
 			Debug("Tool moved into Character; keeping registered:", child.Name)
 			return
 		end

@@ -462,7 +462,7 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 			if attachPart(character, clone, helmet) and helmet then helmetEquipped = true end
 		end
 	end
-	if elite then
+	if elite and character:GetAttribute("EliteClass") ~= "OcelotTrooper" then
 		attachEliteTorso(character, helmetClassName)
 	end
 	if helmetEquipped and className ~= "Officer" then hideHair(character) end

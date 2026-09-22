@@ -50,11 +50,27 @@ Classes.EliteDefinitions = {
 	-- with the standard firearm controllers in GunClasses.
 	["Storm Trooper"] = { Primary = "StormRifle", Secondary = "GraceRevolver", RequiredClass = "Soldat", OutfitClass = "Soldat" },
 	["Anti-Material Trooper"] = { Primary = "AntiMaterialRifle", Secondary = "GraceRevolver", RequiredClass = "Rook", OutfitClass = "Rook" },
-	OcelotTrooper = { Primary = "", Secondary = "TalonRevolver", RequiredClass = "Officer", OutfitClass = "Officer", RequiresUnlock = "OcelotTrooper" },
+	OcelotTrooper = { Primary = "OcelotTalonRevolver", Secondary = "OcelotTalonRevolver", RequiredClass = "Officer", OutfitClass = "Officer", RequiresUnlock = "OcelotTrooper" },
 }
 
 function Classes.Get(name)
 	return Classes.Definitions[name] or Classes.Definitions[Classes.Default]
+end
+
+function Classes.HasPerk(player: Player, perkName: string): boolean
+	if player:GetAttribute(perkName) == true then return true end
+	local root = player:FindFirstChild("PlayerData")
+	local data = root and root:FindFirstChild("PlayerData")
+	local equipment = data and data:FindFirstChild("Equipment")
+	local perks = equipment and equipment:FindFirstChild("Perks")
+	local perk = perks and perks:FindFirstChild(perkName)
+	if not perk then return false end
+	return not perk:IsA("BoolValue") or perk.Value
+end
+
+function Classes.GetMaxWeight(player: Player, className: string?): number
+	local definition = Classes.Get(className or Classes.Selected(player))
+	return definition.MaxWeight + (Classes.HasPerk(player, "Survivalist") and 1 or 0)
 end
 
 function Classes.Selected(player)

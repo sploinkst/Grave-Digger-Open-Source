@@ -1,11 +1,14 @@
 local module = {}
 
-local TorsoXRotation = 2
+local TorsoXRotation = 5
+--- Old = 2
 local TorsoZRotation = 3
+---  Old = 3
 local LegRotation = 3.5
 
 -- Smoothing settings (higher = smoother but slower response)
-local SMOOTHNESS = 12 -- Exponential decay rate
+local SMOOTHNESS = 15 -- Exponential decay rate
+--- Old =12
 
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
