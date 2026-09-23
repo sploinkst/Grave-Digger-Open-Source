@@ -282,7 +282,7 @@ function HellionShotgun:setAltMode()
 	end
 	if self.Aiming then
 		local track = self:_aimTrack()
-		if track then track:Play(0.15) end
+		if track then self:_blendAim(track) end
 		local character = LOCAL_PLAYER.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid then

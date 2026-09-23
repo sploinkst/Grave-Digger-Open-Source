@@ -4160,7 +4160,8 @@ s_UserInputService_0.InputBegan:Connect(function(p479, p480) --[[ Line: 5447 ]]
                 game.Lighting.worldblur.Enabled = true
                 l_Parent_0.playerlistdarken.Visible = true
             end;
-            if p479.KeyCode == _G.get_keybinds("menu") then
+            if p479.KeyCode == _G.get_keybinds("menu")
+                and l_LocalPlayer_0:GetAttribute("ModernMenuActive") ~= true then
                 if workspace.serverStuff.trainingmode.Value == true then
                     return;
                 end;

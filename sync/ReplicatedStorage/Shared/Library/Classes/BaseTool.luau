@@ -13,6 +13,7 @@ local UserInputService  = game:GetService("UserInputService")
 local TweenService      = game:GetService("TweenService")
 
 local Types            = require(script.Parent.Parent.Types)
+local WeaponHandling = require(script.Parent.Parent.WeaponHandling)
 local utilities_module = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 
 local LOCAL_PLAYER = Players.LocalPlayer
@@ -526,6 +527,25 @@ end
 
 -- // Equip / Unequip
 
+function BaseTool:_drawDuration(): number
+	return WeaponHandling.Duration(LOCAL_PLAYER, self.draw_speed or 0.75, "draw")
+end
+
+function BaseTool:_aimDuration(): number
+	local duration = self.aim_speed or 0.35
+	if self.className == "HellionShotgun" and self.Shouldered then duration = 0.5 end
+	if self.className == "AdjudicatorRifle" and self.HipBraced then duration = 0.3 end
+	return if self.IsFirearm then WeaponHandling.Duration(LOCAL_PLAYER, duration, "aim") else CUT
+end
+
+function BaseTool:_blendAim(track: AnimationTrack)
+	local duration = self:_aimDuration()
+	self._aimReadyAt = os.clock() + duration
+	local character = LOCAL_PLAYER.Character
+	if character then character:SetAttribute("WeaponAimDuration", duration) end
+	track:Play(duration, 1, 0.5)
+end
+
 function BaseTool:equip()
 	print("Equipping tool:", self.tool.Name)
 	if not self.tool then return end
@@ -547,9 +567,12 @@ function BaseTool:equip()
 
 	character:SetAttribute("GunEquipped", self.IsFirearm == true)
 	character:SetAttribute("Sprint_Animation", self.className)
-	-- Camera handling uses the same per-weapon draw duration as the legacy
-	-- master tool script. A shorter draw duration therefore turns faster.
-	character:SetAttribute("WeaponDrawSpeed", if self.IsFirearm then self.draw_speed else nil)
+	local baseline = WeaponHandling.Baseline[self.className]
+	if self.IsFirearm and baseline then
+		self.draw_speed = baseline.draw
+		self.aim_speed = baseline.aim
+	end
+	character:SetAttribute("WeaponAimDuration", if self.IsFirearm then self:_aimDuration() else nil)
 	humanoid:EquipTool(self.tool)
 
 	if self._on_equip then self:_on_equip() end
@@ -571,16 +594,26 @@ function BaseTool:equip()
 		self._drawStoppedConnection:Disconnect()
 		self._drawStoppedConnection = nil
 	end
+	self._equipGeneration = (self._equipGeneration or 0) + 1
+	local generation = self._equipGeneration
 	local draw = self.RegisteredAnimations and self.RegisteredAnimations.Draw
 	local function finishDraw()
-		if self.tool and self.tool.Parent == character and self.Equipped then
+		if generation == self._equipGeneration and self.tool and self.tool.Parent == character and self.Equipped then
 			self.Equipping = false
 			self:_restoreBase()
 			self:init_short_mechanic()
 			self:init_lean_mechanic() 
 		end
 	end
-	if draw then
+	if self.IsFirearm then
+		self._drawReadyAt = os.clock() + self:_drawDuration()
+		if draw then self:_playAnim("Draw", true) end
+		task.delay(self:_drawDuration(), function()
+			if generation ~= self._equipGeneration or not self.Equipped then return end
+			if draw and draw.IsPlaying then draw:Stop(0) end
+			finishDraw()
+		end)
+	elseif draw then
 		-- Subscribe before playback, including very short draw clips. Equip
 		-- completion must not depend on the weapon also having a Hold track.
 		self._drawStoppedConnection = draw.Stopped:Once(finishDraw)
@@ -731,6 +764,7 @@ function BaseTool:equip()
 end
 
 function BaseTool:unequip()
+	self._equipGeneration = (self._equipGeneration or 0) + 1
 	if not self.tool then return end
 
 	self.Equipped = false
@@ -757,7 +791,7 @@ function BaseTool:unequip()
 	LOCAL_PLAYER:SetAttribute("CantUnequip", false)
 	character:SetAttribute("GunEquipped", nil)
 	character:SetAttribute("Sprint_Animation", nil)
-	character:SetAttribute("WeaponDrawSpeed", nil)
+	character:SetAttribute("WeaponAimDuration", nil)
 	character:SetAttribute("No_Sprint_Animation", nil)
 	character:SetAttribute("Aiming", nil)
 	character:SetAttribute("ADSMovementExempt", nil)
@@ -938,8 +972,9 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean): AnimationTra
 		speed = self.animation_speeds[name] or 1
 	end
 
-	if name == "Draw" and self.IsFirearm and LOCAL_PLAYER.Character then
-		speed *= LOCAL_PLAYER.Character:GetAttribute("DrawSpeed") or 1
+	if name == "Draw" and self.IsFirearm then
+		-- Master playback cap; readiness is the independent draw timer above.
+		speed = math.clamp(1 / self:_drawDuration(), 0, 1.5)
 	end
 	if self.IsFirearm and name:find("Reload") and LOCAL_PLAYER.Character then
 		speed *= LOCAL_PLAYER.Character:GetAttribute("OrderReloadMultiplier") or 1
@@ -1015,8 +1050,8 @@ end
 function BaseTool:_killAimTracks()
 	local anims = self.RegisteredAnimations
 	if not anims then return end
-	if anims.Aim      and anims.Aim.IsPlaying      then anims.Aim:Stop(CUT)      end
-	if anims.Aim_Left and anims.Aim_Left.IsPlaying then anims.Aim_Left:Stop(CUT) end
+	if anims.Aim      and anims.Aim.IsPlaying      then anims.Aim:Stop(self:_aimDuration())      end
+	if anims.Aim_Left and anims.Aim_Left.IsPlaying then anims.Aim_Left:Stop(self:_aimDuration()) end
 end
 
 function BaseTool:_restoreBase()
@@ -1040,7 +1075,7 @@ function BaseTool:_restoreBase()
 			local kill = (want == anims.Aim) and anims.Aim_Left or anims.Aim
 			if kill and kill.IsPlaying then kill:Stop(CUT) end
 			if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT) end
-			if want and not want.IsPlaying then want:Play(CUT) end
+			if want and not want.IsPlaying then want:Play(self:_aimDuration(), 1, 0.5) end
 		else
 			self:aim()
 		end
@@ -1225,7 +1260,7 @@ function BaseTool:_onShoulderChanged()
 		if not newAimTrack or oldAimTrack == newAimTrack then return end
 
 		if oldAimTrack and oldAimTrack.IsPlaying then oldAimTrack:Stop(CUT) end
-		if not newAimTrack.IsPlaying then newAimTrack:Play(CUT) end
+		if not newAimTrack.IsPlaying then self:_blendAim(newAimTrack) end
 	end)
 end
 
@@ -1260,7 +1295,7 @@ function BaseTool:aim()
 
 		local aimTrack = self:_aimTrack()
 		if aimTrack then
-			aimTrack:Play(CUT / (LOCAL_PLAYER.Character:GetAttribute("AimSpeed") or 1))
+			self:_blendAim(aimTrack)
 			self.ForceBlockFire = false
 			self.Aiming = true
 		end
@@ -1318,6 +1353,7 @@ end
 function BaseTool:endAiming()
 	if not self.Aiming then return end
 	self.Aiming = false
+	self._aimReadyAt = nil
 	self._aimVersion += 1
 
 	self:_stopTransparencyTracking()
@@ -1660,11 +1696,14 @@ function BaseTool:_startAimTracking()
 	self._smoothedYaw = nil
 	self._lastYaw = nil
 
-	local lerpAlpha = 0.15
-
-	self._aimConnection = RunService.RenderStepped:Connect(function()
+	self._aimConnection = RunService.RenderStepped:Connect(function(dt)
+		local duration = self:_aimDuration()
+		local lerpAlpha = if self.IsFirearm then WeaponHandling.Alpha(dt, duration) else 1 - math.pow(0.88, dt * 60)
 		if not self.Equipped then
 			return
+		end
+		if self.IsFirearm and LOCAL_PLAYER.Character then
+			LOCAL_PLAYER.Character:SetAttribute("WeaponAimDuration", duration)
 		end
 
 		local char = LOCAL_PLAYER.Character
@@ -1748,7 +1787,7 @@ function BaseTool:_startAimTracking()
 				deltaYaw += math.pi * 2
 			end
 
-			self._smoothedYaw += deltaYaw * 0.2
+			self._smoothedYaw += deltaYaw * (if self.IsFirearm then lerpAlpha else 1 - math.pow(0.8, dt * 60))
 
 			self._smoothedYaw = math.clamp(
 				self._smoothedYaw,
@@ -1790,8 +1829,8 @@ function BaseTool:_startAimTracking()
 		self._fpLeftRot = self._fpLeftRot or leftRot
 		self._fpRightRot = self._fpRightRot or rightRot
 
-		self._fpLeftRot = self._fpLeftRot:Lerp(leftRot, 0.12)
-		self._fpRightRot = self._fpRightRot:Lerp(rightRot, 0.12)
+		self._fpLeftRot = self._fpLeftRot:Lerp(leftRot, lerpAlpha)
+		self._fpRightRot = self._fpRightRot:Lerp(rightRot, lerpAlpha)
 
 		-- // Apply lean as a pure horizontal translation.
 		local leanOffset = LEAN_ARM_OFFSET * self.LeanAlpha
@@ -1982,7 +2021,7 @@ function BaseTool:drop()
 	if character then
 		character:SetAttribute("GunEquipped", nil)
 		character:SetAttribute("Sprint_Animation", nil)
-		character:SetAttribute("WeaponDrawSpeed", nil)
+		character:SetAttribute("WeaponAimDuration", nil)
 		character:SetAttribute("No_Sprint_Animation", nil)
 		character:SetAttribute("Aiming", nil)
 		character:SetAttribute("ADSMovementExempt", nil)

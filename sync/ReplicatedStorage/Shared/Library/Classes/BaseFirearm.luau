@@ -200,7 +200,7 @@ function BaseFirearm:_blockFireFor(delay: number?)
 end
 
 function BaseFirearm:_canFireNow(): boolean
-	return os.clock() >= (self._nextFireAt or 0)
+	return os.clock() >= math.max(self._nextFireAt or 0, self._drawReadyAt or 0, self.Aiming and (self._aimReadyAt or 0) or 0)
 end
 
 function BaseFirearm:_getReserveAmmo(): NumberValue?
@@ -680,6 +680,12 @@ function BaseFirearm:_reloadByRound(options): boolean
 	local endAnim = if options and options.endAnim ~= nil then options.endAnim else "Reload_End"
 	local startTrack = startAnim and self:_playAnim(startAnim) or nil
 	if startTrack then startTrack.Stopped:Wait() end
+	-- Some opening clips include the first insertion already.
+	if options and options.startLoadsRound and startTrack and self.Equipped
+		and not self._reloadCancelled and self.Capacity < self.Max_Capacity and reserveAmmo.Value > 0 then
+		self.Capacity += 1
+		self:_fire_ammo(options.ammoCost or 1)
+	end
 
 	while self.Equipped and self.Capacity < self.Max_Capacity and reserveAmmo.Value > 0 and not self._reloadCancelled do
 		local loopTrack = loopAnim and self:_playAnim(loopAnim) or nil

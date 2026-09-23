@@ -30,6 +30,62 @@ local Classes = require(
 local ClassAppearance = require(
 	replicatedstorage_service.Shared.Library.ClassAppearance
 )
+local WeaponIds = require(
+	replicatedstorage_service.Shared.Library.WeaponIds
+)
+
+local WeaponHandling = require(replicatedstorage_service.Shared.Library.WeaponHandling)
+
+local PENETRATION_NAMES = {
+	"Little", "Weak", "Decent", "Strong", "Powerful", "Devastating",
+}
+
+local function image_id(value): string
+	if value == nil then return "" end
+	local text = tostring(value)
+	if text == "" or text:find("rbxasset", 1, true) then return text end
+	return "rbxassetid://" .. text
+end
+
+local function set_text(parent: Instance?, name: string, value)
+	local label = parent and parent:FindFirstChild(name, true)
+	if label and (label:IsA("TextLabel") or label:IsA("TextButton")) then
+		label.Text = tostring(value or "")
+	end
+end
+
+local function set_bar(frame: Instance?, value: number)
+	local inner = frame and frame:FindFirstChild("inner", true)
+	if inner and inner:IsA("GuiObject") then
+		inner.Size = UDim2.new(math.clamp(value, 0, 1), 0, 1, 0)
+	end
+end
+
+local function format_assist(text: string): string
+	local settings = local_player:FindFirstChild("PlayerData")
+	settings = settings and settings:FindFirstChild("Settings Data")
+	local inputs = settings and settings:FindFirstChild("Inputs")
+	local binds = inputs and inputs:FindFirstChild("Binds")
+	local function current_bind(name: string, fallback: string): string
+		local bind = binds and binds:FindFirstChild(name)
+		local current = bind and bind:FindFirstChild("Current")
+		return current and tostring(current.Value) or fallback
+	end
+	local replacements = {
+		["@ALT"] = current_bind("Alternate Action", "Q"),
+		["@CHECK"] = current_bind("Check Ammo", "H"),
+		["@RELOAD"] = current_bind("Reload", "R"),
+		["@EQUIP"] = current_bind("Equipment", "1/2"),
+		["@WALKER1"] = "1",
+		["@WALKER2"] = "2",
+		["@WALKER3"] = "3",
+		["@WALKER4"] = "4",
+	}
+	for token, replacement in pairs(replacements) do
+		text = text:gsub(token, replacement)
+	end
+	return text
+end
 
 -- // UI References
 local loadout_ui
@@ -177,6 +233,137 @@ local function clean_up_scrolling_list()
 end
 
 
+local function get_master_weapon_data(weapon_module, weapon_name: string?)
+	local merged = {}
+	local asset_name = WeaponIds.AssetName(weapon_name or weapon_module.className or "")
+	local legacy_folder = gun_classes:FindFirstChild("weapon_modules")
+	local legacy_source = legacy_folder and legacy_folder:FindFirstChild(asset_name)
+	if legacy_source and legacy_source:IsA("ModuleScript") then
+		local ok, legacy = pcall(require, legacy_source)
+		if ok and type(legacy) == "table" then
+			for key, value in pairs(legacy) do merged[key] = value end
+		end
+	end
+	for key, value in pairs(weapon_module) do
+		if value ~= nil and value ~= "" then merged[key] = value end
+	end
+	return merged
+end
+
+local function show_weapon_details(weapon_module, weapon_name: string?)
+	if not loadout_ui or type(weapon_module) ~= "table" then return end
+	weapon_module = get_master_weapon_data(weapon_module, weapon_name)
+	local stats_side = loadout_ui:FindFirstChild("statsside")
+	if not stats_side then return end
+
+	stats_side.Visible = true
+	local icon = stats_side:FindFirstChild("wepicon")
+	if icon and icon:IsA("ImageLabel") then
+		icon.Image = image_id(weapon_module.icon or weapon_module.Tool_Image)
+	end
+	set_text(stats_side, "wepnametext", weapon_module.Display_Name or weapon_module.name)
+
+	local description = stats_side:FindFirstChild("descscroll")
+	set_text(description, "desc", weapon_module.desc)
+	if description and description:IsA("ScrollingFrame") then
+		description.CanvasPosition = Vector2.zero
+	end
+
+	local lore_panel = stats_side:FindFirstChild("perklore_lower")
+	local lore_scroll = lore_panel and lore_panel:FindFirstChild("scroll")
+	set_text(lore_scroll, "desc", weapon_module.lore)
+	if lore_scroll and lore_scroll:IsA("ScrollingFrame") then
+		lore_scroll.CanvasPosition = Vector2.zero
+	end
+
+	local assists_panel = stats_side:FindFirstChild("stats_assist")
+	local assists_scroll = assists_panel and assists_panel:FindFirstChild("scroll")
+	local assists = weapon_module.assists
+	if assists_panel and assists_panel:IsA("GuiObject") then
+		assists_panel.Visible = type(assists) == "table" and #assists > 0
+	end
+	if assists_scroll then
+		for _, child in ipairs(assists_scroll:GetChildren()) do
+			if child.Name ~= "ex" and not child:IsA("UIListLayout") then child:Destroy() end
+		end
+		local example = assists_scroll:FindFirstChild("ex")
+		if example and type(assists) == "table" then
+			for order, assist in ipairs(assists) do
+				local row = example:Clone()
+				row.Name = "assist"
+				row.LayoutOrder = order
+				if row:IsA("TextLabel") or row:IsA("TextButton") then
+					row.Text = "- " .. format_assist(assist)
+				else
+					set_text(row, "label", "- " .. format_assist(assist))
+				end
+				row.Visible = true
+				row.Parent = assists_scroll
+			end
+		end
+	end
+
+	local stats_lower = stats_side:FindFirstChild("statslower")
+	local is_gun = weapon_module.tooltype == "gun"
+	if stats_lower and stats_lower:IsA("GuiObject") then stats_lower.Visible = is_gun end
+	local stats_range = stats_side:FindFirstChild("statsrange")
+	if stats_range and stats_range:IsA("GuiObject") then stats_range.Visible = is_gun end
+	if not is_gun then return end
+	local range_page = stats_range and stats_range:FindFirstChild("rangestats")
+	local handling_page = stats_range and stats_range:FindFirstChild("handlingstats")
+	if range_page and range_page:IsA("GuiObject") then range_page.Visible = true end
+	if handling_page and handling_page:IsA("GuiObject") then handling_page.Visible = false end
+	set_text(stats_range, "toptext", "Damage Range Info")
+
+	local damage = weapon_module.damage or 0
+	local mid_damage = weapon_module.range_damage or damage
+	local far_damage = weapon_module.far_damage or mid_damage
+	local pellets = weapon_module.pellets or 1
+	local accuracy = weapon_module.accuracy or 50
+	local moving_accuracy = math.max(weapon_module.moving_accuracy or accuracy, 0.001)
+	local recoil = weapon_module.recoil or 0
+	local recoil_count = weapon_module.recoil_count or 6
+	if stats_lower then
+		set_bar(stats_lower:FindFirstChild("statline1"), (damage + mid_damage / 2 + far_damage / 2) * pellets / 300)
+		set_bar(stats_lower:FindFirstChild("statline2"), (50 - accuracy) / 50)
+		set_bar(stats_lower:FindFirstChild("statline3"), accuracy / moving_accuracy)
+		set_bar(stats_lower:FindFirstChild("statline4"), (60 - recoil * (recoil_count / 6)) / 60)
+		local total_delay = (weapon_module.fire_rate or 1) + (weapon_module.cycle or 0) + (weapon_module.cycle_rest or 0)
+		set_text(stats_lower:FindFirstChild("statline5"), "insidetext", weapon_module.display_fire_rate or math.ceil(60 / math.max(total_delay, 0.001)))
+		local capacity = weapon_module.capacity or 0
+		local ammo_text = tostring(capacity)
+		if not weapon_module.hidereserves then
+			ammo_text ..= " | " .. capacity * (weapon_module.ammo_reserves or 0) .. "/" .. capacity * (weapon_module.ammo_reserves_max or 0)
+		end
+		set_text(stats_lower:FindFirstChild("statline6"), "insidetext", ammo_text)
+	end
+
+	local range_stats = stats_range and stats_range:FindFirstChild("rangestats")
+	if range_stats then
+		local close = range_stats:FindFirstChild("rangeclose")
+		local mid = range_stats:FindFirstChild("rangemid")
+		local long = range_stats:FindFirstChild("rangelong")
+		set_text(close, "rangeclose", "<" .. tostring(weapon_module.range or 0) .. " std")
+		if close and (close:IsA("TextLabel") or close:IsA("TextButton")) then close.Text = "<" .. tostring(weapon_module.range or 0) .. " std" end
+		set_text(close, "insidetext", damage * pellets)
+		if mid and (mid:IsA("TextLabel") or mid:IsA("TextButton")) then mid.Text = tostring(weapon_module.range or 0) .. " std" end
+		set_text(mid, "insidetext", mid_damage * pellets)
+		if long and (long:IsA("TextLabel") or long:IsA("TextButton")) then long.Text = tostring(weapon_module.far or 0) .. " std" end
+		set_text(long, "insidetext", far_damage * pellets)
+	end
+
+	local handling = stats_range and stats_range:FindFirstChild("handlingstats")
+	if handling then
+		local penetration = math.clamp((weapon_module.pen or 0) + 1, 1, #PENETRATION_NAMES)
+		set_text(handling:FindFirstChild("penpower"), "insidetext", PENETRATION_NAMES[penetration])
+		set_text(handling:FindFirstChild("aimspeed"), "insidetext", tostring(weapon_module.draw_speed or 0) .. "s | " .. tostring(weapon_module.aim_speed or 0) .. "s")
+		local reload = ((weapon_module.reload_loop or 0) + (weapon_module.reload_loop_after or 0)) * (weapon_module.capacity or 0)
+			+ (weapon_module.reload_start or 0) + (weapon_module.reload_end or 0)
+		set_text(handling:FindFirstChild("reloadfull"), "insidetext", tostring(math.ceil(reload * 100) / 100) .. "s")
+	end
+end
+
+
 local function get_weapon_weight(weapon_name: string): number
 	if weapon_name == "" then
 		return 0
@@ -223,6 +410,8 @@ local function update_selected_weapon(
 		weapon_name_label.Text =
 			weapon_name == ""
 			and "None"
+			or weapon_module.Display_Name
+			or weapon_module.name
 			or weapon_name
 	end
 
@@ -276,14 +465,8 @@ local function create_weapon_options(slot_name: string)
 		none_locked.Visible = false
 	end
 
-	local label =
-		Instance.new("TextLabel")
-
-	label.Text = "None"
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.BackgroundTransparency = 1
-	label.Size = UDim2.fromScale(1, 1)
-	label.Parent = none
+	set_text(none, "wepname", "None")
+	set_text(none, "desc", "Leave this equipment slot empty.")
 
 	none.Visible = true
 	none.Parent = scrolling_list
@@ -321,7 +504,7 @@ local function create_weapon_options(slot_name: string)
 			or child.Name == "LegacyGunFactory" then
 			continue
 		end
-		if Classes.IsEliteWeapon(child.Name) then
+		if child.Parent == gun_classes and not WeaponHandling.IsBaseline(child.Name) then
 			continue
 		end
 
@@ -379,8 +562,17 @@ local function create_weapon_options(slot_name: string)
 
 		if weapon_icon then
 			weapon_icon.Image =
-				weapon_module.Tool_Image or ""
+				image_id(weapon_module.icon or weapon_module.Tool_Image)
 		end
+		local menu_data = get_master_weapon_data(weapon_module, child.Name)
+		set_text(scrolling_clone, "wepname", menu_data.Display_Name or menu_data.name or child.Name)
+		set_text(scrolling_clone, "desc", menu_data.desc)
+
+		local function preview_details()
+			show_weapon_details(weapon_module, child.Name)
+		end
+		scrolling_clone.MouseEnter:Connect(preview_details)
+		scrolling_clone.SelectionGained:Connect(preview_details)
 
 		-- // Weight indicators
 		local weapon_weight_frame =
@@ -445,10 +637,12 @@ local function setup_character()
 	local character =
 		local_player.Character
 		or local_player.CharacterAdded:Wait()
+	local appearance_deadline = os.clock() + 10
 
 	while character == local_player.Character
 		and generation == previewGeneration
-		and not character:GetAttribute("AppearanceReady") do
+		and not character:GetAttribute("AppearanceReady")
+		and os.clock() < appearance_deadline do
 
 		task.wait()
 	end
@@ -744,6 +938,11 @@ local function refresh_class()
 			gun_classes:FindFirstChild(name)
 			or tool_classes:FindFirstChild(name)
 
+		if source and source.Parent == gun_classes and not WeaponHandling.IsBaseline(name) then
+			source = nil
+			name = ""
+		end
+
 		local success = false
 		local weapon
 
@@ -847,6 +1046,45 @@ local function setup_ui_connections()
 			"Classes_Options"
 		)
 
+	-- // Master-script detail panel controls
+	local stats_side = loadout_ui:FindFirstChild("statsside")
+	if stats_side then
+		local stats_range = stats_side:FindFirstChild("statsrange")
+		local next_page = stats_range and stats_range:FindFirstChild("nextpage")
+		if next_page and next_page:IsA("GuiButton") then
+			table.insert(ui_connections, next_page.Activated:Connect(function()
+				local range_page = stats_range:FindFirstChild("rangestats")
+				local handling_page = stats_range:FindFirstChild("handlingstats")
+				local show_handling = range_page and range_page.Visible == true
+				if range_page and range_page:IsA("GuiObject") then range_page.Visible = not show_handling end
+				if handling_page and handling_page:IsA("GuiObject") then handling_page.Visible = show_handling end
+				set_text(stats_range, "toptext", show_handling and "Weapon Performance Info" or "Damage Range Info")
+			end))
+		end
+
+		local assists = stats_side:FindFirstChild("stats_assist")
+		local assist_hover = stats_side:FindFirstChild("assist_hover")
+		if assists and assists:IsA("GuiObject") and assist_hover and assist_hover:IsA("GuiButton") then
+			table.insert(ui_connections, assist_hover.Activated:Connect(function()
+				assists.Visible = not assists.Visible
+			end))
+		end
+
+		local lore = stats_side:FindFirstChild("perklore_lower")
+		local stats_lower = stats_side:FindFirstChild("statslower")
+		local view_lore = stats_side:FindFirstChild("viewlore")
+		if lore and lore:IsA("GuiObject") and view_lore and view_lore:IsA("GuiButton") then
+			table.insert(ui_connections, view_lore.Activated:Connect(function()
+				lore.Visible = not lore.Visible
+				if stats_lower and stats_lower:IsA("GuiObject") then stats_lower.Visible = not lore.Visible end
+				if stats_range and stats_range:IsA("GuiObject") then stats_range.Visible = not lore.Visible end
+				if view_lore:IsA("TextButton") then
+					view_lore.Text = lore.Visible and "Show Stats & Details" or "Show History & Lore"
+				end
+			end))
+		end
+	end
+
 	-- // Class buttons
 	for _, name in Classes.Order do
 		local button =
@@ -877,6 +1115,14 @@ local function setup_ui_connections()
 			ui_connections,
 			button.Activated:Connect(
 				function()
+					local equipment_value = equipment:FindFirstChild(slot)
+					local selected_name = equipment_value and equipment_value.Value or ""
+					local selected_source = gun_classes:FindFirstChild(selected_name)
+						or tool_classes:FindFirstChild(selected_name)
+					if selected_source and selected_source:IsA("ModuleScript") then
+						local ok, selected_module = pcall(require, selected_source)
+						if ok then show_weapon_details(selected_module, selected_name) end
+					end
 					create_weapon_options(slot)
 				end
 			)

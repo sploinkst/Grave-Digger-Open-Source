@@ -26,6 +26,15 @@ local button_connections = {}
 local firstclick = false
 -- // Functions
 
+local function set_button_selected(button: GuiButton, selected: boolean)
+	local color = selected and Color3.new(1, 1, 1) or Color3.new(0, 0, 0)
+	if button:IsA("ImageButton") then
+		button.ImageColor3 = color
+	elseif button:IsA("TextButton") then
+		button.TextColor3 = color
+	end
+end
+
 local function set_ui()
 	if menu_ui and menu_ui.Parent then
 		menu_ui.Enabled = menu_boolean
@@ -41,11 +50,11 @@ local function color_all_grey()
 	end
 
 	for _, child in pairs(main_menu:GetChildren()) do
-		if not child:IsA("ImageButton") then
+		if not child:IsA("GuiButton") then
 			continue
 		end
 
-		child.ImageColor3 = Color3.new(0, 0, 0)
+		set_button_selected(child, false)
 	end
 end
 
@@ -70,15 +79,16 @@ local function set_scene(scene, btn)
 		return
 	end
 
-	local scene = scenes_folder:FindFirstChild(scene)
+	local scene_name = scene
+	local scene_ui = scenes_folder:FindFirstChild(scene_name)
 
-	if not scene or not scene:IsA("ScreenGui") then
-		warn("[MENUSERVICE] Missing menu scene:", scene)
+	if not scene_ui or not scene_ui:IsA("ScreenGui") then
+		warn("[MENUSERVICE] Missing menu scene:", scene_name)
 		return
 	end
 
 	-- Switch menu camera scene.
-	menu_camera_module:Switch(scene)
+	menu_camera_module:Switch(scene_name)
 
 	-- Reset all buttons.
 	color_all_grey()
@@ -87,8 +97,8 @@ local function set_scene(scene, btn)
 	disable_all_scenes_ui()
 
 	-- Open selected scene.
-	scene.Enabled = true
-	current_ui = scene
+	scene_ui.Enabled = true
+	current_ui = scene_ui
 end
 local function bind_menu_buttons()
 	-- Disconnect connections belonging to the previous UI tree.
@@ -102,15 +112,15 @@ local function bind_menu_buttons()
 		return
 	end
 
-	for _, button: ImageButton in pairs(main_menu:GetChildren()) do
-		if not button:IsA("ImageButton") then
+	for _, button in pairs(main_menu:GetChildren()) do
+		if not button:IsA("GuiButton") then
 			continue
 		end
 
 		table.insert(button_connections, button.Activated:Connect(function()
 			set_scene(button.Name)
 			-- Highlight selected button.
-			button.ImageColor3 = Color3.new(1, 1, 1)
+			set_button_selected(button, true)
 		end))
 	end
 end
@@ -196,6 +206,7 @@ local function reset_menu_ui()
 	-- Immediately close the logical menu state.
 	menu_boolean = false
 	current_ui = nil
+	firstclick = false
 
 	local_player:SetAttribute("MenuOpen", false)
 
@@ -227,6 +238,7 @@ local function handle_character_removing()
 	-- Reset local menu state immediately.
 	menu_boolean = false
 	current_ui = nil
+	firstclick = false
 
 	-- Disable the currently-existing UI.
 	if menu_ui and menu_ui.Parent then
@@ -314,6 +326,8 @@ end
 
 -- // Start
 function module.start_module()
+	-- Signals the legacy coreScript that MenuService exclusively owns M.
+	local_player:SetAttribute("ModernMenuActive", true)
 	-- Initial UI setup.
 	if not refresh_ui(true) then
 		warn("[MENUSERVICE] Menu UI was not available during startup")
@@ -359,11 +373,14 @@ function module.start_module()
 			-- OPEN MENU
 			menu_boolean = true
 			
-			if not firstclick then
+			if not current_ui or not current_ui.Parent then
 				set_scene("Loadout")
 				firstclick = true
-				
-				local_player.PlayerGui.Menu.Main_Frame.Loadout.ImageColor3 = Color3.fromRGB(255, 255, 255)
+
+				local loadout_button = main_menu and main_menu:FindFirstChild("Loadout")
+				if loadout_button and loadout_button:IsA("GuiButton") then
+					set_button_selected(loadout_button, true)
+				end
 			end
 			
 			camera_service.SwitchCamera("MenuCamera", true)

@@ -404,8 +404,6 @@ local function CopyUI(player)
 			if clone:IsA("ScreenGui") then clone.ResetOnSpawn = false end
 		end
 		
-		if clone:IsA("ScreenGui") and clone.ResetOnSpawn == false then return end
-		
 		clone.Parent = player:WaitForChild("PlayerGui")
 	end
 end

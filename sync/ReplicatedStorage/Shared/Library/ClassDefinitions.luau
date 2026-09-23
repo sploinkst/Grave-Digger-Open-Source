@@ -109,6 +109,18 @@ function Classes.GetLoadout(player: Player, className: string?)
 			value.Parent = loadout
 		end
 	end
+	-- Clear retired selections before they can appear in a slot or be deployed.
+	if loadout and game:GetService("RunService"):IsServer() then
+		local handling = require(script.Parent.WeaponHandling)
+		local tools = script.Parent.Classes.ToolClasses
+		for _, slot in loadout:GetChildren() do
+			if slot:IsA("StringValue") and slot.Value ~= "" and not tools:FindFirstChild(slot.Value) and not handling.IsBaseline(slot.Value) then
+				slot.Value = ""
+				local legacy = equipment:FindFirstChild(slot.Name)
+				if legacy and legacy:IsA("StringValue") then legacy.Value = "" end
+			end
+		end
+	end
 	return loadout
 end
 

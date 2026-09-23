@@ -23,6 +23,7 @@ local loadout_targets = {
 }
 local Classes = require(ReplicatedStorage.Shared.Library.ClassDefinitions)
 local ClassService = require(script.Parent.Parent.ClassService)
+local WeaponHandling = require(ReplicatedStorage.Shared.Library.WeaponHandling)
 
 local started = false
 
@@ -43,10 +44,10 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 		if legacy and legacy:IsA("StringValue") then legacy.Value = "" end
 		return
 	end
-	if Classes.IsEliteWeapon(weapon_name) then return end
 	local weapon_script = gun_classes:FindFirstChild(weapon_name) or tool_classes:FindFirstChild(weapon_name)
 	if not weapon_script or not weapon_script:IsA("ModuleScript") then return end
 
+	if weapon_script.Parent == gun_classes and not WeaponHandling.IsBaseline(weapon_name) then return end
 	local success, weapon_class = pcall(require, weapon_script)
 	if not success or type(weapon_class.Weight) ~= "number" then return end
 	-- Firearms can occupy either weapon slot. Non-firearm tools retain their

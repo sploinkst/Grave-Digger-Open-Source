@@ -233,7 +233,6 @@ function AdjudicatorRifle:setAltMode()
 	self.HipBraced = not self.HipBraced
 	self:_killAimTracks()
 	local hipAim = self:_aimTrack()
-	if self.HipBraced and self.Aiming and hipAim then hipAim:Play(CUT) end
 
 	if self.HipBraced then
 		self.recoil = WALKING_FIRE_STATS.recoil
@@ -254,6 +253,7 @@ function AdjudicatorRifle:setAltMode()
 	end
 
 	if self.Aiming then
+		if hipAim then self:_blendAim(hipAim) end
 		self:_enable_aiming_ui(self.Aiming_Number)
 	end
 

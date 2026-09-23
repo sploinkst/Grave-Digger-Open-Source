@@ -327374,6 +327374,14 @@
                   "filePaths": [
                     "sync/ReplicatedStorage/Shared/Library/WeaponIds.luau"
                   ]
+                },
+                {
+                  "name": "WeaponHandling",
+                  "className": "ModuleScript",
+                  "guid": "4614530",
+                  "filePaths": [
+                    "sync/ReplicatedStorage/Shared/Library/WeaponHandling.luau"
+                  ]
                 }
               ]
             },

@@ -82,6 +82,7 @@ function BaseShotgun:_firePellets(
 end
 
 function BaseShotgun:_fireShotgunBlast(options): boolean
+	if not self.Equipped or self.Equipping or not self:_canFireNow() then return false end
 	if self.Firing or self.Reloading or self.Cycling then return false end
 	if options and options.requireAiming ~= false and not self.Aiming then return false end
 	if self.ForceBlockFire or self:_if_sprinting() or self:_if_jumping() then return false end

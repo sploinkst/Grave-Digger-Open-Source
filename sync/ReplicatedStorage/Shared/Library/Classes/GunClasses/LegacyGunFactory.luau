@@ -190,12 +190,33 @@ local function publishStaticFields(Class, className: string, config)
 	Class.melee_swing_speed = config.melee_swing_speed
 	Class.draw_speed = config.draw_speed or config.drawSpeed
 	Class.aim_speed = config.aim_speed or config.aimSpeed
+	Class.reload_start = config.reload_start or config.reloadStart or 0
+	Class.reload_loop = config.reload_loop or config.reloadLoop or 0
+	Class.reload_loop_after = config.reload_loop_after or config.reloadLoopAfter or 0
+	Class.reload_end = config.reload_end or config.reloadEnd or 0
+	Class.hidereserves = config.hidereserves or false
+	Class.animations = config.animations or config.AnimationGunType
 end
 
 local Factory = {}
 
 function Factory.create(config)
 	config = mergeLegacyStats(config)
+	-- The legacy weapon modules remain the master source for menu copy and
+	-- display statistics. Migrated classes only override fields they define.
+	local legacyModules = script.Parent:FindFirstChild("weapon_modules")
+	local legacyName = config.assetName or config.AnimationGunType or config.animations
+	local legacySource = legacyModules and legacyName and legacyModules:FindFirstChild(legacyName)
+	if legacySource and legacySource:IsA("ModuleScript") then
+		local ok, legacyConfig = pcall(require, legacySource)
+		if ok and type(legacyConfig) == "table" then
+			for key, value in pairs(legacyConfig) do
+				if config[key] == nil or config[key] == "" then
+					config[key] = value
+				end
+			end
+		end
+	end
 	local className = config.className or config.canonicalName or config.name
 	local Base = baseFor(config.WeaponCategory)
 	local Class = {}

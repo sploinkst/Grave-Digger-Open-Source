@@ -69,12 +69,6 @@ local RECOIL_SNAPPINESS     = 100
 local SHOULDER_SWITCH_SPEED = 6
 local TRANSITION_SPEED      = 0.5
 
--- Weapon handling is derived from the legacy draw-speed duration. A weapon
--- with a 0.5 second draw keeps the old 180 degree/second turn rate.
-local HANDLING_RATE_SCALE = 90
-local MIN_WEAPON_TURN_RATE = 45
-local MAX_WEAPON_TURN_RATE = 720
-
 local LEAN_MAX_ROLL   = math.rad(3)
 local LEAN_MAX_OFFSET = 0.5
 local LEAN_LERP_SPEED = 6
@@ -84,7 +78,7 @@ local LEAN_ARM_OFFSET  = 0.35
 
 local hold_breath = LocalPlayer.PlayerGui:WaitForChild("Aiming"):WaitForChild("hold_breath")
 
-local first_person_transparency_tween = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local first_person_transparency_tween = TweenInfo.new(LocalPlayer.Character:GetAttribute("WeaponAimDuration") or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local isRightMouseDown = false
 
@@ -545,17 +539,14 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 		maxRate = math.rad(2)
 
 	else
-		local drawSpeed = character:GetAttribute("WeaponDrawSpeed")
-		if typeof(drawSpeed) == "number" and drawSpeed > 0 then
-			local degreesPerSecond = math.clamp(
-				HANDLING_RATE_SCALE / drawSpeed,
-				MIN_WEAPON_TURN_RATE,
-				MAX_WEAPON_TURN_RATE
-			)
-			maxRate = math.rad(degreesPerSecond)
-		else
-			maxRate = self.MaxTurnRate
+		local duration = character:GetAttribute("WeaponAimDuration")
+		if typeof(duration) == "number" and duration > 0 then
+			local alpha = 1 - math.exp(-math.log(100) * dt / duration)
+			self.CharacterYaw += diff * alpha
+			root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, self.CharacterYaw, 0)
+			return
 		end
+		maxRate = self.MaxTurnRate
 	end
 
 	local responsivenessAlpha = math.clamp(
@@ -607,7 +598,7 @@ function BaseCamera:_onAimingStateChanged()
 
 	if self.FOVTween then self.FOVTween:Cancel() end
 	self.FOVTween = TweenService:Create(Camera,
-		TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		TweenInfo.new(LocalPlayer.Character:GetAttribute("WeaponAimDuration") or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{ FieldOfView = self.TargetFOV }
 	)
 	self.FOVTween:Play()
@@ -642,7 +633,7 @@ function BaseCamera:_onSprintStateChanged(walkSpeed)
 
 	if self.FOVTween then self.FOVTween:Cancel() end
 	self.FOVTween = TweenService:Create(Camera,
-		TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		TweenInfo.new(LocalPlayer.Character:GetAttribute("WeaponAimDuration") or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{ FieldOfView = self.TargetFOV }
 	)
 	self.FOVTween:Play()

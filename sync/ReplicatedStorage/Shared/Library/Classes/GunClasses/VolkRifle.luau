@@ -396,6 +396,7 @@ end
 function VolkRifle:reload()
 	self:_reloadByRound({
 		startAnim = "Reload_Start",
+		startLoadsRound = true,
 		loopAnim = "Reload_Loop",
 		endAnim = "Reload_End",
 	})
