@@ -1258,16 +1258,31 @@ function module.start_module()
 		end
 	end)
 	
-	InputChange.OnServerEvent:Connect(function(player,inputName, Key)
-		player.PlayerData['Settings Data'].Inputs.Binds:FindFirstChild(inputName).Current.Value = Key
-		print("Updated Input")
-	end)
-	
-	SettingChange.OnServerEvent:Connect(function(player, Category, Setting, value)
-		player.PlayerData['Settings Data'][Category][Setting].Current.Value = value
-		print("Updated Setting")
-	end)
-	
+	InputChange.OnServerEvent:Connect(function(player,inputName,key)
+        if type(inputName)~="string" or type(key)~="string" or (key~="None" and not Enum.KeyCode[key]) then return end
+        local root=player:FindFirstChild("PlayerData")
+        local settings=root and root:FindFirstChild("Settings Data")
+        local inputs=settings and settings:FindFirstChild("Inputs")
+        local binds=inputs and inputs:FindFirstChild("Binds")
+        local bind=binds and binds:FindFirstChild(inputName)
+        local current=bind and bind:FindFirstChild("Current")
+        if current and current:IsA("StringValue") then current.Value=key end
+    end)
+    SettingChange.OnServerEvent:Connect(function(player,categoryName,settingName,newValue)
+        if type(categoryName)~="string" or type(settingName)~="string" or categoryName=="Inputs" then return end
+        local root=player:FindFirstChild("PlayerData")
+        local settings=root and root:FindFirstChild("Settings Data")
+        local category=settings and settings:FindFirstChild(categoryName)
+        local setting=category and category:FindFirstChild(settingName)
+        local current=setting and setting:FindFirstChild("Current")
+        if not current then return end
+        if current:IsA("BoolValue") and type(newValue)=="boolean" then current.Value=newValue
+        elseif (current:IsA("NumberValue") or current:IsA("IntValue")) and type(newValue)=="number" and newValue==newValue and math.abs(newValue)<math.huge then
+            local minimum,maximum=setting:FindFirstChild("Min"),setting:FindFirstChild("Max")
+            current.Value=math.clamp(newValue,minimum and minimum.Value or 0,maximum and maximum.Value or 100)
+        end
+    end)
+    
 	ResetEvent.OnServerEvent:Connect(function(player)
 		local humanoid: Humanoid = player.Character:FindFirstChildOfClass("Humanoid")
 		

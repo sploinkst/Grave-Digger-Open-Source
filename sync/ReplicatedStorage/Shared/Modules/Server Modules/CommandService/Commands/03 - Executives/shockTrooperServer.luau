@@ -11,11 +11,16 @@ return function(context, kit, target)
 	local requestedKit = kit
 	if type(requestedKit) ~= "string" or requestedKit == "" then
 		local className = player.Character and player.Character:GetAttribute("Class")
-		if className == "Rook" then
-			requestedKit = "Anti-Material Trooper"
-		else
-			requestedKit = "Storm Trooper"
-		end
+			or player:GetAttribute("SelectedClass")
+		local classKits = {
+			Soldat = "Storm Trooper",
+			Rook = "Anti-Material Trooper",
+			Officer = "Radio Trooper",
+			Lancer = "Trench Trooper",
+			Jaeger = "Geist Trooper",
+			Vanguard = "Bulwark Trooper",
+		}
+		requestedKit = classKits[className] or "Storm Trooper"
 	end
 
 	local ok, result = ClassService.SetShockTrooper(player, requestedKit, true)

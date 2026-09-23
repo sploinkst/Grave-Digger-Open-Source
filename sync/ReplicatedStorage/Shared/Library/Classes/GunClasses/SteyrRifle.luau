@@ -3,6 +3,9 @@ return require(script.Parent.LegacyGunFactory).create({
 	assetName = "steyr",
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
+	-- The Steyr is the internal controller for a weapon modification, not a
+	-- standalone loadout choice.
+	HiddenFromLoadout = true,
 	Weight = 2,
 	damage = 105,
 	capacity = 5,

@@ -50,6 +50,10 @@ Classes.EliteDefinitions = {
 	-- with the standard firearm controllers in GunClasses.
 	["Storm Trooper"] = { Primary = "StormRifle", Secondary = "GraceRevolver", RequiredClass = "Soldat", OutfitClass = "Soldat" },
 	["Anti-Material Trooper"] = { Primary = "AntiMaterialRifle", Secondary = "GraceRevolver", RequiredClass = "Rook", OutfitClass = "Rook" },
+	["Radio Trooper"] = { Primary = "RadioRifle", Secondary = "GraceRevolver", RequiredClass = "Officer", OutfitClass = "Officer" },
+	["Trench Trooper"] = { Primary = "TrenchShotgun", Secondary = "GraceRevolver", RequiredClass = "Lancer", OutfitClass = "Lancer" },
+	["Geist Trooper"] = { Primary = "GeistRifle", Secondary = "GraceRevolver", RequiredClass = "Jaeger", OutfitClass = "Jaeger" },
+	["Bulwark Trooper"] = { Primary = "BulwarkRifle", Secondary = "GraceRevolver", RequiredClass = "Vanguard", OutfitClass = "Vanguard" },
 	OcelotTrooper = { Primary = "OcelotTalonRevolver", Secondary = "OcelotTalonRevolver", RequiredClass = "Officer", OutfitClass = "Officer", RequiresUnlock = "OcelotTrooper" },
 }
 
@@ -70,7 +74,10 @@ end
 
 function Classes.GetMaxWeight(player: Player, className: string?): number
 	local definition = Classes.Get(className or Classes.Selected(player))
-	return definition.MaxWeight + (Classes.HasPerk(player, "Survivalist") and 1 or 0)
+	local loadout = Classes.GetLoadout(player, className or Classes.Selected(player))
+	local selectedPerk = loadout and loadout:FindFirstChild("Perk")
+	local survivalist = if selectedPerk then selectedPerk.Value == "Survivalist" else Classes.HasPerk(player, "Survivalist")
+	return definition.MaxWeight + (survivalist and 1 or 0)
 end
 
 function Classes.Selected(player)
@@ -114,7 +121,7 @@ function Classes.GetLoadout(player: Player, className: string?)
 		local handling = require(script.Parent.WeaponHandling)
 		local tools = script.Parent.Classes.ToolClasses
 		for _, slot in loadout:GetChildren() do
-			if slot:IsA("StringValue") and slot.Value ~= "" and not tools:FindFirstChild(slot.Value) and not handling.IsBaseline(slot.Value) then
+			if slot:IsA("StringValue") and (slot.Name == "Primary" or slot.Name == "Secondary") and slot.Value ~= "" and not tools:FindFirstChild(slot.Value) and not handling.IsBaseline(slot.Value) then
 				slot.Value = ""
 				local legacy = equipment:FindFirstChild(slot.Name)
 				if legacy and legacy:IsA("StringValue") then legacy.Value = "" end

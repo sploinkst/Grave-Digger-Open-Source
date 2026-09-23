@@ -97,7 +97,7 @@ local secondary_button
 
 local slot_buttons = {}
 
-local defaultRowIcons = {}
+local defaultRows = {}
 
 -- // Preview
 local preview
@@ -187,13 +187,19 @@ local function get_loadout_ui()
 		Secondary = secondary_button,
 	}
 
-	table.clear(defaultRowIcons)
+	table.clear(defaultRows)
 
 	for _, row in options_frame:GetChildren() do
 		local icon = row:FindFirstChild("wepicon")
+		local category = row:FindFirstChild("cat")
+		local weapon_name = row:FindFirstChild("wepname")
 
-		if icon then
-			defaultRowIcons[row.Name] = icon.Image
+		if icon or category or weapon_name then
+			defaultRows[row.Name] = {
+				Icon = icon and icon.Image or "",
+				Category = category and category.Text or row.Name,
+				Name = weapon_name and weapon_name.Text or row.Name,
+			}
 		end
 	end
 
@@ -250,10 +256,18 @@ local function get_master_weapon_data(weapon_module, weapon_name: string?)
 	return merged
 end
 
+local function get_legacy_item_data(asset_name: string)
+	local legacy_folder = gun_classes:FindFirstChild("weapon_modules")
+	local source = legacy_folder and legacy_folder:FindFirstChild(asset_name)
+	if not source or not source:IsA("ModuleScript") then return nil end
+	local ok, data = pcall(require, source)
+	return ok and type(data) == "table" and data or nil
+end
+
 local function show_weapon_details(weapon_module, weapon_name: string?)
 	if not loadout_ui or type(weapon_module) ~= "table" then return end
 	weapon_module = get_master_weapon_data(weapon_module, weapon_name)
-	local stats_side = loadout_ui:FindFirstChild("statsside")
+	local stats_side = loadout_ui:FindFirstChild("Statistics") or loadout_ui:FindFirstChild("statsside")
 	if not stats_side then return end
 
 	stats_side.Visible = true
@@ -274,6 +288,16 @@ local function show_weapon_details(weapon_module, weapon_name: string?)
 	set_text(lore_scroll, "desc", weapon_module.lore)
 	if lore_scroll and lore_scroll:IsA("ScrollingFrame") then
 		lore_scroll.CanvasPosition = Vector2.zero
+	end
+	if lore_panel and lore_panel:IsA("GuiObject") then
+		lore_panel.Visible = false
+	end
+	local view_lore = stats_side:FindFirstChild("viewlore")
+	if view_lore and view_lore:IsA("GuiObject") then
+		view_lore.Visible = weapon_module.lore ~= nil and weapon_module.lore ~= ""
+		if view_lore:IsA("TextButton") then
+			view_lore.Text = "Show History & Lore"
+		end
 	end
 
 	local assists_panel = stats_side:FindFirstChild("stats_assist")
@@ -360,6 +384,33 @@ local function show_weapon_details(weapon_module, weapon_name: string?)
 		local reload = ((weapon_module.reload_loop or 0) + (weapon_module.reload_loop_after or 0)) * (weapon_module.capacity or 0)
 			+ (weapon_module.reload_start or 0) + (weapon_module.reload_end or 0)
 		set_text(handling:FindFirstChild("reloadfull"), "insidetext", tostring(math.ceil(reload * 100) / 100) .. "s")
+	end
+end
+
+local function show_item_details(item_name: string?, legacy_asset: string?, fallback)
+	-- Explicit legacy IDs are the authoritative master-script records for menu
+	-- tools. Their modern controller classes intentionally contain behaviour,
+	-- not the descriptive/stat fields used by this panel.
+	local legacy = legacy_asset and get_legacy_item_data(legacy_asset)
+	if legacy then
+		show_weapon_details(legacy)
+		return
+	end
+
+	if item_name and item_name ~= "" then
+		local source = gun_classes:FindFirstChild(item_name)
+			or tool_classes:FindFirstChild(item_name)
+		if source and source:IsA("ModuleScript") then
+			local ok, data = pcall(require, source)
+			if ok and type(data) == "table" then
+				show_weapon_details(data, item_name)
+				return
+			end
+		end
+	end
+
+	if fallback then
+		show_weapon_details(fallback)
 	end
 end
 
@@ -729,7 +780,9 @@ end
 -- // UI Rows
 local function set_row(
 	name,
-	text: string?
+	text: string?,
+	category_text: string?,
+	icon: string?
 )
 	if not options_frame then
 		return
@@ -747,22 +800,21 @@ local function set_row(
 
 	local weapon_icon =
 		row:FindFirstChild("wepicon")
+	local category = row:FindFirstChild("cat")
+	local defaults = defaultRows[name]
+
+	if category then
+		category.Text = category_text or (defaults and defaults.Category) or name
+	end
 
 	if weapon_name then
 		weapon_name.Text =
-			text or name
+			text or (defaults and defaults.Name) or name
 	end
 
 	if weapon_icon then
-		local selected =
-			Classes.Selected(local_player)
-
-		if selected == "Soldat" then
-			weapon_icon.Image =
-				defaultRowIcons[name] or ""
-		else
-			weapon_icon.Image = ""
-		end
+		weapon_icon.Image = icon ~= nil and image_id(icon)
+			or (defaults and defaults.Icon) or ""
 	end
 end
 
@@ -836,23 +888,46 @@ local function refresh_class()
 	end
 
 	-- // Class information
-	set_row(
-		"Combat Experience",
-		definition.Passive
-	)
+	local special_rows = {
+		Soldat = { Category = "Combat Experience", Name = "Duty & Virtue" },
+		Rook = { Category = "Hammer Holder", Name = "Construct Hammer", Asset = "hammer" },
+		Mortician = { Category = "Stimulants Pouch", Name = "Stimulant Compounds" },
+		Officer = { Category = "Binoculars Pouch", Name = "Recon Kit" },
+		Jaeger = { Category = "Trapper Kit", Name = "Hunter Kit" },
+		Lancer = { Category = "Injector Strap", Name = "Painkiller Injector" },
+		Vanguard = { Category = "Flag Bundle", Name = "Rally Banner" },
+	}
+	local special = special_rows[selected] or special_rows.Soldat
+	local special_icon
+	if special.Asset then
+		local legacy_folder = gun_classes:FindFirstChild("weapon_modules")
+		local source = legacy_folder and legacy_folder:FindFirstChild(special.Asset)
+		if source and source:IsA("ModuleScript") then
+			local ok, data = pcall(require, source)
+			if ok then special_icon = data.icon end
+		end
+	end
+	set_row("Combat Experience", special.Name, special.Category, special_icon)
 
+	local equipment_icon
+	if selected == "Rook" then
+		local source = gun_classes:FindFirstChild("RookLauncher")
+		if source and source:IsA("ModuleScript") then
+			local ok, data = pcall(require, source)
+			if ok then equipment_icon = get_master_weapon_data(data, "RookLauncher").icon end
+		end
+	end
 	set_row(
 		"Equipment Strap",
-		if selected == "Vanguard"
-			then "Guardian Spirit"
-			else "Equipment Strap"
+		definition.EquipmentName,
+		if selected == "Vanguard" then "Guardian Spirit" else "Equipment Strap",
+		equipment_icon
 	)
 
 	set_row(
 		"Mining Pick Belt",
-		if selected == "Rook"
-			then "Heavy Pickaxe"
-			else "Mining Pick"
+		if selected == "Rook" then "Heavy Pickaxe" else "Mining Pick",
+		if selected == "Rook" then "Heavy Pick Sling" else "Mining Pick Belt"
 	)
 
 	set_row("First Aid Pouch")
@@ -887,26 +962,10 @@ local function refresh_class()
 		].LayoutOrder + 1
 	end
 
-	local extras = {}
-
-	for _, name in definition.Tools do
-		if name ~= "Pickaxe"
-			and name ~= "HeavyPickaxe" then
-
-			-- gsub returns both the changed string and its replacement count. Keep
-			-- only the string; otherwise table.insert treats the count as an index.
-			table.insert(extras, (name:gsub("(%l)(%u)", "%1 %2")))
-		end
-	end
-
-	extra.Visible =
-		#extras > 0
-
-	extra.wepname.Text =
-		table.concat(
-			extras,
-			", "
-		)
+	-- Class-specific tools occupy the authored special row above. The previous
+	-- generic clone produced an extra "Class Tools" entry and displaced the
+	-- equipment/perk rows compared with the original menu.
+	extra.Visible = false
 
 	-- // Equipment
 	local equipment = Classes.GetLoadout(local_player, selected)
@@ -982,6 +1041,13 @@ local function refresh_class()
 		end
 	end
 
+	local perk_row = options_frame:FindFirstChild("Perk Slot")
+	local perk_value = equipment:FindFirstChild("Perk")
+	if perk_row then
+		local perk_name = perk_value and perk_value.Value or ""
+		set_text(perk_row, "wepname", perk_name == "" and "None" or perk_name)
+	end
+
 	-- // Inventory weight
 	local weights =
 		loadout_ui:FindFirstChild(
@@ -1018,6 +1084,74 @@ local function refresh_class()
 end
 
 
+local SPECIAL_DETAIL_ASSETS = {
+	Rook = "hammer",
+	Mortician = "stimbottle",
+	Officer = "binocs",
+	Jaeger = "jaegerkit",
+	Lancer = "lancerstim",
+	Vanguard = "flagpole",
+}
+
+local EQUIPMENT_DETAIL_ASSETS = {
+	Rook = "rooklauncher",
+	Mortician = "stims",
+	Officer = "whistle",
+	Jaeger = "nebel",
+	Lancer = "throwaxe",
+	Vanguard = "flagpole",
+}
+
+local function preview_inventory_row(row_name: string)
+	local selected = Classes.Selected(local_player)
+	local definition = Classes.Get(selected)
+	local equipment = Classes.GetLoadout(local_player, selected)
+
+	if row_name == "Primary Sling" or row_name == "Secondary Holster" then
+		local slot = row_name == "Primary Sling" and "Primary" or "Secondary"
+		local value = equipment and equipment:FindFirstChild(slot)
+		local item_name = value and value.Value or ""
+		if slot == "Primary" and definition.FixedPrimary then
+			item_name = definition.FixedPrimary
+		elseif definition.NoFirearms then
+			item_name = ""
+		end
+		show_item_details(item_name)
+	elseif row_name == "Melee Sheath" then
+		local value = equipment and equipment:FindFirstChild("Melee")
+		local item_name = value and value.Value or "Knife"
+		show_item_details(item_name, WeaponIds.AssetName(item_name))
+	elseif row_name == "Mining Pick Belt" then
+		show_item_details(
+			selected == "Rook" and "HeavyPickaxe" or "Pickaxe",
+			selected == "Rook" and "pickaxe" or "pick"
+		)
+	elseif row_name == "First Aid Pouch" then
+		show_item_details("FirstAidKit", "firstaid")
+	elseif row_name == "Combat Experience" then
+		show_item_details(nil, SPECIAL_DETAIL_ASSETS[selected], {
+			name = definition.Passive,
+			desc = "Class specialty for the " .. selected .. ".",
+			lore = "",
+		})
+	elseif row_name == "Equipment Strap" then
+		show_item_details(nil, EQUIPMENT_DETAIL_ASSETS[selected], {
+			name = definition.EquipmentName,
+			desc = "Class equipment issued to the " .. selected .. ".",
+			lore = "",
+		})
+	elseif row_name == "Perk Slot" then
+		local value = equipment and equipment:FindFirstChild("Perk")
+		local perk_name = value and value.Value or ""
+		show_item_details(nil, nil, {
+			name = perk_name == "" and "None" or perk_name,
+			desc = perk_name == "" and "No perk selected." or "Selected combat perk.",
+			lore = "",
+		})
+	end
+end
+
+
 -- // UI Connections
 local function setup_ui_connections()
 	-- Only destroy UI connections.
@@ -1046,8 +1180,33 @@ local function setup_ui_connections()
 			"Classes_Options"
 		)
 
+	-- Every visible inventory card previews its master item record on hover,
+	-- matching the original menu (weapons, tools, class kit and perk alike).
+	for _, row_name in {
+		"Primary Sling",
+		"Secondary Holster",
+		"Melee Sheath",
+		"Mining Pick Belt",
+		"First Aid Pouch",
+		"Combat Experience",
+		"Equipment Strap",
+		"Perk Slot",
+	} do
+		local row = options_frame:FindFirstChild(row_name)
+		if row and row:IsA("GuiObject") then
+			table.insert(ui_connections, row.MouseEnter:Connect(function()
+				preview_inventory_row(row_name)
+			end))
+			if row:IsA("GuiButton") then
+				table.insert(ui_connections, row.SelectionGained:Connect(function()
+					preview_inventory_row(row_name)
+				end))
+			end
+		end
+	end
+
 	-- // Master-script detail panel controls
-	local stats_side = loadout_ui:FindFirstChild("statsside")
+	local stats_side = loadout_ui:FindFirstChild("Statistics") or loadout_ui:FindFirstChild("statsside")
 	if stats_side then
 		local stats_range = stats_side:FindFirstChild("statsrange")
 		local next_page = stats_range and stats_range:FindFirstChild("nextpage")
@@ -1111,18 +1270,28 @@ local function setup_ui_connections()
 
 	-- // Equipment buttons
 	for slot, button in slot_buttons do
+		local function preview_selected()
+			local equipment_value = equipment:FindFirstChild(slot)
+			local selected_name = equipment_value and equipment_value.Value or ""
+			local definition = Classes.Get(Classes.Selected(local_player))
+			if slot == "Primary" and definition.FixedPrimary then
+				selected_name = definition.FixedPrimary
+			elseif definition.NoFirearms then
+				selected_name = ""
+			end
+			local selected_source = gun_classes:FindFirstChild(selected_name)
+				or tool_classes:FindFirstChild(selected_name)
+			if selected_source and selected_source:IsA("ModuleScript") then
+				local ok, selected_module = pcall(require, selected_source)
+				if ok then show_weapon_details(selected_module, selected_name) end
+			end
+		end
+
 		table.insert(
 			ui_connections,
 			button.Activated:Connect(
 				function()
-					local equipment_value = equipment:FindFirstChild(slot)
-					local selected_name = equipment_value and equipment_value.Value or ""
-					local selected_source = gun_classes:FindFirstChild(selected_name)
-						or tool_classes:FindFirstChild(selected_name)
-					if selected_source and selected_source:IsA("ModuleScript") then
-						local ok, selected_module = pcall(require, selected_source)
-						if ok then show_weapon_details(selected_module, selected_name) end
-					end
+					preview_selected()
 					create_weapon_options(slot)
 				end
 			)
@@ -1173,7 +1342,7 @@ local function handle_character_added(character)
 	primary_button = nil
 	secondary_button = nil
 	table.clear(slot_buttons)
-	table.clear(defaultRowIcons)
+	table.clear(defaultRows)
 
 	task.defer(function()
 		task.wait()

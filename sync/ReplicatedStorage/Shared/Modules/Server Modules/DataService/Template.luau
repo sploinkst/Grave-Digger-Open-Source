@@ -1,5 +1,9 @@
 return {
 	["Settings Data"] = {
+        ["Sensitivity"] = {
+            ["AimSensitivity"] = {DisplayName="Aim Sensitivity", Current=1, Base=1, Min=0.1, Max=5},
+            ["ScopeSensitivity"] = {DisplayName="Scope Sensitivity", Current=1, Base=1, Min=0.1, Max=5},
+        },
 		["Performance"] = {
 			["WeaponSkins"] = {
 				DisplayName = "Hide Weapon Skins",
@@ -465,6 +469,10 @@ return {
 
 	["PlayerData"] = {
 		["CMDRLevel"] = 5,
+        ["Progression"] = {Medals=0, Duty=0, Rank=0, PlaySeconds=0, Kills=0, Deaths=0},
+        ["Mastery"] = {},
+        ["Cosmetics"] = {},
+        ["CosmeticUnlocks"] = {},
 		["Dogtags"] = {
 			["Empire"] = 0,
 			["Nation"] = 0,
@@ -487,13 +495,13 @@ return {
 			["Primary"] = "PrinceRifle",
 			["Secondary"] = "GraceRevolver",
 			["ClassLoadouts"] = {
-				["Soldat"] = { ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
-				["Rook"] = { ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
-				["Mortician"] = { ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
-				["Officer"] = { ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
-				["Jaeger"] = { ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
-				["Lancer"] = { ["Primary"] = "", ["Secondary"] = "" },
-				["Vanguard"] = { ["Primary"] = "", ["Secondary"] = "" },
+				["Soldat"] = { ["Perk"] = "", ["Melee"] = "Knife", ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
+				["Rook"] = { ["Perk"] = "", ["Melee"] = "Knife", ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
+				["Mortician"] = { ["Perk"] = "", ["Melee"] = "Knife", ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
+				["Officer"] = { ["Perk"] = "", ["Melee"] = "Knife", ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
+				["Jaeger"] = { ["Perk"] = "", ["Melee"] = "Knife", ["Primary"] = "PrinceRifle", ["Secondary"] = "GraceRevolver" },
+				["Lancer"] = { ["Perk"] = "", ["Melee"] = "Knife", ["Primary"] = "", ["Secondary"] = "" },
+				["Vanguard"] = { ["Perk"] = "", ["Melee"] = "Knife", ["Primary"] = "", ["Secondary"] = "" },
 			},
 			["Perks"] = {},
 		}

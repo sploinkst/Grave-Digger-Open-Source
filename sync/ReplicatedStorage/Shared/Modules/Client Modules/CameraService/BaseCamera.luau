@@ -414,7 +414,17 @@ function BaseCamera:_setupMouseInput()
 	self._inputConn = InputService.InputChanged:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseMovement then
 			local delta = input.Delta
-			self._mouseDelta += Vector2.new(delta.X * MouseSensitivity, delta.Y * MouseSensitivity)
+			local multiplier = 1
+            local character = LocalPlayer.Character
+            if character and character:GetAttribute("Aiming") then
+                local root = LocalPlayer:FindFirstChild("PlayerData")
+                local settings = root and root:FindFirstChild("Settings Data")
+                local sensitivities = settings and settings:FindFirstChild("Sensitivity")
+                local name = workspace.CurrentCamera.FieldOfView < 50 and "ScopeSensitivity" or "AimSensitivity"
+                local value = sensitivities and sensitivities:FindFirstChild(name)
+                multiplier = value and value:FindFirstChild("Current") and value.Current.Value or 1
+            end
+            self._mouseDelta += Vector2.new(delta.X * MouseSensitivity * multiplier, delta.Y * MouseSensitivity * multiplier)
 		end
 	end)
 end

@@ -98,6 +98,12 @@ local function publishCharacterData(player: Player, character: Model, className:
 	if not perks then perks = Instance.new("Folder"); perks.Name = "Perks"; perks.Parent = characterData end
 	perks:ClearAllChildren()
 	local selectedPerks = equipment:FindFirstChild("Perks")
+	local selectedLoadout = Classes.GetLoadout(player, className)
+	local selectedPerk = selectedLoadout and selectedLoadout:FindFirstChild("Perk")
+	if selectedPerk and selectedPerks then
+		selectedPerks:ClearAllChildren()
+		if selectedPerk.Value ~= "" then setValue(selectedPerks, "BoolValue", selectedPerk.Value, true) end
+	end
 	local runtimePerk = character:FindFirstChild("perk")
 	local activePerkNames = {}
 	if selectedPerks then
@@ -219,6 +225,8 @@ function Service.ApplySpawn(player, character)
 	end
 	character:SetAttribute("ClassPrimary", primaryName)
 	character:SetAttribute("ClassSecondary", secondaryName)
+	local melee = loadout and loadout:FindFirstChild("Melee")
+	character:SetAttribute("ClassMelee", melee and melee.Value or "Knife")
 	character:SetAttribute("ClassSnapshotReady", true)
 end
 
@@ -274,7 +282,7 @@ function Service.GiveLoadout(player, character)
 		names = { character:GetAttribute("ClassPrimary") or "BrowningMachineGun" }
 	else
 		names = {character:GetAttribute("ClassPrimary") or "", character:GetAttribute("ClassSecondary") or "",
-			"Compass", "Medkit"}
+			"Compass", "Medkit", character:GetAttribute("ClassMelee") or "Knife"}
 		for _, name in definition.Tools do table.insert(names, name) end
 	end
 	for index, name in names do

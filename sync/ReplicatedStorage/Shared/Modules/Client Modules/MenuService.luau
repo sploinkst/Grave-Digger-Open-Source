@@ -24,6 +24,8 @@ local current_ui: ScreenGui? = nil
 local button_connections = {}
 
 local firstclick = false
+local started = false
+module.SceneChanged = Instance.new("BindableEvent")
 -- // Functions
 
 local function set_button_selected(button: GuiButton, selected: boolean)
@@ -41,6 +43,7 @@ local function set_ui()
 	end
 
 	local_player:SetAttribute("MenuOpen", menu_boolean)
+	_G.in_menu = menu_boolean
 end
 
 
@@ -99,6 +102,7 @@ local function set_scene(scene, btn)
 	-- Open selected scene.
 	scene_ui.Enabled = true
 	current_ui = scene_ui
+	module.SceneChanged:Fire(scene_name)
 end
 local function bind_menu_buttons()
 	-- Disconnect connections belonging to the previous UI tree.
@@ -118,7 +122,8 @@ local function bind_menu_buttons()
 		end
 
 		table.insert(button_connections, button.Activated:Connect(function()
-			set_scene(button.Name)
+			if button.Name == "Back" or button.Name == "Close" or button.Name == "backout" then module.Close(); return end
+			module.Navigate(button.Name)
 			-- Highlight selected button.
 			set_button_selected(button, true)
 		end))
@@ -285,114 +290,83 @@ end
 
 
 local function start_sub_modules()
-	print("[MENUSERVICE] Starting sub modules")
+	-- MenuService remains the owner of the menu.  Children only bind behaviour to
+	-- GUI objects which are already present in Library/UI or StarterGui/main.
+	for _, name in {"LoadoutHandler", "SettingsHandler", "PresentationHandler", "CreditsHandler"} do
+        local child = script:FindFirstChild(name)
+        if child then
+            task.spawn(function()
+				local ok, err = xpcall(function() require(child).start_module(module) end, debug.traceback)
+                if not ok then warn("[MenuService/" .. name .. "] " .. err) end
+            end)
+        end
+    end
+end
 
-	for _, child in ipairs(script:GetChildren()) do
-		print("[MENUSERVICE] Checking:", child.Name, "is ModuleScript")
-
-		if not child:IsA("ModuleScript") then
-			continue
-		end
-
-		print("[MENUSERVICE] Requiring:", child.Name)
-
-		task.spawn(function()
-			local success, child_module = pcall(require, child)
-
-			if not success then
-				warn("[MENUSERVICE] Failed to require", child.Name, child_module)
-				return
-			end
-
-			if typeof(child_module.start_module) == "function" then
-				local ok, err = pcall(child_module.start_module)
-
-				if ok then
-					print("[MENUSERVICE] Started:", child.Name)
-				else
-					warn("[MENUSERVICE] Error starting", child.Name, err)
-				end
-			else
-				warn(
-					"[MENUSERVICE]",
-					child.Name,
-					"has no start_module function"
-				)
-			end
-		end)
-	end
+function module.IsOpen() return menu_boolean end
+function module.Navigate(sceneName)
+    if not refresh_ui(false) then return false end
+    local scene = scenes_folder:FindFirstChild(sceneName)
+    if not scene or not scene:IsA("ScreenGui") then return false end
+    set_scene(sceneName)
+    local button = main_menu and main_menu:FindFirstChild(sceneName)
+    if button and button:IsA("GuiButton") then set_button_selected(button,true) end
+    return true
+end
+function module.Close()
+    if not menu_boolean then return end
+    menu_boolean=false
+    camera_service.EndCameraByName("MenuCamera",true)
+    disable_all_scenes_ui()
+    pcall(function() game:GetService("GamepadService"):DisableGamepadCursor() end)
+    set_ui()
+end
+function module.Open(sceneName)
+    if local_player:GetAttribute("MenuLocked") or local_player:GetAttribute("RebindingInput") then return end
+    if not refresh_ui(false) then return end
+    if not menu_boolean then camera_service.SwitchCamera("MenuCamera",true) end
+    menu_boolean=true
+    module.Navigate(sceneName or (current_ui and current_ui.Name) or "Loadout")
+    input_service.MouseBehavior=Enum.MouseBehavior.Default
+    input_service.MouseIconEnabled=true
+    if input_service:GetLastInputType().Name:find("Gamepad") then
+        pcall(function() game:GetService("GamepadService"):EnableGamepadCursor(current_ui) end)
+    end
+    set_ui()
+end
+function module.Toggle()
+    if menu_boolean then module.Close() else module.Open() end
 end
 
 
 -- // Start
 function module.start_module()
-	-- Signals the legacy coreScript that MenuService exclusively owns M.
-	local_player:SetAttribute("ModernMenuActive", true)
-	-- Initial UI setup.
-	if not refresh_ui(true) then
-		warn("[MENUSERVICE] Menu UI was not available during startup")
-	end
-
-	menu_boolean = false
-	current_ui = nil
-
-	-- Ensure the initial state is clean.
-	disable_all_scenes_ui()
-	set_ui()
-
-	-- Start child menu modules.
-	start_sub_modules()
-	-- Character lifecycle.
-	local_player.CharacterRemoving:Connect(handle_character_removing)
-	local_player.CharacterAdded:Connect(handle_character_added)
-	-- Menu input.
-	input_service.InputBegan:Connect(function(input, gps)
-		if gps then
-			return
-		end
-
-		if input.KeyCode ~= menu_button then
-			return
-		end
-		
-
-		-- Always resolve the current UI before opening/closing.
-		if not refresh_ui(false) then
-			warn("[MENUSERVICE] Menu UI is unavailable; cannot open menu")
-			return
-		end
-
-		if menu_boolean then
-			-- CLOSE MENU
-			menu_boolean = false
-
-			camera_service.EndCameraByName("MenuCamera", true)
-
-			disable_all_scenes_ui()
-		else
-			-- OPEN MENU
-			menu_boolean = true
-			
-			if not current_ui or not current_ui.Parent then
-				set_scene("Loadout")
-				firstclick = true
-
-				local loadout_button = main_menu and main_menu:FindFirstChild("Loadout")
-				if loadout_button and loadout_button:IsA("GuiButton") then
-					set_button_selected(loadout_button, true)
-				end
-			end
-			
-			camera_service.SwitchCamera("MenuCamera", true)
-
-			if current_ui and current_ui.Parent then
-				current_ui.Enabled = true
-			end
-		end
-
-		set_ui()
-	end)
+    if started then return end
+    started=true
+    local_player:SetAttribute("ModernMenuActive",true)
+    if not refresh_ui(true) then warn("[MenuService] Waiting for the current menu UI") end
+    menu_boolean=false;current_ui=nil
+    disable_all_scenes_ui();set_ui()
+    start_sub_modules()
+    local_player.CharacterRemoving:Connect(handle_character_removing)
+    local_player.CharacterAdded:Connect(handle_character_added)
+    local playerGui=local_player:WaitForChild("PlayerGui")
+    playerGui.ChildAdded:Connect(function(child)
+        if child.Name=="Menu" or child.Name=="Menu_Scenes" then task.defer(function() refresh_ui(false);set_ui() end) end
+    end)
+    input_service.InputBegan:Connect(function(input,processed)
+        if processed or input_service:GetFocusedTextBox() or local_player:GetAttribute("RebindingInput") then return end
+        local root=local_player:FindFirstChild("PlayerData")
+        local settings=root and root:FindFirstChild("Settings Data")
+        local inputs=settings and settings:FindFirstChild("Inputs")
+        local binds=inputs and inputs:FindFirstChild("Binds")
+        local bind=binds and binds:FindFirstChild("Menu")
+        local current=bind and bind:FindFirstChild("Current")
+        local key=current and Enum.KeyCode[current.Value] or menu_button
+        if current and current.Value=="None" then key=nil end
+        if input.KeyCode==key or input.KeyCode==Enum.KeyCode.ButtonSelect then module.Toggle() end
+        if input.KeyCode==Enum.KeyCode.Escape and menu_boolean then module.Close() end
+    end)
 end
-
 
 return module

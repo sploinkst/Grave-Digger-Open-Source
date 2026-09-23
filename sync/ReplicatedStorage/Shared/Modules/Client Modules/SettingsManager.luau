@@ -47,8 +47,10 @@ local function BindInput(inputName: string, keyCode: Enum.KeyCode)
 	-- Store new binding
 	Inputs[inputName] = keyCode
 
-	BoundKeys[keyCode] = BoundKeys[keyCode] or {}
-	table.insert(BoundKeys[keyCode], inputName)
+	if keyCode then
+		BoundKeys[keyCode] = BoundKeys[keyCode] or {}
+		table.insert(BoundKeys[keyCode], inputName)
+	end
 end
 
 local function RegisterInputs()
@@ -64,7 +66,7 @@ local function RegisterInputs()
 
 		local keyCode = Enum.KeyCode[currentValue.Value]
 
-		if not keyCode then
+		if not keyCode and currentValue.Value ~= "None" then
 			continue
 		end
 
@@ -74,7 +76,7 @@ local function RegisterInputs()
 		currentValue:GetPropertyChangedSignal("Value"):Connect(function()
 			local newKeyCode = Enum.KeyCode[currentValue.Value]
 
-			if not newKeyCode then
+			if not newKeyCode and currentValue.Value ~= "None" then
 				return
 			end
 
@@ -107,9 +109,7 @@ function SettingsManager.HookInput(inputName: string, callback)
 		task.wait(1)
 	end
 	
-	if not Inputs[inputName] then
-		return
-	end
+	
 
 	Hooks[inputName] = Hooks[inputName] or {}
 	table.insert(Hooks[inputName], callback)
@@ -143,7 +143,7 @@ end
 
 
 InputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then
+	if gameProcessed or Players.LocalPlayer:GetAttribute("RebindingInput") then
 		return
 	end
 
