@@ -161,7 +161,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 		C1 = CFrame.identity,
 	}
 
-	self.AnimationGunType = "lever"
+	self.AnimationGunType = "CrestfallRifle"
 	self.animations = {
 		Draw = animation("draw"),
 		Hold = animation("held"),
@@ -187,7 +187,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 		Hip_Fire_Empty_Left = animation("alt_changefire_empty_left"),
 		Hip_Fire_Last = animation("alt_changefire_last"),
 		Hip_Fire_Last_Left = animation("alt_changefire_last_left"),
-		Reload_Empty_Vet_Old = animation("reload_empty_vet"),
+		Reload_Empty_Vet = animation("reload_empty_vet"),
 	}
 
 	self.animation_speeds = {

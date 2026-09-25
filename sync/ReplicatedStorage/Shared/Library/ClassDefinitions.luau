@@ -1,5 +1,6 @@
 -- Central class contract. Names are controller IDs, not asset display names.
 local Classes = {}
+local Perks = require(script.Parent.PerkDefinitions)
 Classes.Default = "Soldat"
 Classes.Order = {"Soldat", "Rook", "Mortician", "Officer", "Jaeger", "Lancer", "Vanguard"}
 Classes.Definitions = {
@@ -44,17 +45,15 @@ Classes.Definitions = {
 -- conversion retain that class's tools/equipment while replacing only weapons.
 -- Weapon controller modules can be added later under these stable IDs.
 Classes.EliteDefinitions = {
-	-- Current first-wave controller/model IDs. The display lore names are
-	-- Storm Trooper and Anti-Material Trooper, while the migrated assets are
-	-- The visual models are mpgun/pugsley; their weapon controllers are kept
-	-- with the standard firearm controllers in GunClasses.
-	["Storm Trooper"] = { Primary = "StormRifle", Secondary = "GraceRevolver", RequiredClass = "Soldat", OutfitClass = "Soldat" },
-	["Anti-Material Trooper"] = { Primary = "AntiMaterialRifle", Secondary = "GraceRevolver", RequiredClass = "Rook", OutfitClass = "Rook" },
-	["Radio Trooper"] = { Primary = "RadioRifle", Secondary = "GraceRevolver", RequiredClass = "Officer", OutfitClass = "Officer" },
-	["Trench Trooper"] = { Primary = "TrenchShotgun", Secondary = "GraceRevolver", RequiredClass = "Lancer", OutfitClass = "Lancer" },
-	["Geist Trooper"] = { Primary = "GeistRifle", Secondary = "GraceRevolver", RequiredClass = "Jaeger", OutfitClass = "Jaeger" },
-	["Bulwark Trooper"] = { Primary = "BulwarkRifle", Secondary = "GraceRevolver", RequiredClass = "Vanguard", OutfitClass = "Vanguard" },
-	OcelotTrooper = { Primary = "OcelotTalonRevolver", Secondary = "OcelotTalonRevolver", RequiredClass = "Officer", OutfitClass = "Officer", RequiresUnlock = "OcelotTrooper" },
+
+	["Storm Trooper"] = { Primary = "StormRifle", Secondary = "", OutfitClass = "Soldat" },
+	["Anti-Material Trooper"] = { Primary = "AntiMaterialRifle", Secondary = "GraceRevolver", OutfitClass = "Rook" },
+	["Flame Trooper"] = { Primary = "WexFlamethrower", Secondary = "GraceRevolver", OutfitClass = "Mortician" },
+	["Radio Trooper"] = { Primary = "MauserCarbine", Secondary = "", OutfitClass = "Officer" },
+	["Trench Trooper"] = { Primary = "TrenchShotgun", Secondary = "", OutfitClass = "Lancer" },
+	["Geist Trooper"] = { Primary = "MondragonRifle", Secondary = "", OutfitClass = "Jaeger" },
+	["Bulwark Trooper"] = { Primary = "LewisGun", Secondary = "GraceRevolver", OutfitClass = "Vanguard" },
+	OcelotTrooper = { Primary = "OcelotTalonRevolver", Secondary = "OcelotTalonRevolverSecondary", OutfitClass = "Officer", RequiresUnlock = "OcelotTrooper" },
 }
 
 function Classes.Get(name)
@@ -62,12 +61,13 @@ function Classes.Get(name)
 end
 
 function Classes.HasPerk(player: Player, perkName: string): boolean
-	if player:GetAttribute(perkName) == true then return true end
+	local canonical = Perks.Canonical(perkName) or perkName
+	if player:GetAttribute(canonical) == true or player:GetAttribute(perkName) == true then return true end
 	local root = player:FindFirstChild("PlayerData")
 	local data = root and root:FindFirstChild("PlayerData")
 	local equipment = data and data:FindFirstChild("Equipment")
 	local perks = equipment and equipment:FindFirstChild("Perks")
-	local perk = perks and perks:FindFirstChild(perkName)
+	local perk = perks and (perks:FindFirstChild(canonical) or perks:FindFirstChild(perkName))
 	if not perk then return false end
 	return not perk:IsA("BoolValue") or perk.Value
 end
@@ -121,7 +121,7 @@ function Classes.GetLoadout(player: Player, className: string?)
 		local handling = require(script.Parent.WeaponHandling)
 		local tools = script.Parent.Classes.ToolClasses
 		for _, slot in loadout:GetChildren() do
-			if slot:IsA("StringValue") and (slot.Name == "Primary" or slot.Name == "Secondary") and slot.Value ~= "" and not tools:FindFirstChild(slot.Value) and not handling.IsBaseline(slot.Value) then
+			if slot:IsA("StringValue") and (slot.Name == "Primary" or slot.Name == "Secondary") and slot.Value ~= "" and (slot.Value == "SteyrRifle" or (not tools:FindFirstChild(slot.Value) and not handling.IsBaseline(slot.Value))) then
 				slot.Value = ""
 				local legacy = equipment:FindFirstChild(slot.Name)
 				if legacy and legacy:IsA("StringValue") then legacy.Value = "" end

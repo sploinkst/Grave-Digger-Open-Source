@@ -1,7 +1,7 @@
 return require(script.Parent.LegacyGunFactory).create({
 	className = "HonourInsurgentPistol",
 	assetName = "mauser",
-	AnimationGunType = "mauser",
+	AnimationGunType = "HonourPistol",
 	WeaponCategory = "Pistol",
 	Designation = "Secondary",
 	Weight = 1,

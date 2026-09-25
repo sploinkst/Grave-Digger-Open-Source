@@ -1,7 +1,7 @@
 return require(script.Parent.LegacyGunFactory).create({
 	className = "WhisperFlyboyRifle",
 	assetName = "springfield",
-	AnimationGunType = "springfield",
+	AnimationGunType = "WhisperRifle",
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 2,

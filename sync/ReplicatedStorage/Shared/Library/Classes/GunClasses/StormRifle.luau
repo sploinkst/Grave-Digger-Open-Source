@@ -152,7 +152,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 		C1 = CFrame.identity,
 	}
 
-	self.AnimationGunType = "mpgun"
+	self.AnimationGunType = "StormRifle"
 	self.animations = {
 		Draw = animation("draw"),
 		Hold = animation("held"),

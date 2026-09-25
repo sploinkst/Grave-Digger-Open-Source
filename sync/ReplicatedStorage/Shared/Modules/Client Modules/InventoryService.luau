@@ -42,6 +42,13 @@ local equipBusy = false
 local equipmentDebounce = false
 local equipmentBBClone = nil
 
+local function RefreshPrimaryPairing()
+	local primary = InventorySlots["1"].Tool
+	if primary and type(primary.setDualWieldWeapon) == "function" then
+		primary:setDualWieldWeapon(InventorySlots["2"].Tool)
+	end
+end
+
 -- // Helpers
 
 local function GetSlotParts(ui)
@@ -75,6 +82,33 @@ local function TweenSlot(ui, props)
 	end
 	if props.TextColor3 then
 		TweenService:Create(text, TweenInfoDefault, { TextColor3 = props.TextColor3 }):Play()
+	end
+end
+
+local function GetInventoryItemName()
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	local main = playerGui and playerGui:FindFirstChild("main")
+	local coreGame = main and main:FindFirstChild("core_game")
+	local frame = coreGame and coreGame:FindFirstChild("inventoryitemname")
+	local label = frame and frame:FindFirstChild("item")
+	if frame and frame:IsA("GuiObject") and label and label:IsA("TextLabel") then
+		return frame, label
+	end
+	return nil, nil
+end
+
+local function ShowInventoryItemName(toolObject)
+	local frame, label = GetInventoryItemName()
+	if not frame or not label then return end
+	label.Text = toolObject.Display_Name or toolObject.DisplayName or toolObject.name or ""
+	frame.Visible = true
+	TweenService:Create(label, TweenInfoDefault, { TextTransparency = 0 }):Play()
+end
+
+local function FadeInventoryItemName()
+	local _, label = GetInventoryItemName()
+	if label then
+		TweenService:Create(label, TweenInfoDefault, { TextTransparency = 1 }):Play()
 	end
 end
 
@@ -195,6 +229,7 @@ local function FadeSlots()
 			})
 		end
 	end
+	FadeInventoryItemName()
 end
 
 -- // Inputs
@@ -221,6 +256,10 @@ local function OnInventoryKey(pressedKey)
 
 	selectedKey = pressedKey
 	UpdateHighlight(pressedKey)
+	local toolObject = InventorySlots[pressedKey].Tool
+	if toolObject then
+		ShowInventoryItemName(toolObject)
+	end
 
 	task.delay(FadeDelay, function()
 		if fadeToken ~= myToken then
@@ -326,6 +365,7 @@ local function AssignTool(toolObject)
 
 	local slot = InventorySlots[slotNumber]
 	slot.Tool = toolObject
+	RefreshPrimaryPairing()
 
 	if not slot.UI then
 		CreateSlotUI(slotNumber, slot)
@@ -356,6 +396,7 @@ local function RemoveTool(toolObject)
 			end
 
 			slot.Tool = nil
+			RefreshPrimaryPairing()
 
 			if slot.UI then
 				if slot.PermanentUISpot then

@@ -14,9 +14,12 @@ Module.RegisteredTools = {}
 
 -- // Tracks live ChildAdded/ChildRemoved connections per backpack
 local backpackConnections = {}
+local DebugEnabled = false
 
 local function Debug(...)
-	print("[ToolService]", ...)
+	if DebugEnabled then
+		print("[ToolService]", ...)
+	end
 end
 
 local function DestroyToolInstance(instance)

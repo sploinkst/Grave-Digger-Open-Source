@@ -161,7 +161,7 @@ function AdjudicatorRifle.new(info: Types.BaseToolCreateInfo): AdjudicatorRifle
 		C1 = CFrame.identity,
 	}
 
-	self.AnimationGunType = "rsc"
+	self.AnimationGunType = "AdjudicatorRifle"
 	self.animations = {
 		Hold = Animations.locked,
 		Aim = Animations.aim,
@@ -206,7 +206,7 @@ function AdjudicatorRifle.new(info: Types.BaseToolCreateInfo): AdjudicatorRifle
 	self.AmmoCheckPartName = "hitbox"
 	self.SoundFolder = SoundFolder
 	self.FireInterval = blackHand and (60 / BLACK_HAND_RPM) or WEAPON_STATS.fire_rate
-	self.IsVeteran = veteran
+	self.IsVeteran = self.IsVeteran or veteran
 	self.HipBraced = false
 	self:applyFirearmConfig(WEAPON_STATS)
 	if veteran then

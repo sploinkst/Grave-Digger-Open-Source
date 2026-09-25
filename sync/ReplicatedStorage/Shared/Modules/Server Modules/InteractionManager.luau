@@ -13,6 +13,8 @@ local Workspace = game:GetService("Workspace")
 
 local AccessoryService = require(script.Parent.AccessoryService)
 local ItemsService = require(script.Parent.ItemsService)
+local ClassService = require(script.Parent.ClassService)
+local Classes = require(ReplicatedStorage.Shared.Library.ClassDefinitions)
 local Util = require(ReplicatedStorage.Shared.Library.Util)
 
 -- // Constants
@@ -33,7 +35,9 @@ local DefaultActivationDistance = 32
 -- // Variables
 
 local Cooldowns = {}
+local PendingEliteKits = {}
 local Started = false
+local CommandSelectionToken = "ShockTrooperCommandSelection"
 
 -- // Functions
 
@@ -42,7 +46,20 @@ local function IsCache(Object: Instance): boolean
 		or Object.Name == "obj_cache"
 end
 
+local function IsEliteKit(Object: Instance): boolean
+	local Name = string.lower(Object.Name)
+	return Name == "elitekit1" or Name == "elitekit2"
+end
+
+local function IsInteractable(Object: Instance): boolean
+	return IsCache(Object) or IsEliteKit(Object)
+end
+
 local function GetCacheClickPart(Cache: Instance): BasePart?
+	if IsEliteKit(Cache) and Cache:IsA("BasePart") then
+		return Cache
+	end
+
 	local Part = Cache:FindFirstChild("click")
 		or Cache:FindFirstChild("clickpart")
 
@@ -54,7 +71,7 @@ local function GetCacheClickPart(Cache: Instance): BasePart?
 end
 
 local function PrepareCache(Cache: Instance)
-	if not IsCache(Cache) then
+	if not IsInteractable(Cache) then
 		return
 	end
 
@@ -64,7 +81,9 @@ local function PrepareCache(Cache: Instance)
 		return
 	end
 
-	Part.Name = "click"
+	if not IsEliteKit(Cache) then
+		Part.Name = "click"
+	end
 	Part.CanQuery = true
 
 	local Detector = Part:FindFirstChildWhichIsA("ClickDetector")
@@ -75,6 +94,17 @@ local function PrepareCache(Cache: Instance)
 	end
 
 	Detector.Name = "clicker"
+	local InteractionObject = Detector:FindFirstChild("InteractionObject")
+	if InteractionObject and not InteractionObject:IsA("ObjectValue") then
+		InteractionObject:Destroy()
+		InteractionObject = nil
+	end
+	if not InteractionObject then
+		InteractionObject = Instance.new("ObjectValue")
+		InteractionObject.Name = "InteractionObject"
+		InteractionObject.Parent = Detector
+	end
+	(InteractionObject :: ObjectValue).Value = Cache
 
 	if Detector.MaxActivationDistance <= 0 then
 		Detector.MaxActivationDistance = DefaultActivationDistance
@@ -205,7 +235,7 @@ local function IsValidInteraction(
 ): (boolean, BasePart?, ClickDetector?)
 	if typeof(Object) ~= "Instance"
 		or not Object:IsDescendantOf(Workspace)
-		or not IsCache(Object) then
+		or not IsInteractable(Object) then
 		return false
 	end
 
@@ -248,6 +278,42 @@ local function IsValidInteraction(
 	return true, Part, Detector
 end
 
+local function GetEliteKitChoices(Player: Player)
+	local Choices = {}
+	local SelectedClass = Classes.Selected(Player)
+
+	for _, EliteName in {
+		"Storm Trooper",
+		"Anti-Material Trooper",
+		"Flame Trooper",
+		"Radio Trooper",
+		"Geist Trooper",
+		"Trench Trooper",
+		"Bulwark Trooper",
+	} do
+		local Elite = Classes.EliteDefinitions[EliteName]
+		if Elite and not Elite.RequiresUnlock then
+			table.insert(Choices, {
+				Name = EliteName,
+				OutfitClass = Elite.OutfitClass,
+				Recommended = false,
+			})
+		end
+	end
+
+	return Choices, SelectedClass
+end
+
+local function OpenEliteKitSelection(Player: Player, Object)
+	local Choices, SelectedClass = GetEliteKitChoices(Player)
+	PendingEliteKits[Player] = {
+		Object = Object,
+		Character = Player.Character,
+		ExpiresAt = os.clock() + 20,
+	}
+	Interact:FireClient(Player, "EliteKitSelection", Object, Choices, SelectedClass)
+end
+
 local function IsOnCooldown(Player: Player): boolean
 	return (Cooldowns[Player] or 0) > os.clock()
 end
@@ -256,10 +322,57 @@ local function SetCooldown(Player: Player)
 	Cooldowns[Player] = os.clock() + RestockCooldown
 end
 
-local function HandleInteraction(Player: Player, Object: Instance)
+local function HandleEliteKitSelection(Player: Player, Object, EliteName): boolean
+	local Pending = PendingEliteKits[Player]
+	if not Pending
+		or Pending.Object ~= Object
+		or Pending.Character ~= Player.Character
+		or Pending.ExpiresAt < os.clock()
+		or type(EliteName) ~= "string"
+		or IsOnCooldown(Player) then
+		return false
+	end
+
+	local Elite, CanonicalName = Classes.GetElite(EliteName)
+	if not Elite
+		or not CanonicalName
+		or Elite.RequiresUnlock
+		or not Classes.CanUseElite(Player, CanonicalName) then
+		return false
+	end
+
+	PendingEliteKits[Player] = nil
+	SetCooldown(Player)
+	local Success, Result = ClassService.SetShockTrooper(Player, CanonicalName)
+	Interact:FireClient(Player, "EliteKitResult", Success, Result)
+	return true
+end
+
+local function HandleInteraction(Player: Player, Object, Action: string?, EliteName: string?)
+	if Object == CommandSelectionToken then
+		if Action == "SelectEliteKit" then
+			HandleEliteKitSelection(Player, Object, EliteName)
+		end
+		return
+	end
+
 	local IsValid = IsValidInteraction(Player, Object)
 
-	if not IsValid or IsOnCooldown(Player) then
+	if not IsValid then
+		return
+	end
+
+	if IsEliteKit(Object) then
+		if Action == "SelectEliteKit" then
+			HandleEliteKitSelection(Player, Object, EliteName)
+			return
+		end
+
+		OpenEliteKitSelection(Player, Object)
+		return
+	end
+
+	if IsOnCooldown(Player) then
 		return
 	end
 
@@ -277,7 +390,7 @@ local function HandleInteraction(Player: Player, Object: Instance)
 end
 
 local function HandleDescendantAdded(Instance: Instance)
-	if IsCache(Instance) then
+	if IsInteractable(Instance) then
 		PrepareCache(Instance)
 		return
 	end
@@ -288,13 +401,22 @@ local function HandleDescendantAdded(Instance: Instance)
 
 	local Parent = Instance.Parent
 
-	if Parent and IsCache(Parent) then
+	if Parent and IsInteractable(Parent) then
 		PrepareCache(Parent)
 	end
 end
 
 local function HandlePlayerRemoving(Player: Player)
 	Cooldowns[Player] = nil
+	PendingEliteKits[Player] = nil
+end
+
+function Module.OpenEliteKitSelection(Player: Player)
+	if not Player or not Player:IsDescendantOf(Players) then
+		return false
+	end
+	OpenEliteKitSelection(Player, CommandSelectionToken)
+	return true
 end
 
 -- // Connections
@@ -314,10 +436,13 @@ function Module.StartModule()
 	Interact.OnServerEvent:Connect(HandleInteraction)
 
 	for _, Instance in Workspace:GetDescendants() do
-		if IsCache(Instance) then
+		if IsInteractable(Instance) then
 			PrepareCache(Instance)
 		end
 	end
 end
+
+-- ServerStarter uses the repository-wide lowercase lifecycle name.
+Module.start_module = Module.StartModule
 
 return Module

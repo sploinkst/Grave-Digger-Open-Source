@@ -210,7 +210,25 @@ function BaseCamera:_unbind()
 end
 
 function BaseCamera:_bind(callback)
-	RunService:BindToRenderStep(RENDER_STEP_NAME, RENDER_PRIORITY, callback)
+	RunService:BindToRenderStep(RENDER_STEP_NAME, RENDER_PRIORITY, function(dt)
+		self:_updateFOV(dt)
+		callback(dt)
+	end)
+end
+
+function BaseCamera:_updateFOV(dt: number)
+	local target = self.TargetFOV or FOV_Config.BASE
+	local character = LocalPlayer.Character
+	local weaponFOV = character and character:GetAttribute("WeaponFOV")
+	if self.is_aiming and not self.holding_breath and type(weaponFOV) == "number" then
+		target = weaponFOV
+	end
+	-- One render-step owner prevents WalkSpeed, ADS, and breath-hold tweens
+	-- from repeatedly cancelling one another during acceleration.
+	local alpha = 1 - math.pow(1 - FOV_LERP_SPEED, math.max(dt, 0) * 60)
+	self.CurrentFOV += (target - self.CurrentFOV) * math.clamp(alpha, 0, 1)
+	if math.abs(target - self.CurrentFOV) < 0.01 then self.CurrentFOV = target end
+	Camera.FieldOfView = self.CurrentFOV
 end
 
 function BaseCamera:_getHumanoid()
@@ -606,12 +624,6 @@ function BaseCamera:_onAimingStateChanged()
 		self.TargetFOV = sprintFOV
 	end
 
-	if self.FOVTween then self.FOVTween:Cancel() end
-	self.FOVTween = TweenService:Create(Camera,
-		TweenInfo.new(LocalPlayer.Character:GetAttribute("WeaponAimDuration") or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{ FieldOfView = self.TargetFOV }
-	)
-	self.FOVTween:Play()
 end
 
 function BaseCamera:_setupSprintCheck()
@@ -641,12 +653,6 @@ function BaseCamera:_onSprintStateChanged(walkSpeed)
 		self.TargetFOV = sprintFOV
 	end
 
-	if self.FOVTween then self.FOVTween:Cancel() end
-	self.FOVTween = TweenService:Create(Camera,
-		TweenInfo.new(LocalPlayer.Character:GetAttribute("WeaponAimDuration") or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{ FieldOfView = self.TargetFOV }
-	)
-	self.FOVTween:Play()
 end
 
 function BaseCamera:_setupHoldBreathCheck()
@@ -669,7 +675,7 @@ function BaseCamera:_onHoldBreathStateChanged()
 	local humanoid  = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 	local walkSpeed = humanoid and humanoid.WalkSpeed or 10
 	local alpha     = math.clamp((walkSpeed - 10) / (18 - 10), 0, 1)
-	local sprintFOV = 90 + (10 * alpha)
+	local sprintFOV = 90 + (15 * alpha)
 
 	if self.holding_breath then
 		self.TargetFOV = FOV_Config.HOLD_BREATH
@@ -682,18 +688,12 @@ function BaseCamera:_onHoldBreathStateChanged()
 	local fade_speed         = self.holding_breath and HOLD_BREATH_FADE_SPEED or HOLD_BREATHE_RELEASE_SPEED
 	local targetTransparency = self.holding_breath and 0 or 1
 
-	if self.FOVTween  then self.FOVTween:Cancel()  end
 	if self.FOVTween2 then self.FOVTween2:Cancel() end
 
-	self.FOVTween = TweenService:Create(Camera,
-		TweenInfo.new(fade_speed, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut),
-		{ FieldOfView = self.TargetFOV }
-	)
 	self.FOVTween2 = TweenService:Create(hold_breath,
 		TweenInfo.new(fade_speed, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut),
 		{ ImageTransparency = targetTransparency }
 	)
-	self.FOVTween:Play()
 	self.FOVTween2:Play()
 end
 
@@ -1372,6 +1372,7 @@ function BaseCamera:Switch_Camera(target: string)
 	local preset = Presets[target]
 	Camera.CameraType             = preset.CameraType
 	Camera.FieldOfView            = self.TargetFOV or preset.FOV or FOV_Config.BASE
+	self.CurrentFOV               = Camera.FieldOfView
 	InputService.MouseIconEnabled = preset.MouseVisible or false
 	InputService.MouseBehavior    = preset.MouseLocked and Enum.MouseBehavior.LockCenter or Enum.MouseBehavior.Default
 
@@ -1490,6 +1491,7 @@ function BaseCamera:Resume()
 
 	-- restore FOV in case MenuCamera changed it
 	Camera.FieldOfView = self.TargetFOV or FOV_Config.BASE
+	self.CurrentFOV = Camera.FieldOfView
 	self:_setupInput()
 	self:_setupMouseInput()
 
@@ -1513,6 +1515,7 @@ function BaseCamera:End()
 
 	Camera.CameraType             = Enum.CameraType.Custom
 	Camera.FieldOfView            = FOV_Config.BASE
+	self.CurrentFOV               = FOV_Config.BASE
 	InputService.MouseIconEnabled = true
 	InputService.MouseBehavior    = Enum.MouseBehavior.Default
 

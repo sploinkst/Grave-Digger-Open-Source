@@ -113,7 +113,7 @@ function GeistRifle.new(info: Types.BaseToolCreateInfo): GeistRifle
 		C1 = CFrame.identity,
 	}
 
-	self.AnimationGunType = "lever"
+	self.AnimationGunType = "GeistRifle"
 	self.animations = {
 		Draw = geistAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
 		Hold = geistAnimations.held,
@@ -145,7 +145,7 @@ function GeistRifle.new(info: Types.BaseToolCreateInfo): GeistRifle
 		Hip_Fire_Empty_Left = geistAnimations.alt_changefire_empty_left,
 		Hip_Fire_Last = geistAnimations.alt_changefire_last,
 		Hip_Fire_Last_Left = geistAnimations.alt_changefire_last_left,
-		Reload_Empty_Vet_Old = geistAnimations.reload_empty_vet,
+		Reload_Empty_Vet = geistAnimations:FindFirstChild("reload_empty_vet"),
 	}
 
 	self.animation_speeds = {

@@ -164,7 +164,7 @@ function HellionShotgun.new(info: Types.BaseToolCreateInfo): HellionShotgun
 		C1 = CFrame.identity,
 	}
 
-	self.AnimationGunType = "autosg"
+	self.AnimationGunType = "HellionShotgun"
 	self.animations = {
 		Hold = animation("locked", rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Held") :: Animation?),
 		Aim = animation("aim"),
@@ -224,7 +224,7 @@ function HellionShotgun.new(info: Types.BaseToolCreateInfo): HellionShotgun
 	self.ShotgunSpread = WEAPON_STATS.accuracy
 	self.ShoulderedSpread = WEAPON_STATS.moving_accuracy
 	self.Shouldered = false
-	self.IsVeteran = veteran
+	self.IsVeteran = self.IsVeteran or veteran
 	self.Can_Drop = true
 	self.Equipped = false
 	self.Firing = false

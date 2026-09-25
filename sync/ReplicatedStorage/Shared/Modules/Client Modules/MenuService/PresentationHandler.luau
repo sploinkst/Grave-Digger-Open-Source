@@ -1,4 +1,4 @@
--- Binds the legacy HUD objects in StarterGui/main. No interface is created here.
+-- No interface is created here, strictly acts as a controller to port over old code
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")

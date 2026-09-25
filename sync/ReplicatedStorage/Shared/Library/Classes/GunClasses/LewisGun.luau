@@ -1,10 +1,12 @@
 return require(script.Parent.LegacyGunFactory).create({ -- THIS IS THE BULWARK WEAPON
 	className = "LewisGun",
 	assetName = "lewis",
-	AnimationGunType = "lewis",
+	AnimationGunType = "BulwarkRifle",
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 3,
+	reloadStartIsFullReload = true,
+	fullReloadAnimation = "Reload_Start",
 	LegacyStats = {
 		name = "'Sword and Shield'",
 		icon = "119864425083906",

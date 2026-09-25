@@ -5,7 +5,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
@@ -168,7 +167,7 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 		C1 = CFrame.identity,
 	}
 
-	self.AnimationGunType = "mosin"
+	self.AnimationGunType = "VolkRifle"
 	self.animations = {
 		Draw = animation("draw"),
 		Hold = animation("held"),
@@ -182,7 +181,9 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 		Cycle = animation("cycle"),
 
 		Reload_Empty = animation("reload_empty"),
+		Reload_Empty_Vet = animation("reload_empty_vet"),
 		Reload_Start = animation("reload_start"),
+		Reload_Start_Vet = animation("reload_start_vet"),
 		Reload_Loop  = animation("reload_loop"),
 		Reload_End   = animation("reload_end"),
 
@@ -245,11 +246,10 @@ end
 
 function VolkRifle:_setScopeFov()
 	if not self.Aiming then return end
-	local camera = workspace.CurrentCamera
-	if not camera then return end
-	TweenService:Create(camera, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		FieldOfView = self.ScopedMode and SCOPED_FOV or IRON_FOV,
-	}):Play()
+	local character = LOCAL_PLAYER.Character
+	if character then
+		character:SetAttribute("WeaponFOV", self.ScopedMode and SCOPED_FOV or IRON_FOV)
+	end
 end
 
 function VolkRifle:get_spread(muzzle: BasePart, shootDirection: Vector3): Vector3
@@ -269,6 +269,8 @@ function VolkRifle:aim()
 end
 
 function VolkRifle:endAiming()
+	local character = LOCAL_PLAYER.Character
+	if character then character:SetAttribute("WeaponFOV", nil) end
 	local humanoid = LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:FindFirstChildOfClass("Humanoid")
 	if humanoid and self._preScopeWalkSpeed then
 		humanoid.WalkSpeed = self._preScopeWalkSpeed

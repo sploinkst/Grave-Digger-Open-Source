@@ -111,11 +111,6 @@ local climb_connection
 
 local ORIGINAL_HIP_HEIGHT = humanoid.HipHeight
 
-local SPRINT_TRANSITION_START = 13 
-local SPRINT_START = 17 
-local SPRINT_TRANSITION_END = 12.5
-local SPRINT_END = 16.5
-
 -- // Sprint overlays
 local SPRINT_OVERLAY_NAMES = {
 	"Sprint_Lean",
@@ -149,9 +144,18 @@ local function load_animations()
 
 		local track = animator:LoadAnimation(playable)
 
+		-- Locomotion tracks contain the legs and must keep ownership of those
+		-- joints even while an Action/weapon animation controls the torso.
+		local is_leg_locomotion = (string.find(animation.Name, "Walk_") == 1
+			and animation.Name ~= "Walk_Arms")
+			or string.find(animation.Name, "CrouchWalk_") == 1
+			or animation.Name == "Sprinting_Full"
+
 		-- PRIORITIES
 		if animation.Name == "Climb" then
 			track.Priority = Enum.AnimationPriority.Action
+		elseif is_leg_locomotion then
+			track.Priority = Enum.AnimationPriority.Action4
 
 		elseif string.find(animation.Name, "Jump")
 			or string.find(animation.Name, "Sprint") then
@@ -166,10 +170,19 @@ local function load_animations()
 		end
 
 		-- LOOPING
-		if animation.Name == "Jump_MidAir"
+		if is_leg_locomotion
+			or animation.Name == "Walk_Arms"
+			or animation.Name == "Crouch_Arms"
+			or string.find(animation.Name, "_Sprint")
+			or animation.Name == "Sprint_Arms"
+			or animation.Name == "Stand_Idle"
+			or animation.Name == "Crouch_Idle"
+			or animation.Name == "Jump_MidAir"
 			or animation.Name == "Climb" then
 
 			track.Looped = true
+		else
+			track.Looped = false
 		end
 
 		loaded_animations[animation.Name] = track
@@ -408,6 +421,20 @@ local function stop_overlay(
 	active_overlays[name] = nil
 end
 
+local function set_unarmed_locomotion_arms(name: string?, fade: number?)
+	for _, armTrack in ipairs({ "Walk_Arms", "Crouch_Arms" }) do
+		if armTrack ~= name or if_tool_equipped() then
+			stop_overlay(armTrack, fade)
+		end
+	end
+
+	-- Equipped tools own the shoulders through their Hold/Aim tracks. The
+	-- generic locomotion overlay is only for otherwise-empty hands.
+	if name and not if_tool_equipped() then
+		play_overlay(name, fade)
+	end
+end
+
 local function clear_overlays()
 	for name, track in pairs(active_overlays) do
 		if track.IsPlaying then
@@ -462,7 +489,7 @@ local function cancel_sprint_for_aim()
 		play_base(get_walk_animation(), 0.08, nil, 1)
 	end
 
-	play_overlay("Walk_Arms", 0.08)
+	set_unarmed_locomotion_arms("Walk_Arms", 0.08)
 end
 
 -- // (Movement)
@@ -484,6 +511,9 @@ local function update_movement(speed: number)
 
 	local freelook =
 		local_player:GetAttribute("FreeLook") == true
+	local sprinting_now = character:GetAttribute("Sprinting") == true
+	local walk_playback = math.clamp(speed / 10, 0.65, 2)
+	local sprint_playback = math.clamp(speed / 18, 0.75, 1.75)
 
 	-- // IDLE
 	if not moving then
@@ -508,22 +538,26 @@ local function update_movement(speed: number)
 
 				clear_overlays()
 
-				play_overlay("Crouch_Arms")
-
 			else
-
-				play_base(
-					"Stand_Idle",
-					0.1,
-					1,
-					1
-				)
-
 				set_target_hip_offset(0)
 
 				clear_overlays()
 			end
 		end
+
+		if not crouching then
+			if if_tool_equipped() then
+				play_base("Stand_Idle", 0.1, 1, 1)
+			elseif active_base then
+				active_base:Stop(0.1)
+				active_base = nil
+				current_base_name = nil
+			end
+		end
+
+		-- Idle never retains a locomotion arm track. If a tool is equipped,
+		-- its own held animation remains responsible for the resting pose.
+		set_unarmed_locomotion_arms(nil, 0.1)
 
 		return
 	end
@@ -536,22 +570,22 @@ local function update_movement(speed: number)
 
 			clear_overlays()
 
-			play_overlay("Crouch_Arms")
 		end
+		set_unarmed_locomotion_arms("Crouch_Arms", 0.08)
 
 		if freelook then
 			play_base(
 				"CrouchWalk_Forward",
 				0.08,
 				1,
-				1
+				walk_playback
 			)
 		else
 			play_base(
 				get_crouch_animation(),
 				0.08,
 				1,
-				1
+				walk_playback
 			)
 		end
 
@@ -576,55 +610,31 @@ local function update_movement(speed: number)
 
 			stop_overlay("Sprint_Lean")
 
-			play_overlay("Walk_Arms")
 		end
+		set_unarmed_locomotion_arms(nil, 0.08)
 
 		if freelook then
 			play_base(
 				"Walk_Forward",
 				0.08,
 				1,
-				1
+				walk_playback
 			)
 		else
 			play_base(
 				get_walk_animation(),
 				0.08,
 				1,
-				1
+				walk_playback
 			)
 		end
 
 		return
 	end
 
-	-- // WALK
-	-- // Once we're already transitioning, don't immediately
-	-- // fall back to walking from tiny speed fluctuations.
-	if current_state == "SPRINT_TRANSITION" then
-
-		if speed >= SPRINT_START then
-			-- // Continue into full sprint below.
-		elseif speed > SPRINT_TRANSITION_END then
-
-			if active_base then
-				active_base:AdjustSpeed(
-					math.clamp(
-						1 - ((speed - SPRINT_TRANSITION_START) / 100),
-						0.01,
-						1
-					)
-				)
-			end
-
-			return
-		end
-	end
-
-	-- // WALKING STATE
-	if current_state ~= "SPRINT_TRANSITION"
-		and current_state ~= "SPRINT"
-		and speed < SPRINT_TRANSITION_START then
+	-- Keep the walking leg cycle throughout acceleration. Its playback speed
+	-- follows the actual movement speed until the sprint state is reached.
+	if not sprinting_now then
 
 		if set_state("WALK") then
 
@@ -632,69 +642,30 @@ local function update_movement(speed: number)
 
 			clear_overlays()
 
-			play_overlay("Walk_Arms")
 		end
+		set_unarmed_locomotion_arms("Walk_Arms", 0.08)
 
 		if freelook then
 			play_base(
 				"Walk_Forward",
 				0.08,
 				1,
-				1
+				walk_playback
 			)
 		else
 			play_base(
 				get_walk_animation(),
 				0.08,
 				1,
-				1
+				walk_playback
 			)
-		end
-
-		return
-	end
-
-	-- // SPRINT TRANSITION
-	if speed >= SPRINT_TRANSITION_START
-		and speed < SPRINT_START then
-
-		-- // If we are already transitioning, don't recreate the
-		-- // animation or overlays. Only update their speed.
-		if current_state ~= "SPRINT_TRANSITION" then
-
-			set_state("SPRINT_TRANSITION")
-
-			set_target_hip_offset(0)
-
-			clear_overlays()
-
-			play_overlay(
-				"Sprint_Lean",
-				0.15,
-				1,
-				1
-			)
-			
-			play_overlay("Walk_Arms")
-		end
-
-		if active_base then
-
-			local transition_speed =
-				math.clamp(
-					1 - ((speed - SPRINT_TRANSITION_START) / 100),
-					0.01,
-					1
-				)
-
-			active_base:AdjustSpeed(transition_speed)
 		end
 
 		return
 	end
 
 	-- // FULL SPRINT
-	if speed >= SPRINT_START then
+	if sprinting_now then
 
 		if current_state ~= "SPRINT" then
 
@@ -716,7 +687,7 @@ local function update_movement(speed: number)
 				"Sprinting_Full",
 				0.05,
 				1,
-				1
+				sprint_playback
 			)
 
 			if not character:GetAttribute(
@@ -726,46 +697,32 @@ local function update_movement(speed: number)
 				play_overlay(
 					sprint_arms_overlay(),
 					0.1,
-					1,
+					sprint_playback,
 					1
 				)
+
+				local arms = active_overlays[sprint_arms_overlay()]
+				if arms and active_base then
+					-- The full sprint owns the torso bob. Starting the arm cycle at
+					-- the same frame keeps the shoulders attached to that motion.
+					arms.TimePosition = active_base.TimePosition
+				end
 
 				playing_sprint_arms = true
 			end
 		end
 
-		return
-	end
-
-	-- // SPRINT EXIT
-	-- // Prevent small speed fluctuations around 17 from constantly
-	-- // switching between sprint and transition.
-	if current_state == "SPRINT" then
-
-		if speed > SPRINT_END then
-			return
-		end
-
-		-- // We have actually slowed down enough to leave sprint.
-		set_state("SPRINT_TRANSITION")
-
-		set_target_hip_offset(0)
-
-		clear_sprint_overlays()
-
-		play_overlay(
-			"Sprint_Lean",
-			0.15,
-			1,
-			1
-		)
-
 		if active_base then
-			active_base:AdjustSpeed(1)
+			active_base:AdjustSpeed(sprint_playback)
+		end
+		if playing_sprint_arms then
+			local arms = active_overlays[sprint_arms_overlay()]
+			if arms then arms:AdjustSpeed(sprint_playback) end
 		end
 
 		return
 	end
+
 end
 
 -- // (Input)
@@ -892,10 +849,8 @@ end)
 -- // (Render)
 
 run_service.RenderStepped:Connect(function(dt)
-
-	local speed =
-		humanoid.MoveDirection.Magnitude
-		* humanoid.WalkSpeed
+	local velocity = humanoid_root_part.AssemblyLinearVelocity
+	local speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
 
 	update_movement(speed)
 	update_hip_offset(dt)

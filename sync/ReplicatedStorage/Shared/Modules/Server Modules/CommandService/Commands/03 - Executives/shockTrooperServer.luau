@@ -1,6 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ClassService = require(ReplicatedStorage.Shared.Modules["Server Modules"].ClassService)
+local InteractionManager = require(ReplicatedStorage.Shared.Modules["Server Modules"].InteractionManager)
 
 return function(context, kit, target)
 	local player = target or context.Executor
@@ -10,17 +11,8 @@ return function(context, kit, target)
 
 	local requestedKit = kit
 	if type(requestedKit) ~= "string" or requestedKit == "" then
-		local className = player.Character and player.Character:GetAttribute("Class")
-			or player:GetAttribute("SelectedClass")
-		local classKits = {
-			Soldat = "Storm Trooper",
-			Rook = "Anti-Material Trooper",
-			Officer = "Radio Trooper",
-			Lancer = "Trench Trooper",
-			Jaeger = "Geist Trooper",
-			Vanguard = "Bulwark Trooper",
-		}
-		requestedKit = classKits[className] or "Storm Trooper"
+		InteractionManager.OpenEliteKitSelection(player)
+		return ("Opened the Shock Trooper picker for %s."):format(player.Name)
 	end
 
 	local ok, result = ClassService.SetShockTrooper(player, requestedKit, true)

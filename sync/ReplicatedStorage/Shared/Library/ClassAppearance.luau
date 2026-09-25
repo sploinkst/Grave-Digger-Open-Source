@@ -3,9 +3,7 @@
 --   Assets/outfits/elite/<team>/<class> (Shock Troopers only)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Appearance = {}
--- Temporary runtime tracing for class helmet integration. Keep this enabled
--- until the Studio output confirms the complete mount path. Legit no clue why it's breaking btw
-Appearance.DebugHelmets = true
+Appearance.DebugHelmets = false
 
 local function helmetDebug(...)
 	if Appearance.DebugHelmets then warn("[ClassAppearance/Helmet]", ...) end
@@ -32,10 +30,19 @@ function Appearance.GetOutfit(teamName: string?, className: string?, isElite: bo
 	local assets = ReplicatedStorage.Shared:FindFirstChild("Assets")
 	local outfits = childIgnoreCase(assets, "outfits")
 	if not outfits then return nil end
-	local root = if isElite then (childIgnoreCase(outfits, "elite") or childIgnoreCase(outfits, "elites")) else outfits
-	local team = childIgnoreCase(root, teamFolderName(teamName))
-	local class = childIgnoreCase(team, className or "Soldat")
-	return if class and class:IsA("Folder") then class else nil
+	if not isElite then
+		local team = childIgnoreCase(outfits, teamFolderName(teamName))
+		local class = childIgnoreCase(team, className or "Soldat")
+		return if class and class:IsA("Folder") then class else nil
+	end
+
+	for _, rootName in {"elites", "elite"} do
+		local root = childIgnoreCase(outfits, rootName)
+		local team = childIgnoreCase(root, teamFolderName(teamName))
+		local class = childIgnoreCase(team, className or "Soldat")
+		if class and class:IsA("Folder") then return class end
+	end
+	return nil
 end
 
 local function getEliteTorso(className: string?): Instance?
@@ -57,8 +64,6 @@ local function attachModel(character: Model, clone: Model, helmet: boolean)
 		return false
 	end
 	clone.PrimaryPart = primary
-	-- Outfit helmet models use internal mesh names, never character-part names.
-	-- They always mount to Head; other outfit models retain their authored target.
 	local anchor = if helmet then character:FindFirstChild("Head") else character:FindFirstChild(primary.Name)
 		or character:FindFirstChild("Torso")
 		or character:FindFirstChild("HumanoidRootPart")
@@ -124,8 +129,6 @@ local function attachPart(character: Model, clone: BasePart, helmet: boolean): b
 	clone.Massless = true
 	clone:SetAttribute("ClassAppearance", true)
 	if helmet then clone:SetAttribute("ClassHelmet", true) end
-	-- Direct-part helmet kits are authored around their own part origin, so
-	-- welding that origin to Head is the intended attachment.
 	clone.CFrame = anchor.CFrame
 	local adjacency = {[clone] = {}}
 	for child, offset in childOffsets do
@@ -389,24 +392,27 @@ local function hideHair(character: Model)
 	end
 end
 
-function Appearance.Apply(character: Model, teamName: string?, className: string?)
+function Appearance.Apply(character: Model, teamName: string?, className: string?, equipmentOnly: boolean?)
 	local elite = character:GetAttribute("IsShockTrooper") == true
 	if elite then
 		local definitions = require(ReplicatedStorage.Shared.Library.ClassDefinitions)
 		local kit = definitions.GetElite(character:GetAttribute("EliteClass"))
-		className = kit and (kit.OutfitClass or kit.RequiredClass) or character:GetAttribute("ClassOutfit") or className
+		className = kit and kit.OutfitClass or character:GetAttribute("ClassOutfit") or className
 	end
 	local outfit = Appearance.GetOutfit(teamName, className, elite)
 	if not outfit then
-		warn(("[ClassAppearance] Missing %soutfit: outfits/%s/%s")
-			:format(if elite then "elite " else "", teamFolderName(teamName), className or "Soldat"))
+		warn(("[ClassAppearance] Missing outfit: outfits/%s%s/%s")
+			:format(if elite then "elites/" else "", teamFolderName(teamName), className or "Soldat"))
 		return
 	end
 	helmetDebug("apply", "team=", tostring(teamName), "class=", tostring(className), "outfit=", outfit:GetFullName())
 	local helmetClassName = className or "Soldat"
 
 	for _, child in character:GetDescendants() do
-		if child:GetAttribute("ClassAppearance") then child:Destroy() end
+		local clothing = child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic")
+		if child:GetAttribute("ClassAppearance") and not (equipmentOnly and clothing) then
+			child:Destroy()
+		end
 	end
 	restoreHair(character)
 
@@ -414,18 +420,15 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 	local flatHelmet = attachFlatHelmet(character, outfit, helmetClassName)
 	local helmetEquipped = flatHelmet
 	local nestedOutfit = childIgnoreCase(outfit, "outfit")
-	if nestedOutfit then
+	if nestedOutfit and not equipmentOnly then
 		attachRigOutfit(character, nestedOutfit)
 	end
-	-- Class kits are deliberately flat: pants, shirt, helmet and any class
-	-- accessories live directly under outfits/<team>/<class>.  Walking every
-	-- descendant made model kits unreliable because their internal mesh/weld
-	-- hierarchy could be mistaken for a second outfit item.
 	for _, source in outfit:GetChildren() do
 		if source == nestedOutfit then continue end
 		if flatHelmet and (source:IsA("BasePart") or source:IsA("JointInstance") or source:IsA("Constraint")) then continue end
 		if Appearance.DebugHelmets then helmetDebug("outfit child", source.Name, source.ClassName, "isHelmet=", isHelmet(source)) end
 		if source:IsA("Shirt") or source:IsA("Pants") or source:IsA("ShirtGraphic") then
+			if equipmentOnly then continue end
 			for _, existing in character:GetChildren() do
 				if existing.ClassName == source.ClassName then existing:Destroy() end
 			end
@@ -434,6 +437,10 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 			clone.Parent = character
 		elseif source:IsA("Accessory") and humanoid then
 			local clone = source:Clone()
+			if equipmentOnly and not isHelmet(clone) then
+				clone:Destroy()
+				continue
+			end
 			clone:SetAttribute("ClassAppearance", true)
 			if isHelmet(clone) then
 				helmetEquipped = true
@@ -445,6 +452,10 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 			local clone = source:Clone()
 			clone:SetAttribute("ClassAppearance", true)
 			local helmet = isHelmet(clone)
+			if equipmentOnly and not helmet then
+				clone:Destroy()
+				continue
+			end
 			if helmet then helmetDebug("found model helmet", source:GetFullName()) end
 			if helmet then
 				if helmetClassName == "Lancer" then clone:SetAttribute("Unknockable", true) end
@@ -454,6 +465,10 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 		elseif source:IsA("BasePart") then
 			local clone = source:Clone()
 			local helmet = isHelmet(clone)
+			if equipmentOnly and not helmet then
+				clone:Destroy()
+				continue
+			end
 			if helmet then helmetDebug("found part helmet", source:GetFullName()) end
 			if helmet then
 				if helmetClassName == "Lancer" then clone:SetAttribute("Unknockable", true) end
@@ -465,7 +480,9 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 	if elite and character:GetAttribute("EliteClass") ~= "OcelotTrooper" then
 		attachEliteTorso(character, helmetClassName)
 	end
-	if helmetEquipped and className ~= "Officer" then hideHair(character) end
+	-- Base Officers intentionally have no helmet, but their Shock variants use
+	-- the helmet authored in elites/<team>/officer like every other class.
+	if helmetEquipped and (elite or className ~= "Officer") then hideHair(character) end
 end
 
 return Appearance

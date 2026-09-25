@@ -1,7 +1,7 @@
 return require(script.Parent.LegacyGunFactory).create({
 	className = "HellionHeavyShotgun",
 	assetName = "autosg",
-	AnimationGunType = "autosg",
+	AnimationGunType = "HellionShotgun",
 	WeaponCategory = "Shotgun",
 	Designation = "Primary",
 	Weight = 2,

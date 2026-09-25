@@ -26,8 +26,17 @@ local DEFAULT_LAYERS: { [string]: number } = {
 	Draw = 2,
 	Unequip = 2,
 	Reload_Start = 2,
+	Reload_Start_Vet = 2,
+	Reload_Empty = 2,
+	Reload_Empty_Vet = 2,
 	Reload_Loop = 2,
+	Reload_Loop_Vet = 2,
 	Reload_End = 2,
+	Reload_End_Vet = 2,
+	Reload_End_Locked = 2,
+	Reload_End_Locked_Vet = 2,
+	Reload_Full = 2,
+	Reload_Full_Vet = 2,
 	Check = 2,
 	Check_Empty = 2,
 	Melee1 = 2,
@@ -87,6 +96,16 @@ local function sound(folder: Instance?, names: { string }): Sound?
 	return found and found:IsA("Sound") and found or nil
 end
 
+local function canonicalAnimationName(name: string): string
+	local pieces = string.split(name, "_")
+	for index, piece in pieces do
+		if piece ~= "" then
+			pieces[index] = string.upper(string.sub(piece, 1, 1)) .. string.sub(piece, 2)
+		end
+	end
+	return table.concat(pieces, "_")
+end
+
 local function buildAnimations(animationId: string, strict: boolean?): { [string]: Animation }?
 	local guns = Assets:FindFirstChild("Animations")
 		and Assets.Animations:FindFirstChild("Tools")
@@ -97,25 +116,49 @@ local function buildAnimations(animationId: string, strict: boolean?): { [string
 		prince = nil
 	end
 	local result = {
-		Hold = animation(folder, { "held", "Hold" }) or animation(prince, { "PrinceRifle_Held" }),
-		Draw = animation(folder, { "draw", "Draw" }) or animation(prince, { "PrinceRifle_Draw" }),
+		Hold = animation(folder, { "held", "long_held", "locked", "Hold" }) or animation(prince, { "PrinceRifle_Held" }),
+		Draw = animation(folder, { "draw", "long_draw", "steyrdraw", "Draw" }) or animation(prince, { "PrinceRifle_Draw" }),
 		Unequip = animation(folder, { "unequip", "Unequip" }) or animation(prince, { "PrinceRifle_Unequip" }),
-		Aim = animation(folder, { "aim", "Aim" }) or animation(prince, { "PrinceRifle_Aim" }),
-		Aim_Left = animation(folder, { "aim_left", "Aim_Left" }) or animation(prince, { "PrinceRifle_Aim_Left" }),
-		Fire = animation(folder, { "fire", "Fire" }) or animation(prince, { "PrinceRifle_Fire" }),
-		Fire_Left = animation(folder, { "fire_left", "Fire_Left" }) or animation(prince, { "PrinceRifle_Fire_Left" }),
+		Aim = animation(folder, { "aim", "long_aim", "Aim" }) or animation(prince, { "PrinceRifle_Aim" }),
+		Aim_Left = animation(folder, { "aim_left", "long_aim_left", "Aim_Left" }) or animation(prince, { "PrinceRifle_Aim_Left" }),
+		Fire = animation(folder, { "fire", "long_fire", "firing", "Fire" }) or animation(prince, { "PrinceRifle_Fire" }),
+		Fire_Left = animation(folder, { "fire_left", "long_fire_left", "firing_left", "Fire_Left" }) or animation(prince, { "PrinceRifle_Fire_Left" }),
 		Fire_Last = animation(folder, { "fire_last", "Fire_Last" }),
 		Fire_Last_Left = animation(folder, { "fire_last_left", "Fire_Last_Left" }),
 		Cycle = animation(folder, { "cycle", "Cycle", "reload_bolt" }),
 		Reload_Start = animation(folder, { "reload_start", "Reload_Start" }),
-		Reload_Loop = animation(folder, { "reload_loop", "Reload_Loop", "reload_one" }),
+		Reload_Start_Vet = animation(folder, { "reload_start_vet", "Reload_Start_Vet" }),
+		Reload_Empty = animation(folder, { "reload_empty", "Reload_Empty" }),
+		Reload_Empty_Vet = animation(folder, { "reload_empty_vet", "Reload_Empty_Vet" }),
+		Reload_Loop = animation(folder, { "reload_loop", "Reload_Loop", "reload_one", "reload_one_vet" }),
+		Reload_Loop_Vet = animation(folder, { "reload_loop_vet", "reload_dual_vet", "Reload_Loop_Vet" }),
 		Reload_End = animation(folder, { "reload_end", "Reload_End" }),
+		Reload_End_Vet = animation(folder, { "reload_end_vet", "Reload_End_Vet" }),
+		Reload_End_Locked = animation(folder, { "reload_end_locked", "Reload_End_Locked" }),
+		Reload_End_Locked_Vet = animation(folder, { "reload_end_locked_vet", "Reload_End_Locked_Vet" }),
+		Reload_Full = animation(folder, { "reload_full", "Reload_Full", "reload_clip", "reload_empty" }),
+		Reload_Full_Vet = animation(folder, { "reload_full_vet", "reload_empty_vet", "Reload_Full_Vet" }),
 		Check = animation(folder, { "check", "Check" }),
 		Check_Empty = animation(folder, { "check_empty", "Check_Empty" }),
 		Melee1 = animation(folder, { "melee1", "Melee1" }) or animation(prince, { "PrinceRifle_Melee1" }),
 		Melee2 = animation(folder, { "melee2", "Melee2" }) or animation(prince, { "PrinceRifle_Melee2" }),
 		Short = animation(folder, { "short", "Short" }) or animation(prince, { "PrinceRifle_Short" }),
 	}
+
+	-- Weapon master loaded every animation in the selected weapon folder. Keep
+	-- the standard aliases above, but also retain all special-purpose clips so
+	-- frame events and item-specific sequences are not lost during migration.
+	if folder then
+		for _, child in folder:GetChildren() do
+			local clip = if child:IsA("Animation") then child else child:FindFirstChildWhichIsA("Animation", true)
+			if clip then
+				local canonicalName = canonicalAnimationName(child.Name)
+				if result[canonicalName] == nil then
+					result[canonicalName] = clip
+				end
+			end
+		end
+	end
 
 	for _, value in result do
 		if value then
@@ -167,6 +210,7 @@ local function publishStaticFields(Class, className: string, config)
 	Class.icon = config.icon
 	Class.alt_name = config.alt_name
 	Class.blacklist = config.blacklist or false
+	Class.HiddenFromLoadout = config.HiddenFromLoadout == true
 	Class.tooltype = classToolType(config)
 	Class.capacity = config.capacity
 	Class.ammo_give = config.ammo_give or config.ammoGive or config.ammoType
@@ -202,12 +246,13 @@ local Factory = {}
 
 function Factory.create(config)
 	config = mergeLegacyStats(config)
-	-- The legacy weapon modules remain the master source for menu copy and
-	-- display statistics. Migrated classes only override fields they define.
+	-- Canonical wrappers carry an embedded LegacyStats snapshot. Never execute
+	-- the archived module in that case: those files still reference the removed
+	-- ReplicatedStorage.shared/core_modules hierarchy.
 	local legacyModules = script.Parent:FindFirstChild("weapon_modules")
 	local legacyName = config.assetName or config.AnimationGunType or config.animations
 	local legacySource = legacyModules and legacyName and legacyModules:FindFirstChild(legacyName)
-	if legacySource and legacySource:IsA("ModuleScript") then
+	if config.LegacyStats == nil and legacySource and legacySource:IsA("ModuleScript") then
 		local ok, legacyConfig = pcall(require, legacySource)
 		if ok and type(legacyConfig) == "table" then
 			for key, value in pairs(legacyConfig) do
@@ -277,7 +322,8 @@ function Factory.create(config)
 		self.recoil = config.recoil or self.recoil
 		self.recoil_count = config.recoilCount or config.recoil_count or self.recoil_count
 		self.Penetration_Level = config.penetration or config.pen or self.Penetration_Level
-		self.Armor_Penetration_Level = config.armorPenetration or self.Armor_Penetration_Level
+		self.Armor_Penetration_Level = config.armorPenetration or config.armor_pen
+			or config.penetration or config.pen or self.Armor_Penetration_Level
 		self.KnockBack_Force = config.knockback or self.KnockBack_Force
 		self.Aiming_Number = config.aimingNumber or self.Aiming_Number
 		self.Accuracy = config.accuracy or self.Accuracy
@@ -297,7 +343,7 @@ function Factory.create(config)
 		self.InstantEquip = config.InstantEquip or false
 		if config.WeaponCategory == "Shotgun" then
 			self.PelletCount = config.pelletCount or config.pellets or self.PelletCount
-			self.ShotgunSpread = config.shotgunSpread or self.ShotgunSpread
+			self.ShotgunSpread = config.shotgunSpread or config.accuracy or self.ShotgunSpread
 		end
 
 		self:applyFirearmConfig(config)
@@ -362,10 +408,13 @@ function Factory.create(config)
 		if not fired or not config.cycles then return end
 
 		self.Cycling = true
-		task.wait(math.min(0.25, self.FireInterval))
 		local cycleTrack = self.Equipped and self:_playAnim("Cycle")
-		if cycleTrack then cycleTrack.Stopped:Wait() end
-		task.wait(math.max(0, self.FireInterval - 0.25))
+		if cycleTrack then
+			cycleTrack.Stopped:Wait()
+		else
+			task.wait(config.cycle or self.cycle or self.FireInterval)
+		end
+		task.wait(config.cycle_rest or self.cycle_rest or 0)
 		self.Cycling = false
 		self:_restoreBaseDeferred()
 		return fired
@@ -393,11 +442,22 @@ function Factory.create(config)
 		Players.LocalPlayer:SetAttribute("CantUnequip", true)
 		self:_playConfiguredSound(config.ReloadStartSound or "charge_forward")
 
-		local startTrack = self:_playAnim("Reload_Start")
+		local wasEmpty = self.Capacity <= 0
+		local reloadAnimation = config.fullReloadAnimation or "Reload_Start"
+		if self.Capacity <= 0 and self.RegisteredAnimations and self.RegisteredAnimations.Reload_Empty then
+			reloadAnimation = "Reload_Empty"
+		elseif self.RegisteredAnimations and self.RegisteredAnimations.Reload_Full then
+			reloadAnimation = "Reload_Full"
+		end
+		if self.IsVeteran and self.RegisteredAnimations then
+			local veteranAnimation = reloadAnimation .. "_Vet"
+			if self.RegisteredAnimations[veteranAnimation] then reloadAnimation = veteranAnimation end
+		end
+		local startTrack = self:_playAnim(reloadAnimation)
 		if startTrack then
 			startTrack.Stopped:Wait()
 		else
-			task.wait(config.reload_start or 0.8)
+			task.wait(config.reload_full or config.reload_start or 0.8)
 		end
 
 		if self.Equipped and not self._reloadCancelled then
@@ -412,6 +472,15 @@ function Factory.create(config)
 				self.Capacity += loadAmount
 				self:_fire_ammo(loadAmount)
 			end
+			local endAnimation = if wasEmpty and self.RegisteredAnimations
+				and self.RegisteredAnimations.Reload_End_Locked then "Reload_End_Locked" else "Reload_End"
+			if self.IsVeteran and self.RegisteredAnimations then
+				local veteranEnd = endAnimation .. "_Vet"
+				if self.RegisteredAnimations[veteranEnd] then endAnimation = veteranEnd end
+			end
+			local endTrack = self.RegisteredAnimations and self.RegisteredAnimations[endAnimation]
+				and self:_playAnim(endAnimation)
+			if endTrack then endTrack.Stopped:Wait() end
 			self:_playConfiguredSound(config.ReloadEndSound or "charge_back")
 		end
 
@@ -454,7 +523,35 @@ function Factory.create(config)
 			self:_startAutoFire()
 			return
 		end
+		if config.doubleFireAlt and self.Alt_Mode == true and self.Capacity >= 2 then
+			local first = self:_fireShotgunBlast({
+				bulletSpeed = self.BulletSpeed,
+				fireAnimation = self.current_shoulder ~= "Right" and "Fire_Left" or "Fire",
+				sound = self.FireSound,
+				fireDelay = 0,
+			})
+			if first and self.Equipped then
+				task.wait(config.doubleFireDelay or 0.08)
+				self:_fireShotgunBlast({
+					bulletSpeed = self.BulletSpeed,
+					fireAnimation = self.current_shoulder ~= "Right" and "Fire_Left" or "Fire",
+					sound = self.FireSound,
+					fireDelay = self.FireInterval,
+				})
+			end
+			return first
+		end
 		return self:_fireConfiguredShot(config.cycles and nil or self.FireInterval)
+	end
+
+	function Class:setAltMode()
+		if not self.Equipped or self:_isBusyForActivation() then return end
+		self.Alt_Mode = not self.Alt_Mode
+		if config.doubleFireAlt then
+			self:notify(self.Alt_Mode and "Fire mode: Both barrels" or "Fire mode: Single barrel")
+		elseif config.altModeLabels then
+			self:notify(self.Alt_Mode and config.altModeLabels[2] or config.altModeLabels[1])
+		end
 	end
 
 	function Class:_damageAtDistance(distance: number): number
@@ -463,7 +560,7 @@ function Factory.create(config)
 
 	function Class:reload()
 		if config.disableManualReload then return false end
-		if config.reloadStartIsFullReload then
+		if config.reloadStartIsFullReload or config.require_full_load then
 			return self:_reloadMagazine()
 		end
 		self:_reloadByRound({

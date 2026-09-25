@@ -1,7 +1,7 @@
 return require(script.Parent.LegacyGunFactory).create({
 	className = "JessePrecisionRifle",
 	assetName = "enfield",
-	AnimationGunType = "enfield",
+	AnimationGunType = "JesseRifle",
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 2,

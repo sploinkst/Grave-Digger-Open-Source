@@ -35,6 +35,7 @@ local WeaponIds = require(
 )
 
 local WeaponHandling = require(replicatedstorage_service.Shared.Library.WeaponHandling)
+local Perks = require(replicatedstorage_service.Shared.Library.PerkDefinitions)
 
 local PENETRATION_NAMES = {
 	"Little", "Weak", "Decent", "Strong", "Powerful", "Devastating",
@@ -241,15 +242,9 @@ end
 
 local function get_master_weapon_data(weapon_module, weapon_name: string?)
 	local merged = {}
-	local asset_name = WeaponIds.AssetName(weapon_name or weapon_module.className or "")
-	local legacy_folder = gun_classes:FindFirstChild("weapon_modules")
-	local legacy_source = legacy_folder and legacy_folder:FindFirstChild(asset_name)
-	if legacy_source and legacy_source:IsA("ModuleScript") then
-		local ok, legacy = pcall(require, legacy_source)
-		if ok and type(legacy) == "table" then
-			for key, value in pairs(legacy) do merged[key] = value end
-		end
-	end
+	-- Canonical GunClasses now publish their complete display and gameplay
+	-- metadata. Requiring weapon_modules here executes obsolete modules that
+	-- depend on the removed ReplicatedStorage.shared/core_modules hierarchy.
 	for key, value in pairs(weapon_module) do
 		if value ~= nil and value ~= "" then merged[key] = value end
 	end
@@ -388,15 +383,9 @@ local function show_weapon_details(weapon_module, weapon_name: string?)
 end
 
 local function show_item_details(item_name: string?, legacy_asset: string?, fallback)
-	-- Explicit legacy IDs are the authoritative master-script records for menu
-	-- tools. Their modern controller classes intentionally contain behaviour,
-	-- not the descriptive/stat fields used by this panel.
-	local legacy = legacy_asset and get_legacy_item_data(legacy_asset)
-	if legacy then
-		show_weapon_details(legacy)
-		return
-	end
-
+	-- Prefer canonical controllers. Archived weapon_modules can reference the
+	-- removed lowercase ReplicatedStorage.shared hierarchy and must not run for
+	-- migrated weapons.
 	if item_name and item_name ~= "" then
 		local source = gun_classes:FindFirstChild(item_name)
 			or tool_classes:FindFirstChild(item_name)
@@ -407,6 +396,12 @@ local function show_item_details(item_name: string?, legacy_asset: string?, fall
 				return
 			end
 		end
+	end
+
+	local legacy = legacy_asset and get_legacy_item_data(legacy_asset)
+	if legacy then
+		show_weapon_details(legacy)
+		return
 	end
 
 	if fallback then
@@ -555,6 +550,11 @@ local function create_weapon_options(slot_name: string)
 			or child.Name == "LegacyGunFactory" then
 			continue
 		end
+		-- SteyrRifle is an internal controller for the Union pistol's weapon
+		-- modification. It must never become a standalone loadout choice.
+		if child.Name == "SteyrRifle" then
+			continue
+		end
 		if child.Parent == gun_classes and not WeaponHandling.IsBaseline(child.Name) then
 			continue
 		end
@@ -674,6 +674,52 @@ local function create_weapon_options(slot_name: string)
 				clean_up_scrolling_list()
 			end)
 		end
+	end
+end
+
+local function show_perk_details(perk_name: string)
+	local definition, canonical = Perks.Get(perk_name)
+	if not definition or not canonical then return end
+	show_weapon_details({
+		name = canonical,
+		desc = Perks.Description(canonical, Classes.Selected(local_player)),
+		icon = definition.Icon,
+		lore = definition.Lore or "",
+		tooltype = "perk",
+	})
+end
+
+local function create_perk_options()
+	if not scrolling_list or not scrolling_list_example then return end
+	clean_up_scrolling_list()
+
+	for _, perk_name in Perks.Order do
+		local definition = Perks.Definitions[perk_name]
+		if not definition or definition.Selectable == false then continue end
+
+		local row = scrolling_list_example:Clone()
+		row.Name = perk_name
+		row.Visible = true
+		row.Parent = scrolling_list
+		set_text(row, "wepname", perk_name)
+		set_text(row, "desc", Perks.Description(perk_name, Classes.Selected(local_player)))
+
+		local icon = row:FindFirstChild("wepicon")
+		if icon and icon:IsA("ImageLabel") then icon.Image = image_id(definition.Icon) end
+		local locked = row:FindFirstChild("weaponlocked")
+		if locked and locked:IsA("GuiObject") then locked.Visible = false end
+		local weight = row:FindFirstChild("weaponweight")
+		if weight and weight:IsA("GuiObject") then weight.Visible = false end
+
+		local function preview()
+			show_perk_details(perk_name)
+		end
+		row.MouseEnter:Connect(preview)
+		row.SelectionGained:Connect(preview)
+		row.Activated:Connect(function()
+			datapush_event:FireServer("LoadoutPerk", perk_name == "None" and "" or perk_name)
+			clean_up_scrolling_list()
+		end)
 	end
 end
 
@@ -1046,6 +1092,11 @@ local function refresh_class()
 	if perk_row then
 		local perk_name = perk_value and perk_value.Value or ""
 		set_text(perk_row, "wepname", perk_name == "" and "None" or perk_name)
+		local definition = Perks.Get(perk_name == "" and "None" or perk_name)
+		local icon = perk_row:FindFirstChild("wepicon")
+		if icon and icon:IsA("ImageLabel") then
+			icon.Image = definition and image_id(definition.Icon) or ""
+		end
 	end
 
 	-- // Inventory weight
@@ -1143,11 +1194,7 @@ local function preview_inventory_row(row_name: string)
 	elseif row_name == "Perk Slot" then
 		local value = equipment and equipment:FindFirstChild("Perk")
 		local perk_name = value and value.Value or ""
-		show_item_details(nil, nil, {
-			name = perk_name == "" and "None" or perk_name,
-			desc = perk_name == "" and "No perk selected." or "Selected combat perk.",
-			lore = "",
-		})
+		show_perk_details(perk_name == "" and "None" or perk_name)
 	end
 end
 
@@ -1307,6 +1354,26 @@ local function setup_ui_connections()
 					refresh_class
 				)
 			)
+		end
+	end
+
+	local perk_button = options_frame:FindFirstChild("Perk Slot")
+	if perk_button and perk_button:IsA("GuiButton") then
+		table.insert(ui_connections, perk_button.Activated:Connect(function()
+			local selected_loadout = Classes.GetLoadout(local_player, Classes.Selected(local_player))
+			local perk_value = selected_loadout and selected_loadout:FindFirstChild("Perk")
+			local selected_perk = perk_value and perk_value.Value or ""
+			show_perk_details(selected_perk == "" and "None" or selected_perk)
+			create_perk_options()
+		end))
+	end
+	local class_loadouts = equipment:FindFirstChild("ClassLoadouts")
+	if class_loadouts then
+		for _, class_loadout in class_loadouts:GetChildren() do
+			local perk_value = class_loadout:FindFirstChild("Perk")
+			if perk_value then
+				table.insert(ui_connections, perk_value.Changed:Connect(refresh_class))
+			end
 		end
 	end
 

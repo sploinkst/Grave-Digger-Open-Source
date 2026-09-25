@@ -24,6 +24,7 @@ local loadout_targets = {
 local Classes = require(ReplicatedStorage.Shared.Library.ClassDefinitions)
 local ClassService = require(script.Parent.Parent.ClassService)
 local WeaponHandling = require(ReplicatedStorage.Shared.Library.WeaponHandling)
+local Perks = require(ReplicatedStorage.Shared.Library.PerkDefinitions)
 
 local started = false
 
@@ -76,6 +77,22 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 	if legacy and legacy:IsA("StringValue") then legacy.Value = weapon_name end
 end
 
+local function set_perk(player: Player, value: any)
+	if type(value) ~= "string" then return end
+	local loadout = Classes.GetLoadout(player, Classes.Selected(player))
+	local slot = loadout and loadout:FindFirstChild("Perk")
+	if not slot or not slot:IsA("StringValue") then return end
+
+	if value == "" or value == "None" then
+		slot.Value = ""
+		return
+	end
+
+	local definition, canonical = Perks.Get(value)
+	if not definition or not canonical or definition.Selectable == false then return end
+	slot.Value = canonical
+end
+
 function module.start_module()
 	if started then return end
 	started = true
@@ -88,6 +105,10 @@ function module.start_module()
 		end
 		if loadout_targets[target] then
 			set_loadout(player, target, value)
+			return
+		end
+		if target == "LoadoutPerk" then
+			set_perk(player, value)
 			return
 		end
 

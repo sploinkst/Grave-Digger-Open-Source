@@ -1,7 +1,7 @@
 return require(script.Parent.LegacyGunFactory).create({
 	className = "CrestfallRangerRifle",
 	assetName = "lever",
-	AnimationGunType = "lever",
+	AnimationGunType = "CrestfallRifle",
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 2,

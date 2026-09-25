@@ -1,7 +1,7 @@
 return require(script.Parent.LegacyGunFactory).create({
 	className = "TalonCavalryRevolver",
 	assetName = "saa",
-	AnimationGunType = "saa",
+	AnimationGunType = "TalonRevolver",
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 2,

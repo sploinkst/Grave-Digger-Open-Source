@@ -1,10 +1,12 @@
 return require(script.Parent.LegacyGunFactory).create({
 	className = "MauserCarbine",
 	assetName = "mausercarbine",
-	AnimationGunType = "mauser",
+	AnimationGunType = "RadioRifle",
 	WeaponCategory = "Pistol",
-	Designation = "Secondary",
+	Designation = "Primary",
 	Weight = 1,
+	reloadStartIsFullReload = true,
+	fullReloadAnimation = "Reload_Full",
 	LegacyStats = {
 		name = "'Commissar's Gift'",
 		icon = "117647294446177",
@@ -28,6 +30,7 @@ return require(script.Parent.LegacyGunFactory).create({
 		ammo_reserves_max = 200,
 		capacity = 10,
 		require_full_load = true,
+		reload_full = 2,
 		blacklist = true,
 	},
 	bulletSpeed = 850,

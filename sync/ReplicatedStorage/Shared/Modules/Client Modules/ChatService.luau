@@ -105,7 +105,7 @@ local function setup_input()
 	table.insert(
 		input_connections,
 		UserInputService.InputBegan:Connect(function(input, gp)
-			if gp then
+			if gp or local_player:GetAttribute("MenuOpen") then
 				return
 			end
 

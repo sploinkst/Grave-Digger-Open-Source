@@ -5,7 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TalonRevolver = require(script.Parent.TalonRevolver)
 
 local TalonAnimations = ReplicatedStorage.Shared.Assets.Animations.Tools.Guns:WaitForChild("TalonRevolver")
-local OCELOT_FIRE_INTERVAL = 60 / 300
+local OCELOT_FIRE_INTERVAL = 60 / 800
 
 local OcelotTalonRevolver = {}
 OcelotTalonRevolver.__index = OcelotTalonRevolver
@@ -38,20 +38,6 @@ function OcelotTalonRevolver.new(info)
 	self.Max_Reserve_Ammo = 20000
 
 	return self
-end
-
-function OcelotTalonRevolver:fire()
-	-- Ocelot hip-fires at all times except while aiming down sights.
-	local previousHipFireMode = self.HipFireMode
-	self.HipFireMode = not self.Aiming
-	TalonRevolver.fire(self)
-	self.HipFireMode = previousHipFireMode
-end
-
-for key, value in pairs(TalonRevolver) do
-	if OcelotTalonRevolver[key] == nil then
-		OcelotTalonRevolver[key] = value
-	end
 end
 
 OcelotTalonRevolver.Display_Name = "Ocelot Talon Revolver"

@@ -189,7 +189,7 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		C1 = WEAPON_STATS.equipc1,
 	}
 
-	self.AnimationGunType = "henry"
+	self.AnimationGunType = "JudgementRifle"
 	self.animations = {
 		Hold = judgementAnimations.held,
 		Aim = judgementAnimations.aim,
@@ -199,6 +199,7 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		Draw = judgementAnimations.draw,
 		Unequip = judgementAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
 		Reload_Start = judgementAnimations.reload_start,
+		Reload_Start_Vet = judgementAnimations.reload_start_vet,
 		Check = judgementAnimations.check,
 		Melee1 = judgementAnimations.melee1,
 		Melee2 = judgementAnimations.melee2,

@@ -129,7 +129,7 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 		self.motor_6d_data.Part1 = model:FindFirstChild("hitbox", true)
 	end
 
-	self.AnimationGunType = "springfield"
+	self.AnimationGunType = "WhisperRifle"
 	self.animations = {
 		Hold = whisperAnimations.held,
 		Draw = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
@@ -140,6 +140,7 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 		Fire_Left = whisperAnimations.fire_left,
 		Cycle = whisperAnimations.cycle,
 		Reload_Start = whisperAnimations.reload_start,
+		Reload_Start_Vet = whisperAnimations.reload_start_vet,
 		Reload_Loop =whisperAnimations.reload_loop,
 		Reload_End = whisperAnimations.reload_end,
 		Check = whisperAnimations.check,

@@ -31,15 +31,15 @@ local ANTIMATERIAL_HOLSTER_C0 = CFrame.new(0, 0, -0.65)
 
 local WEAPON_STATS = {
 	damage = 500,
-	range = 60,
+	range = 50,
 	range_damage = 250,
 	far = 80,
 	far_damage = 199,
 	capacity = 6,
 	ammo_give = ".50 Remover",
-	recoil = 120,
-	recoil_count = 14,
-	pen = 3,
+	recoil = 25,
+	recoil_count = 9,
+	pen = 5,
 	armor_pen = 5,
 	knockback = 25,
 	aiming_number = 80,
@@ -51,8 +51,8 @@ local WEAPON_STATS = {
 	post_reload_delay = 0.15,
 	melee_damage = 105,
 	melee_range = 5,
-	accuracy = 2,
-	moving_accuracy = 75,
+	accuracy = 12,
+	moving_accuracy = 60,
 }
 
 local ANIM_LAYERS: { [string]: number } = {

@@ -1,7 +1,8 @@
 return require(script.Parent.LegacyGunFactory).create({
 	className = "UnionPistol",
 	assetName = "steyr",
-	AnimationGunType = "steyr",
+	AnimationGunType = "UnionPistol",
+	StrictAnimations = true,
 	WeaponCategory = "Pistol",
 	Designation = "Secondary",
 	Weight = 1,

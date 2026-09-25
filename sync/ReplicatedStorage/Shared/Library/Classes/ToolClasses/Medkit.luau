@@ -188,7 +188,7 @@ function Medkit:_play_heal_sequence(wound_value: StringValue, is_last_wound: boo
 	if not target then
 		set_leg_slow()
 		local pre = anims.AfterHeal_Water
-		pre:Play()
+		pre:Play(0.3, 1, self.Character:GetAttribute("SurgerySpeed") or 1)
 
 		while pre.IsPlaying do
 			if can_cancel() and (not self.HoldingM1 or not self.Equipped) then
@@ -314,13 +314,21 @@ function Medkit:_perform_surgery(wound: StringValue, target: Model?)
 	if success then
 		print("[MEDKIT] Surgery Complete. Firing Remote.")
 		Heal_RemoteEvent:FireServer(target or local_player, wound)
-		Helmet_RemoteEvent:FireServer(false)
-		local track = self.RegisteredAnimations.HelmetRemove:Play()
-		
 	elseif not ok then
 		warn("[MEDKIT] Surgery error:", result)
 	else
 		print("[MEDKIT] Surgery Failed or Cancelled.")
+	end
+
+	Helmet_RemoteEvent:FireServer(false)
+	if self._helmetLiftedForHeal then
+		self._helmetLiftedForHeal = false
+		local place = self.RegisteredAnimations and self.RegisteredAnimations.HelmetPlace
+		if place then
+			if place.IsPlaying then place:Stop(0) end
+			place:Play(0.05, 1, 1.5)
+			task.wait(0.33)
+		end
 	end
 	
 	self.Character:SetAttribute("SprintBlocked", nil)
@@ -347,10 +355,16 @@ function Medkit:_process_self_heal()
 
 	if Util.check_for_helmet(game.Players.LocalPlayer.Character) then
 		print("[MEDKIT] Has helmet while healing.") 
-		
-		local track = self.RegisteredAnimations.HelmetRemove:Play()
-		print("[MEDKIT] Helmet removed.")
+
+		local track = self.RegisteredAnimations and self.RegisteredAnimations.HelmetRemove
+		if track then
+			if track.IsPlaying then track:Stop(0) end
+			track:Play(0.05, 1, 1.5)
+		end
+		self._helmetLiftedForHeal = true
 		Helmet_RemoteEvent:FireServer(true)
+		task.wait(0.33)
+		print("[MEDKIT] Helmet removed.")
 	end
 	
 	local wound = wounds[math.random(1, #wounds)]

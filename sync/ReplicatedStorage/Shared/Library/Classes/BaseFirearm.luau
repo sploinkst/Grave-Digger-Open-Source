@@ -24,6 +24,24 @@ local FX_BULLET_HOLE = ReplicatedStorage.Shared.Assets.Guns.Effects.BulletHole
 local CUT = 0.06
 local MIN_AMMO_CHECK_DISPLAY_TIME = 1
 
+local function hasVeteranPerk(): boolean
+	local player = LOCAL_PLAYER
+	local character = player and player.Character
+	local legacyPerk = character and character:FindFirstChild("perk")
+	if legacyPerk and legacyPerk:IsA("StringValue") then
+		local value = string.lower(legacyPerk.Value)
+		if value == "vet" or value == "veteran" then return true end
+	end
+	if not player then return false end
+	if player:GetAttribute("Veteran") == true or player:GetAttribute("vet") == true then return true end
+	local root = player:FindFirstChild("PlayerData")
+	local data = root and root:FindFirstChild("PlayerData")
+	local equipment = data and data:FindFirstChild("Equipment")
+	local perks = equipment and equipment:FindFirstChild("Perks")
+	local perk = perks and (perks:FindFirstChild("Veteran") or perks:FindFirstChild("vet"))
+	return perk ~= nil and (not perk:IsA("BoolValue") or perk.Value)
+end
+
 local BaseFirearm = {}
 BaseFirearm.__index = BaseFirearm
 setmetatable(BaseFirearm, { __index = BaseTool })
@@ -34,6 +52,8 @@ function BaseFirearm.new(info): BaseFirearm
 	local self = BaseTool.new(info) :: any
 	self.AnimationDrivenGrip = false
 	self.IsFirearm = true
+	self.IsVeteran = hasVeteranPerk()
+	self.VeteranReloadSpeed = 1.2
 	-- Shared rifle mount matches Prince's original scripted attachment.
 	self.DefaultGripC0 = CFrame.new(0.254, -1.703, -0.566)
 		* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
@@ -122,6 +142,9 @@ function BaseFirearm:applyFirearmConfig(config)
 	self.reload_loop_after = config.reload_loop_after or self.reload_loop_after
 	self.reload_alt = config.reload_alt or self.reload_alt
 	self.reload_full = config.reload_full or self.reload_full
+	-- Item modules may override fade, weight, speed, restart/cut behavior, or an
+	-- initial TimePosition without replacing the shared animation controller.
+	self.AnimationPlayback = config.AnimationPlayback or config.animationPlayback or self.AnimationPlayback
 	self.chamber = config.chamber or self.chamber or false
 	self.blacklist = config.blacklist or self.blacklist or false
 	self.auto = config.auto or self.auto or false
@@ -138,6 +161,7 @@ function BaseFirearm:applyFirearmConfig(config)
 	if config.reload_loop and config.reload_loop > 0 and self.animation_speeds.Reload_Loop == nil then self.animation_speeds.Reload_Loop = 1 / config.reload_loop end
 	if config.reload_end and config.reload_end > 0 and self.animation_speeds.Reload_End == nil then self.animation_speeds.Reload_End = 1 / config.reload_end end
 	if config.reload_alt and config.reload_alt > 0 and self.animation_speeds.Reload_Alt == nil then self.animation_speeds.Reload_Alt = 1 / config.reload_alt end
+	if config.reload_full and config.reload_full > 0 and self.animation_speeds.Reload_Full == nil then self.animation_speeds.Reload_Full = 1 / config.reload_full end
 	self.LegacyWeaponAttributes = {
 		tooltype = self.tooltype,
 		capacity = self.capacity,
@@ -200,6 +224,15 @@ function BaseFirearm:_blockFireFor(delay: number?)
 end
 
 function BaseFirearm:_canFireNow(): boolean
+	-- Every firearm uses the combat camera. MouseBehavior is the authoritative
+	-- state shared by first-person and over-the-shoulder/shift-lock cameras;
+	-- FreeLook covers the brief middle-mouse free-camera state while locked.
+	if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
+		return false
+	end
+	if LOCAL_PLAYER and LOCAL_PLAYER:GetAttribute("FreeLook") == true then
+		return false
+	end
 	return os.clock() >= math.max(self._nextFireAt or 0, self._drawReadyAt or 0, self.Aiming and (self._aimReadyAt or 0) or 0)
 end
 
@@ -678,6 +711,17 @@ function BaseFirearm:_reloadByRound(options): boolean
 	local startAnim = if options and options.startAnim ~= nil then options.startAnim else "Reload_Start"
 	local loopAnim = if options and options.loopAnim ~= nil then options.loopAnim else "Reload_Loop"
 	local endAnim = if options and options.endAnim ~= nil then options.endAnim else "Reload_End"
+	if self.Capacity <= 0 and self.RegisteredAnimations and self.RegisteredAnimations.Reload_Empty then
+		startAnim = "Reload_Empty"
+	end
+	local function veteranAnimation(name)
+		if not self.IsVeteran or not name or not self.RegisteredAnimations then return name end
+		local veteranName = name .. "_Vet"
+		return self.RegisteredAnimations[veteranName] and veteranName or name
+	end
+	startAnim = veteranAnimation(startAnim)
+	loopAnim = veteranAnimation(loopAnim)
+	endAnim = veteranAnimation(endAnim)
 	local startTrack = startAnim and self:_playAnim(startAnim) or nil
 	if startTrack then startTrack.Stopped:Wait() end
 	-- Some opening clips include the first insertion already.
@@ -687,8 +731,16 @@ function BaseFirearm:_reloadByRound(options): boolean
 		self:_fire_ammo(options.ammoCost or 1)
 	end
 
+	local loopIndex = 0
 	while self.Equipped and self.Capacity < self.Max_Capacity and reserveAmmo.Value > 0 and not self._reloadCancelled do
-		local loopTrack = loopAnim and self:_playAnim(loopAnim) or nil
+		loopIndex += 1
+		-- Weapon master blended into the first insertion for 0.05 seconds, then
+		-- hard-cut each subsequent loop so repeated rounds stay frame-accurate.
+		local loopTrack = loopAnim and self:_playAnim(loopAnim, false, {
+			fade = if loopIndex > 1 then 0 else 0.05,
+			restart = true,
+			cutFade = 0,
+		}) or nil
 		if loopTrack then
 			loopTrack.Stopped:Wait()
 		elseif options and options.loopWait then

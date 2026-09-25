@@ -1,7 +1,7 @@
 return require(script.Parent.LegacyGunFactory).create({
 	className = "VolkFrontlineRifle",
 	assetName = "mosin",
-	AnimationGunType = "mosin",
+	AnimationGunType = "VolkRifle",
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 2,

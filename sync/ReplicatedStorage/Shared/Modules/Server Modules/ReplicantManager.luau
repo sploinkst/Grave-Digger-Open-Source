@@ -697,8 +697,9 @@ function module.start_module()
 
 		if not humanoid then
 			if character:GetAttribute("EliteClass") == "OcelotTrooper"
-				and hitData.WeaponName == "OcelotTalonRevolver"
-				and character:FindFirstChild("OcelotTalonRevolver") then
+				and (hitData.WeaponName == "OcelotTalonRevolver"
+					or hitData.WeaponName == "OcelotTalonRevolverSecondary")
+				and character:FindFirstChild(hitData.WeaponName) then
 				playRandomRicochet(position)
 			end
 			return
@@ -1010,7 +1011,8 @@ function module.start_module()
 		local backpack = player:FindFirstChild("Backpack")
 		if not character or not humanoid or humanoid.Health <= 0 or not backpack then return end
 		if character:GetAttribute("EliteClass") ~= "OcelotTrooper" then return end
-		if typeof(tool) ~= "Instance" or not tool:IsA("Tool") or tool.Name ~= "OcelotTalonRevolver" then return end
+		if typeof(tool) ~= "Instance" or not tool:IsA("Tool")
+			or (tool.Name ~= "OcelotTalonRevolver" and tool.Name ~= "OcelotTalonRevolverSecondary") then return end
 		if tool.Parent ~= character then return end
 		if typeof(model) ~= "Instance" or not model:IsA("Model")
 			or not model:IsDescendantOf(ReplicatedStorage.Shared.Assets.Guns) then return end
@@ -1020,7 +1022,7 @@ function module.start_module()
 		local existing = {}
 		for _, container in { backpack, character } do
 			for _, candidate in container:GetChildren() do
-				if candidate:IsA("Tool") and candidate.Name == "OcelotTalonRevolver" then
+				if candidate:IsA("Tool") and candidate.Name == tool.Name then
 					existing[candidate] = true
 				end
 			end
@@ -1043,21 +1045,22 @@ function module.start_module()
 		end
 
 		local Items = require(script.Parent.ItemsService)
-		local ok, err = pcall(Items.give_item, player, "OcelotTalonRevolver", 20000, inventoryDesignation, true)
+		local replacementName = tool.Name
+		local ok, err = pcall(Items.give_item, player, replacementName, 20000, inventoryDesignation, true)
 		if not ok then
-			warn("[OcelotReload] Could not grant fresh OcelotTalonRevolver: " .. tostring(err))
+			warn("[OcelotReload] Could not grant fresh " .. replacementName .. ": " .. tostring(err))
 			return
 		end
 
 		local replacement: Tool?
 		for _, candidate in backpack:GetChildren() do
-			if candidate:IsA("Tool") and candidate.Name == "OcelotTalonRevolver" and not existing[candidate] then
+			if candidate:IsA("Tool") and candidate.Name == replacementName and not existing[candidate] then
 				replacement = candidate
 				break
 			end
 		end
 		if not replacement then
-			replacement = backpack:FindFirstChild("OcelotTalonRevolver") :: Tool?
+			replacement = backpack:FindFirstChild(replacementName) :: Tool?
 		end
 		if replacement and replacement:IsA("Tool") then
 			local reserve = replacement:FindFirstChild("Reserve_Ammo")

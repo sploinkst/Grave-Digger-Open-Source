@@ -22,11 +22,42 @@ local scenes_folder: Instance? = nil
 local main_menu: GuiObject? = nil
 local current_ui: ScreenGui? = nil
 local button_connections = {}
+local hidden_chat_ui: ScreenGui? = nil
+local chat_enabled_before_menu: boolean? = nil
 
 local firstclick = false
 local started = false
 module.SceneChanged = Instance.new("BindableEvent")
 -- // Functions
+
+local function set_chat_hidden(hidden: boolean)
+	local player_gui = local_player:FindFirstChildOfClass("PlayerGui")
+	local chat_ui = player_gui and player_gui:FindFirstChild("Chat")
+	if not chat_ui or not chat_ui:IsA("ScreenGui") then
+		if not hidden then
+			hidden_chat_ui = nil
+			chat_enabled_before_menu = nil
+		end
+		return
+	end
+
+	if hidden then
+		if hidden_chat_ui ~= chat_ui then
+			hidden_chat_ui = chat_ui
+			chat_enabled_before_menu = chat_ui.Enabled
+		end
+
+		local focused = input_service:GetFocusedTextBox()
+		if focused and focused:IsDescendantOf(chat_ui) then
+			focused:ReleaseFocus(false)
+		end
+		chat_ui.Enabled = false
+	elseif hidden_chat_ui == chat_ui then
+		chat_ui.Enabled = if chat_enabled_before_menu == nil then true else chat_enabled_before_menu
+		hidden_chat_ui = nil
+		chat_enabled_before_menu = nil
+	end
+end
 
 local function set_button_selected(button: GuiButton, selected: boolean)
 	local color = selected and Color3.new(1, 1, 1) or Color3.new(0, 0, 0)
@@ -44,6 +75,7 @@ local function set_ui()
 
 	local_player:SetAttribute("MenuOpen", menu_boolean)
 	_G.in_menu = menu_boolean
+	set_chat_hidden(menu_boolean)
 end
 
 
@@ -352,7 +384,9 @@ function module.start_module()
     local_player.CharacterAdded:Connect(handle_character_added)
     local playerGui=local_player:WaitForChild("PlayerGui")
     playerGui.ChildAdded:Connect(function(child)
-        if child.Name=="Menu" or child.Name=="Menu_Scenes" then task.defer(function() refresh_ui(false);set_ui() end) end
+		if child.Name=="Menu" or child.Name=="Menu_Scenes" or child.Name=="Chat" then
+			task.defer(function() refresh_ui(false);set_ui() end)
+		end
     end)
     input_service.InputBegan:Connect(function(input,processed)
         if processed or input_service:GetFocusedTextBox() or local_player:GetAttribute("RebindingInput") then return end

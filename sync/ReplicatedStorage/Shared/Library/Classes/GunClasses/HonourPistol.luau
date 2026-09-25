@@ -151,7 +151,7 @@ function HonourPistol.new(info: Types.BaseToolCreateInfo): HonourPistol
 	self.item_image = "rbxassetid://18193612933"
 	self.Designation = "Secondary"
 	self.ANIM_LAYERS = ANIM_LAYERS
-	self.AnimationGunType = "mauser"
+	self.AnimationGunType = "HonourPistol"
 
 	self.model_reference = ToolFolder:FindFirstChild("mauser") or ToolFolder:FindFirstChild("HonourPistol")
 	self.holster_reference = GunAssets.Holsters:FindFirstChild("mauserHolster")
@@ -211,7 +211,7 @@ function HonourPistol.new(info: Types.BaseToolCreateInfo): HonourPistol
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
 	self.Short_Distance = 3.5
-	self.IsVeteran = hasPerk("vet")
+	self.IsVeteran = self.IsVeteran or hasPerk("vet")
 	self.IsBlackHand = blackHand
 	self.StockAttached = false
 	self.FireInterval = blackHand and WEAPON_STATS.black_hand_fire_rate or WEAPON_STATS.fire_rate

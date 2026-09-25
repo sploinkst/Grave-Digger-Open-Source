@@ -104,7 +104,7 @@ local FIREARM_CONFIG = {
 	reload_end = 1.45,
 	reload_alt = 1.4,
 	bullet_speed = BULLET_SPEED,
-	AnimationGunType = "lebel",
+	AnimationGunType = "PrinceRifle",
 	item_image = "rbxassetid://17496049645",
 	Designation = "Primary",
 	ANIM_LAYERS = ANIM_LAYERS,
@@ -282,32 +282,30 @@ end
 
 -- // Actions
 function PrinceRifle:setAltMode()
-	print("PrinceRifle:setAltMode() called")
-	if self:_isBusy() then print("Busy, cannot change alt mode") return end
+	if self:_isBusy() then return end
 	self.Alting = true
 	self:_stopAllExcept()
 	local shouldCycle = false
 
 	if self.Alt_Mode then
-		self:_playAnim("Alt_Mode_Off").Stopped:Wait()
+		local track = self:_playAnim("Alt_Mode_Off")
+		if track then track.Stopped:Wait() end
 		self.Alt_Mode = false
 		-- Single Fire uses a separately hand-loaded round, never the internal
 		-- magazine. Require the player to load that first round with R.
 		self.Cycled = false
 		self:notify("Firemode: Single Fire")
-		print("Firemode: Single Fire")
 	else
-		self:_playAnim("Alt_Mode_On").Stopped:Wait()
+		local track = self:_playAnim("Alt_Mode_On")
+		if track then track.Stopped:Wait() end
 		self.Alt_Mode = true
 		self:notify("Firemode: Repeating Fire")
 		shouldCycle = not self.Cycled
-		print("Firemode: Repeating Fire")
 	end
 
 	self.Alting = false
 	self:_restoreBase()
 	if shouldCycle then self:_cycleAction() end
-	print("Alt mode set to:", self.Alt_Mode)
 end
 
 function PrinceRifle:_cycleAction()

@@ -156,7 +156,7 @@ function JesseRifle.new(info: Types.BaseToolCreateInfo): JesseRifle
 	self.name = "JesseRifle"
 	self.item_image = JesseRifle.Tool_Image
 	self.Designation = "Primary"
-	self.AnimationGunType = "enfield"
+	self.AnimationGunType = "JesseRifle"
 	self.ANIM_LAYERS = ANIMATION_LAYERS
 
 	self.model_reference = getModelReference()
@@ -227,7 +227,7 @@ function JesseRifle.new(info: Types.BaseToolCreateInfo): JesseRifle
 	self.SoundFolder = SoundFolder
 	self.FireInterval = blackHand and (60 / BLACK_HAND_RPM) or WEAPON_STATS.fire_rate
 	self.ReloadDuration = veteran and WEAPON_STATS.veteran_reload_time or WEAPON_STATS.standard_reload_time
-	self.IsVeteran = veteran
+	self.IsVeteran = self.IsVeteran or veteran
 	self.GrenadeLoaded = false
 	self.LoadingGrenade = false
 	self.Can_Drop = true
@@ -250,6 +250,7 @@ end
 
 function JesseRifle:fire()
 	if self.Firing or self.Reloading or self.Cycling or self.LoadingGrenade or not self.Aiming then return end
+	if not self:_canFireNow() then return end
 	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
 	if self.GrenadeLoaded then
 		self:_fireGrenade()

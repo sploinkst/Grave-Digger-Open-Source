@@ -49,6 +49,36 @@ local LEAN_LERP_SPEED  = 6
 
 local LEAN_TORSO_ROLL = math.rad(12)
 
+local NON_RESTARTING_ANIMATIONS = {
+	Hold = true,
+	Aim = true,
+	Aim_Left = true,
+	Short = true,
+	Short_Alt = true,
+	Locked = true,
+	Akimbo_Locked = true,
+	Locked_Alt = true,
+}
+
+local function find_animation_track(animations, ...): AnimationTrack?
+	if not animations then return nil end
+	for index = 1, select("#", ...) do
+		local name = select(index, ...)
+		local track = animations[name]
+		if track and track:IsA("AnimationTrack") then return track end
+	end
+	return nil
+end
+
+local function default_animation_fade(name: string): number
+	if name == "Draw" then return 0 end
+	if name:find("Fire") == 1 then return 0.01 end
+	if name == "Cycle" or name == "Cycle_Left" or name == "Bipod_Cycle" then return 0.1 end
+	if name:find("Reload") == 1 or name:find("Check") == 1 then return 0.1 end
+	if name == "Unequip" then return 0.1 end
+	return 0.1
+end
+
 local function get_prince_animation(name: string): Animation?
 	local animations = Assets:FindFirstChild("Animations")
 	local tools = animations and animations:FindFirstChild("Tools")
@@ -85,6 +115,19 @@ export type BaseTool = typeof(setmetatable({} :: {
 	animations: { [string]: Animation }?,
 	RegisteredAnimations: { [string]: AnimationTrack }?,
 	ANIM_LAYERS: { [string]: number }?,
+	AnimationPlayback: { [string]: {
+		fade: number?,
+		weight: number?,
+		speed: number?,
+		restart: boolean?,
+		cutFade: number?,
+		timePosition: number?,
+	} }?,
+	SlideLocked: boolean?,
+	slide_locked: boolean?,
+	AltSlideLocked: boolean?,
+	alt_slide_locked: boolean?,
+	DualWieldActive: boolean?,
 	motor_6d_data: {
 		Parent: string,
 		Part0: string,
@@ -232,7 +275,10 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 					or animName == "Cycle" or animName == "Short" then
 					track.Priority = Enum.AnimationPriority.Action3
 				else
-					track.Priority = Enum.AnimationPriority.Action4
+					-- Locomotion owns the leg joints at Action4. Weapon actions stay
+					-- below it so draws/reloads can animate the torso without ever
+					-- freezing or replacing the walking and sprinting legs.
+					track.Priority = Enum.AnimationPriority.Action3
 				end
 			end
 		end
@@ -608,6 +654,10 @@ function BaseTool:equip()
 	if self.IsFirearm then
 		self._drawReadyAt = os.clock() + self:_drawDuration()
 		if draw then self:_playAnim("Draw", true) end
+		-- Weapon master kept the held pose alive under the draw clip from frame
+		-- zero. This matters for partial-body draw animations.
+		local hold = self.RegisteredAnimations and self.RegisteredAnimations.Hold
+		if hold and not hold.IsPlaying then hold:Play(0, 1, 0.25) end
 		task.delay(self:_drawDuration(), function()
 			if generation ~= self._equipGeneration or not self.Equipped then return end
 			if draw and draw.IsPlaying then draw:Stop(0) end
@@ -638,7 +688,9 @@ function BaseTool:equip()
 		self:_restoreBase()
 	end)
 
-	-- Keyframe dispatch
+	-- Every item animation is routed through the same frame-event dispatcher.
+	-- The legacy weapon master connected this to every loaded track, rather than
+	-- only to the handful of clips that a particular item happened to use.
 	for _, track in pairs(self.RegisteredAnimations or {}) do
 		if not track:IsA("AnimationTrack") then continue end
 
@@ -675,7 +727,19 @@ function BaseTool:equip()
 					middle:FindFirstChild(self.className .. "_Cylinder", true)
 					or middle:FindFirstChild("cylinder", true)
 				)
-				local cylinder_motor = cylinder and cylinder:FindFirstChildWhichIsA("Motor6D", true)
+				local cylinder_motor = if cylinder and cylinder:IsA("Motor6D") then cylinder
+					else cylinder and cylinder:FindFirstChildWhichIsA("Motor6D", true)
+				if not cylinder_motor then
+					for _, descendant in self.actual_model:GetDescendants() do
+						if descendant:IsA("Motor6D") and (
+							string.find(string.lower(descendant.Name), "cylinder", 1, true)
+							or descendant.Part1 == cylinder
+						) then
+							cylinder_motor = descendant
+							break
+						end
+					end
+				end
 				if not cylinder_motor then
 					warn("[BASETOOL] vfx_cylinder_rotate_other: no cylinder motor for " .. self.className)
 					return
@@ -686,7 +750,7 @@ function BaseTool:equip()
 				end
 
 				local newC0 = cylinder_motor.C0 * CFrame.Angles(math.rad(self.cylinder_rotation_degree), 0, 0)
-				if self.cylinder_rotation then self.cylinder_rotation += 1 end
+				self.cylinder_rotation = ((tonumber(self.cylinder_rotation) or 1) % math.max(self.Max_Capacity or 1, 1)) + 1
 
 				TweenService:Create(cylinder_motor,
 					TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -701,9 +765,11 @@ function BaseTool:equip()
 					warn("[BASETOOL] vfx_cylinder_load: no cylinder for " .. self.className)
 					return
 				end
-				local round_ref = cylinder:FindFirstChild(self.className .. "_Round" .. self.cylinder_rotation)
-					or cylinder:FindFirstChild("Round" .. tostring(self.cylinder_rotation))
-					or cylinder:FindFirstChild("round" .. tostring(self.cylinder_rotation))
+				local cylinderIndex = tonumber(self.cylinder_rotation) or 1
+				self.cylinder_rotation = cylinderIndex
+				local round_ref = cylinder:FindFirstChild(self.className .. "_Round" .. tostring(cylinderIndex))
+					or cylinder:FindFirstChild("Round" .. tostring(cylinderIndex))
+					or cylinder:FindFirstChild("round" .. tostring(cylinderIndex))
 				if not round_ref then return end
 				round_ref.Transparency = 0
 				if round_ref:FindFirstChild("bullet") then round_ref.bullet.Transparency = 0 end
@@ -754,6 +820,45 @@ function BaseTool:equip()
 				else
 					warn("No GSFX matches for: " .. baseName)
 				end
+
+			elseif keyframe == "lock_start" then
+				self.SlideLocked = true
+				self.slide_locked = true
+				local locked = find_animation_track(
+					self.RegisteredAnimations,
+					self.DualWieldActive and "Akimbo_Locked" or "Locked",
+					self.DualWieldActive and "akimbo_locked" or "locked"
+				)
+				if locked and not locked.IsPlaying then locked:Play(0.1) end
+
+			elseif keyframe == "lock_end" then
+				self.SlideLocked = false
+				self.slide_locked = false
+				for _, name in { "Locked", "locked", "Akimbo_Locked", "akimbo_locked" } do
+					local locked = self.RegisteredAnimations and self.RegisteredAnimations[name]
+					if locked and locked.IsPlaying then locked:Stop(0.05) end
+				end
+
+			elseif keyframe == "alt_lock_start" then
+				self.AltSlideLocked = true
+				self.alt_slide_locked = true
+				local locked = find_animation_track(self.RegisteredAnimations, "Locked_Alt", "Alt_Locked", "locked_alt")
+				if locked and not locked.IsPlaying then locked:Play(0.1) end
+
+			elseif keyframe == "alt_lock_end" then
+				self.AltSlideLocked = false
+				self.alt_slide_locked = false
+				local locked = find_animation_track(self.RegisteredAnimations, "Locked_Alt", "Alt_Locked", "locked_alt")
+				if locked and locked.IsPlaying then locked:Stop(0.05) end
+
+			elseif keyframe == "crossbow_update_quiver" and self._updateQuiver then
+				self:_updateQuiver()
+			end
+
+			-- Item classes can retain bespoke frame-authored behavior without
+			-- installing a second listener on every AnimationTrack.
+			if self._onAnimationKeyframe then
+				self:_onAnimationKeyframe(track, keyframe)
 			end
 		end))
 	end
@@ -780,6 +885,10 @@ function BaseTool:unequip()
 	self._reloadCancelled = true
 	self._aimVersion += 1
 	self:_stopItemAnimations()
+	local unequipTrack = self.RegisteredAnimations and self.RegisteredAnimations.Unequip
+	if unequipTrack then
+		self:_playAnim("Unequip", true)
+	end
 
 	local character = LOCAL_PLAYER.Character
 	if not character then return end
@@ -804,7 +913,7 @@ function BaseTool:unequip()
 	self:_stopAimTracking()
 	self:_stopTransparencyTracking()
 	self:_resetBodyTransparency()
-	self:_stopItemAnimations()
+	self:_stopItemAnimations(unequipTrack)
 
 	self:_disable_aiming_ui()
 	humanoid:UnequipTools()
@@ -833,7 +942,7 @@ function BaseTool:unequip()
 
 	character:SetAttribute("CompassRight", nil)
 	LOCAL_PLAYER.Character:SetAttribute("CompassDenied", nil)
-	self:_stopItemAnimations()
+	self:_stopItemAnimations(unequipTrack)
 	if self.Moving_Connection then
 		self.Moving_Connection:Disconnect()
 		self.Moving_Connection = nil
@@ -903,15 +1012,15 @@ end
 
 -- // Animation helpers
 
-function BaseTool:_stopItemAnimations()
-	if self._shortTrack and self._shortTrack.IsPlaying then
+function BaseTool:_stopItemAnimations(exception: AnimationTrack?)
+	if self._shortTrack ~= exception and self._shortTrack and self._shortTrack.IsPlaying then
 		self._shortTrack:Stop(0)
 	end
-	self._shortTrack = nil
+	if self._shortTrack ~= exception then self._shortTrack = nil end
 
 	if not self.RegisteredAnimations then return end
 	for _, track in pairs(self.RegisteredAnimations) do
-		if track:IsA("AnimationTrack") then
+		if track ~= exception and track:IsA("AnimationTrack") then
 			track:Stop(0)
 			pcall(function()
 				track.TimePosition = 0
@@ -920,10 +1029,19 @@ function BaseTool:_stopItemAnimations()
 	end
 end
 
+function BaseTool:_preserveActionBaseTrack(track: AnimationTrack): boolean
+	if not self.IsFirearm or not self.Aiming then return false end
+	local aimTrack = self:_aimTrack()
+	return aimTrack ~= nil and track == aimTrack
+end
+
 function BaseTool:_stopAllExcept(exception: AnimationTrack?)
 	if not self.RegisteredAnimations then return end
 	for _, track in pairs(self.RegisteredAnimations) do
-		if track ~= exception and track:IsA("AnimationTrack") and track.IsPlaying then
+		if track ~= exception
+			and track:IsA("AnimationTrack")
+			and track.IsPlaying
+			and not self:_preserveActionBaseTrack(track) then
 			track:Stop(CUT)
 
 			-- FIX: if this stops the Short track out from under init_short_mechanic's
@@ -936,10 +1054,15 @@ function BaseTool:_stopAllExcept(exception: AnimationTrack?)
 	end
 end
 
-function BaseTool:_playAnim(name: string, bypass_equiped: boolean): AnimationTrack?
+function BaseTool:_playAnim(name: string, bypass_equiped: boolean, playbackOptions): AnimationTrack?
 	local anims = self.RegisteredAnimations
 	assert(anims, self.className .. ":_playAnim called before animations registered")
 
+	local requestedName = name
+	if self.IsFirearm and self.IsVeteran and name:find("Reload") and not name:match("_Vet$") then
+		local veteranName = name .. "_Vet"
+		if anims[veteranName] then name = veteranName end
+	end
 	local track = anims[name]
 	-- Optional clips are absent on some weapons. Callers can skip the action
 	-- or restore idle instead of leaving a busy flag set after an assertion.
@@ -961,15 +1084,20 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean): AnimationTra
 			local shouldStop = (myLayer >= maxLayer) and (layer <= myLayer) or (layer == myLayer)
 			if shouldStop then
 				local t = anims[trackName]
-				if t and t ~= track and t.IsPlaying then t:Stop(CUT) end
+				if t and t ~= track and t.IsPlaying and not self:_preserveActionBaseTrack(t) then
+					t:Stop(CUT)
+				end
 			end
 		end
 	end
 
-	local speed = 1
+	local playback = playbackOptions
+		or (self.AnimationPlayback and (self.AnimationPlayback[name] or self.AnimationPlayback[requestedName]))
+		or {}
+	local speed = playback.speed or 1
 
-	if self.animation_speeds then
-		speed = self.animation_speeds[name] or 1
+	if playback.speed == nil and self.animation_speeds then
+		speed = self.animation_speeds[name] or self.animation_speeds[requestedName] or 1
 	end
 
 	if name == "Draw" and self.IsFirearm then
@@ -978,10 +1106,41 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean): AnimationTra
 	end
 	if self.IsFirearm and name:find("Reload") and LOCAL_PLAYER.Character then
 		speed *= LOCAL_PLAYER.Character:GetAttribute("OrderReloadMultiplier") or 1
+		if self.IsVeteran then
+			speed *= self.VeteranReloadSpeed or 1.2
+		end
 	end
-	track:Play(CUT)
-	track:AdjustSpeed(speed)
+	local restart = playback.restart
+	if restart == nil then restart = not NON_RESTARTING_ANIMATIONS[name] end
+	if restart and track.IsPlaying then
+		-- Action clips in weapon master were explicitly cut before replay. Roblox
+		-- does not reliably rewind a track when Play is called while it is active.
+		track:Stop(playback.cutFade or 0)
+	end
 
+	local fade = playback.fade
+	if fade == nil then fade = default_animation_fade(name) end
+	track:Play(fade, playback.weight or 1, speed)
+	if playback.timePosition ~= nil then
+		track.TimePosition = playback.timePosition
+	end
+
+	return track
+end
+
+function BaseTool:_cutAnim(name: string, fade: number?): AnimationTrack?
+	local track = self.RegisteredAnimations and self.RegisteredAnimations[name]
+	if track and track:IsA("AnimationTrack") and track.IsPlaying then
+		track:Stop(fade or 0)
+	end
+	return track
+end
+
+function BaseTool:_setAnimationFrame(name: string, timePosition: number, speed: number?): AnimationTrack?
+	local track = self.RegisteredAnimations and self.RegisteredAnimations[name]
+	if not track or not track:IsA("AnimationTrack") then return nil end
+	track.TimePosition = timePosition
+	if speed ~= nil then track:AdjustSpeed(speed) end
 	return track
 end
 
@@ -992,7 +1151,7 @@ function BaseTool:_stopLayer(maxLayer: number)
 	for trackName, layer in pairs(layers) do
 		if layer <= maxLayer then
 			local t = self.RegisteredAnimations[trackName]
-			if t and t.IsPlaying then t:Stop(CUT) end
+			if t and t.IsPlaying and not self:_preserveActionBaseTrack(t) then t:Stop(CUT) end
 		end
 	end
 end
@@ -1036,8 +1195,7 @@ function BaseTool:_playFireAnimation(animationName: string, playRecoil: boolean?
 			if not self.Equipped or not self.Aiming then return end
 			local aimTrack = self:_aimTrack()
 			if not aimTrack then return end
-			self:_killAimTracks()
-			aimTrack:Play(0)
+			if not aimTrack.IsPlaying then aimTrack:Play(0) end
 		end)
 	elseif self.Equipped and self.Aiming then
 		local aimTrack = self:_aimTrack()
@@ -1571,7 +1729,9 @@ function BaseTool:_connectInput()
 	SettingsManager.HookInput("Check Ammo", self._checkAmmoHook)
 
 	self._altHook = function(_, pressed)
-		if pressed and self.Equipped then
+		if self._onAltInput then
+			self:_onAltInput(pressed)
+		elseif pressed and self.Equipped then
 			self:setAltMode()
 		end
 	end

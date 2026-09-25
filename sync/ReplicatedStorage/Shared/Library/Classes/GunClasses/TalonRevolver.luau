@@ -259,7 +259,7 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	self.item_image  = "rbxassetid://17601078078"
 	self.Designation = "Secondary"
 	self.ANIM_LAYERS = ANIM_LAYERS
-	self.AnimationGunType = "saa"
+	self.AnimationGunType = "TalonRevolver"
 
 	self.holster_reference = firstChild(Holster_Folder, {
 		"TalonRevolverHolster",
@@ -455,16 +455,12 @@ end
 function TalonRevolver:setAltMode()
 	if not self.Equipped or self:_isBusy() then return end
 
-	if self.IsOcelotTrooper then
-		-- Ocelot's alternate action remains a direct shot. Its fire method
-		-- selects hip-fire while unaimed and standard fire while ADS.
-		self:fire()
-		return
-	end
-
-	-- Match the legacy Talon behavior: Q toggles a persistent hip-fire mode.
-	-- Every shot uses the hip-fire animation until the mode is toggled off.
-	self.HipFireMode = not self.HipFireMode
+	-- Legacy alternate action readies one perfectly accurate quick-draw shot.
+	-- Ocelot uses this too: quick-draw is perfectly accurate, while ordinary
+	-- unaimed shots use the faster, less accurate fan-fire path.
+	task.spawn(function()
+		self:quickdraw()
+	end)
 end
 
 -- // isBusy override (Spinning counts)
@@ -496,6 +492,8 @@ end
 function TalonRevolver:quickdraw()
 	if not self.Equipped or self:_isBusy() or self.Capacity <= 0 then return end
 	self.Quickdrawing = true
+	local character = Players.LocalPlayer.Character
+	if character then character:SetAttribute("SprintBlocked", true) end
 	self._quickdrawReady = false
 	self._quickdrawCancelled = false
 	self:_stopAllExcept()
@@ -509,6 +507,7 @@ function TalonRevolver:quickdraw()
 		self._quickdrawReady = false
 		self._quickdrawCancelled = false
 		self:_restoreBaseDeferred()
+		if character then character:SetAttribute("SprintBlocked", nil) end
 		return
 	end
 
@@ -524,6 +523,7 @@ function TalonRevolver:quickdraw()
 	self.Quickdrawing = false
 	self._quickdrawReady = false
 	self._quickdrawCancelled = false
+	if character then character:SetAttribute("SprintBlocked", nil) end
 	self:_restoreBaseDeferred()
 end
 
@@ -544,7 +544,8 @@ function TalonRevolver:spin()
 	self.Spinning       = true
 	self._spinCancelled = false
 
-	self:_playAnim("Spin_Start").Stopped:Wait()
+	local startTrack = self:_playAnim("Spin_Start")
+	if startTrack then startTrack.Stopped:Wait() end
 
 	if self._spinCancelled then
 		self.Spinning       = false
@@ -553,7 +554,8 @@ function TalonRevolver:spin()
 		return
 	end
 
-	self:_playAnim("Spin").Stopped:Wait()
+	local spinTrack = self:_playAnim("Spin")
+	if spinTrack then spinTrack.Stopped:Wait() end
 
 	self.Spinning       = false
 	self._spinCancelled = false
@@ -635,7 +637,7 @@ function TalonRevolver:reload()
 
 	game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
 	local character = game.Players.LocalPlayer.Character
-	local startName = if character and character:FindFirstChild("perk") and character.perk.Value == "vet" and anims.Reload_Start_Vet
+	local startName = if self.IsVeteran and anims.Reload_Start_Vet
 		then "Reload_Start_Vet"
 		else "Reload_Start"
 	local startTrack = self:_playAnim(startName)

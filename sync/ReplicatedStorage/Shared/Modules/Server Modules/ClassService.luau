@@ -1,5 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Classes = require(ReplicatedStorage.Shared.Library.ClassDefinitions)
+local ClassAppearance = require(ReplicatedStorage.Shared.Library.ClassAppearance)
+local Perks = require(ReplicatedStorage.Shared.Library.PerkDefinitions)
 local Service = {}
 local Players = game:GetService("Players")
 local events = ReplicatedStorage.Shared.Library.Events
@@ -9,12 +11,13 @@ if not intel then
 	intel.Parent = events
 end
 local function hasPerk(player, name)
-	if player:GetAttribute(name) then return true end
+	local canonical = Perks.Canonical(name) or name
+	if player:GetAttribute(canonical) or player:GetAttribute(name) then return true end
 	local root = player:FindFirstChild("PlayerData")
 	local data = root and root:FindFirstChild("PlayerData")
 	local equipment = data and data:FindFirstChild("Equipment")
 	local perks = equipment and equipment:FindFirstChild("Perks")
-	local perk = perks and perks:FindFirstChild(name)
+	local perk = perks and (perks:FindFirstChild(canonical) or perks:FindFirstChild(name))
 	if not perk then return false end
 	return not perk:IsA("BoolValue") or perk.Value
 end
@@ -52,6 +55,64 @@ local function maxBackpackAmmo(player: Player, toolName: string)
 			maxToolAmmo(tool)
 		end
 	end
+end
+
+local function fillBackpackAmmo(player: Player, toolName: string)
+	local backpack = player:FindFirstChild("Backpack")
+	local tool = backpack and backpack:FindFirstChild(toolName)
+	local reserve = tool and tool:FindFirstChild("Reserve_Ammo")
+	local maximum = tool and tool:FindFirstChild("Max_Ammo")
+	if reserve and reserve:IsA("NumberValue") and maximum and maximum:IsA("NumberValue") then
+		reserve.Value = maximum.Value
+	end
+end
+
+local function clearCurrentInventory(player: Player, character: Model, humanoid: Humanoid)
+	-- Unequip first so each weapon controller gets a chance to remove its held
+	-- model and ToolMotor before the Tool instances themselves are destroyed.
+	humanoid:UnequipTools()
+
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	for _, container in {character, backpack} do
+		if not container then continue end
+		for _, item in container:GetChildren() do
+			if item:IsA("Tool") then
+				item:Destroy()
+			end
+		end
+	end
+
+	-- Holsters are replicated independently of Tools. Removing their source
+	-- values tells every client to destroy the back model and its weld.
+	local holsters = player:FindFirstChild("GameData")
+		and player.GameData:FindFirstChild("Accessorys")
+		and player.GameData.Accessorys:FindFirstChild("Holsters")
+	if holsters then
+		holsters:ClearAllChildren()
+	end
+
+	local characterData = character:FindFirstChild("CharacterData")
+	local equipment = characterData and characterData:FindFirstChild("Equipment")
+	if equipment then
+		equipment:ClearAllChildren()
+	end
+
+	-- Also clean server-visible remnants immediately. Rendered_Holsters is
+	-- normally client-owned, but clearing it here handles server-created or
+	-- legacy back models as well.
+	local renderedHolsters = characterData and characterData:FindFirstChild("Rendered_Holsters")
+	if renderedHolsters then
+		renderedHolsters:ClearAllChildren()
+	end
+	for _, descendant in character:GetDescendants() do
+		if descendant:IsA("Motor6D")
+			and (descendant.Name == "ToolMotor" or descendant.Name == "Round_Motor6d") then
+			descendant:Destroy()
+		end
+	end
+	character:SetAttribute("GunEquipped", nil)
+	character:SetAttribute("ShieldRaised", nil)
+	player:SetAttribute("CantUnequip", nil)
 end
 
 local function findSound(name: string): Sound?
@@ -114,7 +175,8 @@ local function publishCharacterData(player: Player, character: Model, className:
 		end
 	end
 	if runtimePerk and runtimePerk:IsA("StringValue") then
-		runtimePerk.Value = table.concat(activePerkNames, ",")
+		local active = activePerkNames[1]
+		runtimePerk.Value = active and (Perks.LegacyId(active) or active) or ""
 	end
 
 	local state = characterData:FindFirstChild("State")
@@ -163,8 +225,11 @@ function Service.ApplySpawn(player, character)
 	local name = Classes.Selected(player)
 	setPlayerClassTag(player, name)
 	local definition = Classes.Get(name)
-	local eliteName = player:GetAttribute("ShockTrooper")
-	local elite = type(eliteName) == "string" and Classes.GetElite(eliteName) or nil
+	-- Shock Trooper is current-life state. A fresh character always starts as
+	-- the player's selected base class, while permanent unlocks remain intact.
+	player:SetAttribute("ShockTrooper", nil)
+	local eliteName = nil
+	local elite = nil
 	local isDreadnought = player:GetAttribute("PendingDreadnought") == true
 	if isDreadnought then
 		player:SetAttribute("PendingDreadnought", nil)
@@ -191,13 +256,14 @@ function Service.ApplySpawn(player, character)
 		marker.Parent = character
 	end
 	if not isDreadnought then
-		character:SetAttribute("ClassOutfit", if elite then elite.OutfitClass or elite.RequiredClass else name)
+		character:SetAttribute("ClassOutfit", if elite then elite.OutfitClass else name)
 	end
 	if eliteName == "OcelotTrooper" then
 		character:SetAttribute("MovementSpeedMultiplier", 1.25)
-		character:SetAttribute("SprintSpeedMultiplier", 1)
-		character:SetAttribute("SprintRampMultiplier", 0.25)
-		character:SetAttribute("InstantSprintAcceleration", false)
+		character:SetAttribute("SprintSpeedMultiplier", 1.2)
+		character:SetAttribute("SprintRampMultiplier", 0)
+		character:SetAttribute("InstantSprintAcceleration", true)
+		character:SetAttribute("SnakeEyes", true)
 		local rootPart = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 5)
 		local theme = findSound("theme")
 		if rootPart and theme then
@@ -213,12 +279,29 @@ function Service.ApplySpawn(player, character)
 		"SurgerySpeed", "MobileSurgery", "SuppressionImmune", "MeleeDamageMultiplier"} do
 		character:SetAttribute(attribute, definition[attribute])
 	end
-	-- Snapshot weapons with the class; menu edits cannot alter a spawning life.
+	local leatherneck = hasPerk(player, "Leatherneck")
+	character:SetAttribute("InstantSprintAcceleration", eliteName == "OcelotTrooper" or eliteName == "StormTrooper" or eliteName == "GeistTrooper" or hasPerk(player, "Greyhound") or nil)
+	character:SetAttribute("FlinchImmune", leatherneck or nil)
+	character:SetAttribute("ConcussionImmune", leatherneck or nil)
+	character:SetAttribute("BulletKnockbackImmune", leatherneck or nil)
+	if leatherneck then
+		character:SetAttribute("MeleeDamageMultiplier", math.min(character:GetAttribute("MeleeDamageMultiplier") or 1, 0.7))
+	end
+	character:SetAttribute("Marksman", hasPerk(player, "Marksman") or nil)
+	character:SetAttribute("TunnelRat", hasPerk(player, "Tunnel-rat") or nil)
+	character:SetAttribute("DevilDog", hasPerk(player, "Devil Dog") or nil)
+	character:SetAttribute("Chemist", hasPerk(player, "Chemist") or nil)
+	character:SetAttribute("Apparition", hasPerk(player, "Apparition") or nil)
+	-- Snapshot weapons with the class; menu edits cannot be changed until respawn
 	local loadout = Classes.GetLoadout(player, name)
 	local primary = loadout and loadout:FindFirstChild("Primary")
 	local secondary = loadout and loadout:FindFirstChild("Secondary")
-	local primaryName = if isDreadnought then "BrowningMachineGun" elseif elite then elite.Primary else definition.FixedPrimary or (primary and primary.Value or "PrinceRifle")
+	local primaryName = if isDreadnought then "BrowningMachineGun" elseif elite then elite.Primary else definition.FixedPrimary or (primary and primary.Value or "")
 	local secondaryName = if isDreadnought then "" elseif elite then elite.Secondary else if definition.NoFirearms then "" else (secondary and secondary.Value or "")
+	if not elite and not isDreadnought and hasPerk(player, "Hippocratic") then
+		primaryName = ""
+		secondaryName = ""
+	end
 	if not elite and not isDreadnought then
 		if weight(primaryName) > maxWeight and not definition.FixedPrimary then primaryName = "" end
 		if weight(primaryName) + weight(secondaryName) > maxWeight then secondaryName = "" end
@@ -238,11 +321,55 @@ function Service.SetShockTrooper(player: Player, eliteName: string, bypassRequir
 	if not bypassRequirements and not Classes.CanUseElite(player, canonicalName) then
 		return false, canonicalName .. " has not been unlocked."
 	end
-	if not bypassRequirements and elite.RequiredClass and Classes.Selected(player) ~= elite.RequiredClass then
-		return false, canonicalName .. " requires " .. elite.RequiredClass .. "."
+	-- Standard Shock kits have no base-class eligibility requirement.
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not character or not humanoid or humanoid.Health <= 0 then
+		return false, "A living character is required to equip a Shock Trooper kit."
 	end
-	player:SetAttribute("ShockTrooper", canonicalName)
-	if player.Character then player:LoadCharacter() end
+	-- Convert the current life in place. Rebuild only the inventory snapshot so
+	-- position and current combat state are not lost to a forced respawn.
+	character:SetAttribute("EliteClass", canonicalName)
+	character:SetAttribute("IsShockTrooper", true)
+	character:SetAttribute("ClassOutfit", elite.OutfitClass)
+	character:SetAttribute("ClassPrimary", elite.Primary)
+	character:SetAttribute("ClassSecondary", elite.Secondary)
+	character:SetAttribute("ClassEquipmentGranted", nil)
+	ClassAppearance.Apply(
+		character,
+		player.Team and player.Team.Name,
+		elite.OutfitClass,
+		true
+	)
+	if canonicalName == "OcelotTrooper" then
+		character:SetAttribute("MovementSpeedMultiplier", 1.25)
+		character:SetAttribute("SprintSpeedMultiplier", 1.2)
+		character:SetAttribute("SprintRampMultiplier", 0)
+		character:SetAttribute("InstantSprintAcceleration", true)
+		character:SetAttribute("SnakeEyes", true)
+		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		local theme = findSound("theme")
+		if rootPart and theme then
+			events.Sounds:FireAllClients(
+				"OcelotTheme",
+				theme,
+				rootPart,
+				theme.PlaybackSpeed,
+				theme.Volume,
+				0,
+				0
+			)
+		end
+	end
+
+	clearCurrentInventory(player, character, humanoid)
+
+	local toolsLoaded = character:FindFirstChild("tools_loaded")
+	if toolsLoaded and toolsLoaded:IsA("BoolValue") then
+		toolsLoaded.Value = false
+	end
+
+	Service.GiveLoadout(player, character)
 	return true, canonicalName
 end
 
@@ -303,6 +430,8 @@ function Service.GiveLoadout(player, character)
 
 		if character:GetAttribute("IsShockTrooper") or character:GetAttribute("IsDreadnought") then
 			maxBackpackAmmo(player, name)
+		elseif hasPerk(player, "Veteran") then
+			fillBackpackAmmo(player, name)
 		end
 	end
 	local toolsLoaded = character:FindFirstChild("tools_loaded")

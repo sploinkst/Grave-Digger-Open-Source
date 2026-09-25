@@ -855,6 +855,9 @@ local function sprintLoop()
 					0,
 					1
 				)
+				-- SmoothStep gives the acceleration an actual tween curve instead
+				-- of changing speed at a visibly constant, mechanical rate.
+				t = t * t * (3 - 2 * t)
 			end
 
 			-- FINAL AIM CHECK BEFORE WALK SPEED WRITE
@@ -870,18 +873,14 @@ local function sprintLoop()
 				break
 			end
 
-			local sprintSpeed =
-				lerp(
-					0,
-					MaxSpeed - BaseSpeed,
-					t
-				)
-
-			local sprintWalkSpeed =
-				(BaseSpeed + sprintSpeed)
-				* getOrderSpeedMultiplier()
-				* getMovementSpeedMultiplier()
+			local orderMultiplier = getOrderSpeedMultiplier()
+			local movementMultiplier = getMovementSpeedMultiplier()
+			local walkTarget = BaseSpeed * orderMultiplier * movementMultiplier
+			local sprintTarget = MaxSpeed
+				* orderMultiplier
+				* movementMultiplier
 				* getSprintSpeedMultiplier()
+			local sprintWalkSpeed = lerp(walkTarget, sprintTarget, t)
 
 			-- One last protection against an aiming state
 			-- changing during this iteration.
@@ -900,6 +899,9 @@ local function sprintLoop()
 			Humanoid.WalkSpeed =
 				sprintWalkSpeed
 
+			-- Hand animation control to the sprint cycle near the end of the
+			-- acceleration tween. Waiting for a mathematically perfect endpoint
+			-- lets collision/velocity checks cancel the loop before it ever plays.
 			if t >= 0.8 then
 				setSprintAttribute(true)
 			end

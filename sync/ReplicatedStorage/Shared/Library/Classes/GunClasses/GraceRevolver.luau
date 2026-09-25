@@ -8,6 +8,7 @@
 --!optimize 2
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Debris = game:GetService("Debris")
 
 local Types    = require(script.Parent.Parent.Parent.Types)
 local BasePistol = require(script.Parent.Parent.BasePistol)
@@ -148,7 +149,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.item_image  = "rbxassetid://17601078078"
 	self.Designation = "Secondary"
 	self.ANIM_LAYERS = ANIM_LAYERS
-	self.AnimationGunType = "saa"
+	self.AnimationGunType = "GraceRevolver"
 
 	self.holster_reference = Holster_Folder and Holster_Folder:FindFirstChild("GraceRevolverHolster")
 	self.model_reference   = Tool_Folder:FindFirstChild("GraceRevolver")
@@ -183,9 +184,11 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 		Spin_Start = Anim_Folder.GraceRevolver_Spin_start,
 
 		Reload_Start      = Anim_Folder.GraceRevolver_Reload_start,
+		Reload_Start_Vet  = Anim_Folder.GraceRevolver_Reload_start_vet,
 		Reload_Loop       = Anim_Folder.GraceRevolver_Reload_loop,
 		Reload_Loop_After = Anim_Folder.GraceRevolver_Reload_loop_after,
 		Reload_End        = Anim_Folder.GraceRevolver_Reload_end,
+		Reload_End_Vet    = Anim_Folder.GraceRevolver_Reload_end_vet,
 
 		Check  = Anim_Folder.GraceRevolver_Check,
 		Melee1 = Anim_Folder.GraceRevolver_Melee1,
@@ -243,6 +246,8 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Meleeing         = false
 	self._reloadCancelled = false
 	self._spinCancelled   = false
+	self._spinCount       = 0
+	self._lastSpinAt      = 0
 
 	self.FireEmissions = {
 		flash = {
@@ -316,7 +321,8 @@ function GraceRevolver:spin()
 	self.Spinning       = true
 	self._spinCancelled = false
 
-	self:_playAnim("Spin_Start").Stopped:Wait()
+	local startTrack = self:_playAnim("Spin_Start")
+	if startTrack then startTrack.Stopped:Wait() end
 
 	if self._spinCancelled then
 		self.Spinning       = false
@@ -325,7 +331,22 @@ function GraceRevolver:spin()
 		return
 	end
 
-	self:_playAnim("Spin").Stopped:Wait()
+	local spinTrack = self:_playAnim("Spin")
+	if spinTrack then spinTrack.Stopped:Wait() end
+
+	local now = os.clock()
+	self._spinCount = if now - self._lastSpinAt <= 2 then self._spinCount + 1 else 1
+	self._lastSpinAt = now
+	if self._spinCount >= 5 then
+		local character = game.Players.LocalPlayer.Character
+		if character then
+			local morale = Instance.new("StringValue")
+			morale.Name = "morale"
+			morale.Parent = character
+			Debris:AddItem(morale, 50)
+		end
+		self._spinCount = 0
+	end
 
 	self.Spinning       = false
 	self._spinCancelled = false

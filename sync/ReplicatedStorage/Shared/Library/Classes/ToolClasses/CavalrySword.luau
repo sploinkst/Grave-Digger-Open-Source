@@ -14,14 +14,16 @@ local LOCAL_PLAYER = Players.LocalPlayer
 local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
 local FxFolder = GunAssets.Effects
-local legacyAnimations = Assets.Animations.Tools.Guns:FindFirstChild("cavsword")
+-- The authored folder intentionally uses the legacy "Cavalary" spelling.
+local meleeAnimations = Assets.Animations.Tools:FindFirstChild("Melee")
+local swordAnimations = meleeAnimations and meleeAnimations:FindFirstChild("CavalarySword")
 local Events = ReplicatedStorage.Shared.Library.Events
 
 local function animation(names: string | { string }, _fallbackName: string?): Animation?
-	if not legacyAnimations then return nil end
+	if not swordAnimations then return nil end
 	local candidates = if type(names) == "string" then { string.lower(names) } else names
 	for _, name in candidates do
-		local source = legacyAnimations:FindFirstChild(name, true)
+		local source = swordAnimations:FindFirstChild(name, true)
 		if source and source:IsA("Animation") then return source end
 	end
 	return nil
@@ -132,13 +134,48 @@ function CavalrySword.new(info: Types.BaseToolCreateInfo): CavalrySword
 end
 
 function CavalrySword:setDualWieldWeapon(weapon)
-	self.dualWeapon = if weapon and weapon.WeaponCategory == "Pistol" then weapon else nil
+	local previousWeapon = self.dualWeapon
+	self.dualWeapon = if weapon and weapon.IsFirearm == true and weapon.WeaponCategory == "Pistol" then weapon else nil
 	self.DualWielding = self.dualWeapon ~= nil
 	local animations = self.RegisteredAnimations
 	if animations and animations.Draw and animations.Draw_Dual then
 		if not self._normalDrawTrack then self._normalDrawTrack = animations.Draw end
 		animations.Draw = self.DualWielding and animations.Draw_Dual or self._normalDrawTrack
 	end
+
+	if self.Equipped and previousWeapon ~= self.dualWeapon then
+		if previousWeapon then
+			previousWeapon.Equipped = false
+			previousWeapon.actual_model = nil
+		end
+		getDualWieldEvent():FireServer(false)
+		if self.dualWeapon then task.spawn(function() self:_setupDualWeapon() end) end
+		self:_restoreBase()
+	end
+end
+
+function CavalrySword:_sprintTrack(): AnimationTrack?
+	local animations = self.RegisteredAnimations
+	if not animations then return nil end
+	if self.DualWielding then return animations.Sprint_Dual or animations.Sprint end
+	return animations.Sprint_Normal or animations.Sprint
+end
+
+function CavalrySword:_restoreBase()
+	local animations = self.RegisteredAnimations
+	if not animations then return end
+	if self:_if_sprinting() and self.Equipped and not self:_isBusy() then
+		self:_killAimTracks()
+		if animations.Hold and animations.Hold.IsPlaying then animations.Hold:Stop(0.06) end
+		local sprint = self:_sprintTrack()
+		if sprint and not sprint.IsPlaying then sprint:Play(0.06) end
+		return
+	end
+	for _, name in ipairs({ "Sprint", "Sprint_Dual", "Sprint_Normal" }) do
+		local track = animations[name]
+		if track and track.IsPlaying then track:Stop(0.06) end
+	end
+	BaseTool._restoreBase(self)
 end
 
 function CavalrySword:_aimTrack(): AnimationTrack?
@@ -263,6 +300,13 @@ function CavalrySword:_on_equip()
 	self:_connectInput()
 	self:_initShoulderTracking()
 	if self.DualWielding then task.spawn(function() self:_setupDualWeapon() end) end
+end
+
+function CavalrySword:_on_give()
+	for _, name in ipairs({ "Hold", "Aim", "Aim_Dual", "Aim_Normal", "Sprint", "Sprint_Dual", "Sprint_Normal" }) do
+		local track = self.RegisteredAnimations and self.RegisteredAnimations[name]
+		if track then track.Looped = true end
+	end
 end
 
 function CavalrySword:_on_unequip()
