@@ -75,6 +75,7 @@ function BaseShotgun:_firePellets(
 			bulletContainer = workspace.Game_Details.Effects.Bullets,
 			isPenetration = false,
 			penetrationLevel = self.Penetration_Level,
+			trailsEnabled = self.ShowBulletTrail ~= false,
 			damage = damage,
 			knockbackForce = knockbackForce,
 		})

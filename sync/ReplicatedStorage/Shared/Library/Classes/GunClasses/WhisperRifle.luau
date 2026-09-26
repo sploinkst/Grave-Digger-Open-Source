@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
+local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local VolkRifle = require(script.Parent.VolkRifle)
 
 local Assets = ReplicatedStorage.Shared.Assets
@@ -13,6 +14,12 @@ local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 
 local whisperAnimations = Assets.Animations.Tools.Guns:FindFirstChild("WhisperRifle")
+local princeAnimations = Assets.Animations.Tools.Guns:FindFirstChild("PrinceRifle")
+
+local function animation(folder: Instance?, name: string): Animation?
+	local found = folder and folder:FindFirstChild(name)
+	return if found and found:IsA("Animation") then found else nil
+end
 
 local whisperSounds = GunAssets.Sounds:FindFirstChild("springfield")
 		or GunAssets.Sounds:FindFirstChild("Springfield")
@@ -25,7 +32,6 @@ local BOLT_FIRE_INTERVAL = 60 / 60
 local PEDERSEN_SWITCH_TIME = 7
 local PEDERSEN_RELOAD_TIME = 5
 local PEDERSEN_JAM_CLEAR_TIME = 1
-local RELOAD_ROUND_TIME = 5.2 / 5
 local WEAPON_STATS = {
 	name = "'Whisper' Silenced Rifle",
 	desc = "A silent and powerful bolt rifle that leaves no bullet trails.",
@@ -39,10 +45,11 @@ local WEAPON_STATS = {
 	melee_damage = 80,
 	melee_swing_speed = 0.7,
 	melee_range = 5,
-	pen = 3,
+	pen = 2,
+	armor_pen = 3,
 	accuracy = 6,
 	moving_accuracy = 100,
-	fire_rate = 0.3,
+	fire_rate = BOLT_FIRE_INTERVAL,
 	cycle = 0.55,
 	cycle_rest = 0.15,
 	draw_speed = 0.75,
@@ -64,7 +71,6 @@ local WEAPON_STATS = {
 
 local ANIM_LAYERS: { [string]: number } = {
 	Hold = 0,
-	Pedersen_Hold = 0,
 	Aim = 0,
 	Aim_Left = 0,
 	Fire = 1,
@@ -147,38 +153,39 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 
 	self.AnimationGunType = "WhisperRifle"
 	self.animations = {
-		Hold = whisperAnimations.held,
-		Pedersen_Hold = whisperAnimations.locked_alt,
-		Draw = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
-		Unequip = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
-		Aim = whisperAnimations.aim,
-		Aim_Left = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Aim_Left,
-		Fire = whisperAnimations.fire,
-		Fire_Left = whisperAnimations.fire_left,
-		Cycle = whisperAnimations.cycle,
-		Reload_Start = whisperAnimations.reload_start,
-		Reload_Start_Vet = whisperAnimations.reload_start_vet,
-		Reload_Loop =whisperAnimations.reload_loop,
-		Reload_End = whisperAnimations.reload_end,
-		Reload_Empty = whisperAnimations.reload_empty,
-		Reload_Clip = whisperAnimations.reload_clip,
-		Reload_Clip_Start_Empty = whisperAnimations.reload_clip_start_empty,
-		Reload_Clip_Start_One = whisperAnimations.reload_clip_start_one,
-		Reload_Heavyloop = whisperAnimations.reload_heavyloop,
-		Cycle_Pedersen = whisperAnimations.cycle_pedersen,
-		Pedersen_Bolt_Place = whisperAnimations.pedersen_bolt_place,
-		Pedersen_Bolt_Remove = whisperAnimations.pedersen_bolt_remove,
-		Pedersen_Charge = whisperAnimations.pedersen_charge,
-		Pedersen_Device_Off = whisperAnimations.pedersen_device_off,
-		Pedersen_Device_On = whisperAnimations.pedersen_device_on,
-		Pedersen_Jam = whisperAnimations.pedersen_jam,
-		Pedersen_Mag_Eject = whisperAnimations.pedersen_mag_eject,
-		Pedersen_Mag_In = whisperAnimations.pedersen_mag_in,
-		Pedersen_Mag_Out = whisperAnimations.pedersen_mag_out,
-		Check = whisperAnimations.check,
-		Melee1 = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
-		Melee2 = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Melee2,
-		Short = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Short,
+		Hold = animation(whisperAnimations, "held"),
+		Locked = animation(whisperAnimations, "locked"),
+		Locked_Alt = animation(whisperAnimations, "locked_alt"),
+		Draw = animation(princeAnimations, "draw"),
+		Unequip = animation(princeAnimations, "unequip"),
+		Aim = animation(whisperAnimations, "aim"),
+		Aim_Left = animation(princeAnimations, "aim_left"),
+		Fire = animation(whisperAnimations, "fire"),
+		Fire_Left = animation(whisperAnimations, "fire_left"),
+		Cycle = animation(whisperAnimations, "cycle"),
+		Cycle_Pedersen = animation(whisperAnimations, "cycle_pedersen"),
+		Reload_Start = animation(whisperAnimations, "reload_start"),
+		Reload_Start_Vet = animation(whisperAnimations, "reload_start_vet"),
+		Reload_Loop = animation(whisperAnimations, "reload_loop"),
+		Reload_End = animation(whisperAnimations, "reload_end"),
+		Reload_Empty = animation(whisperAnimations, "reload_empty"),
+		Reload_Clip = animation(whisperAnimations, "reload_clip"),
+		Reload_Clip_Start_Empty = animation(whisperAnimations, "reload_clip_start_empty"),
+		Reload_Clip_Start_One = animation(whisperAnimations, "reload_clip_start_one"),
+		Reload_Heavyloop = animation(whisperAnimations, "reload_heavyloop"),
+		Pedersen_Bolt_Place = animation(whisperAnimations, "pedersen_bolt_place"),
+		Pedersen_Bolt_Remove = animation(whisperAnimations, "pedersen_bolt_remove"),
+		Pedersen_Charge = animation(whisperAnimations, "pedersen_charge"),
+		Pedersen_Device_Off = animation(whisperAnimations, "pedersen_device_off"),
+		Pedersen_Device_On = animation(whisperAnimations, "pedersen_device_on"),
+		Pedersen_Jam = animation(whisperAnimations, "pedersen_jam"),
+		Pedersen_Mag_Eject = animation(whisperAnimations, "pedersen_mag_eject"),
+		Pedersen_Mag_In = animation(whisperAnimations, "pedersen_mag_in"),
+		Pedersen_Mag_Out = animation(whisperAnimations, "pedersen_mag_out"),
+		Check = animation(whisperAnimations, "check"),
+		Melee1 = animation(princeAnimations, "melee1"),
+		Melee2 = animation(princeAnimations, "melee2"),
+		Short = animation(princeAnimations, "short"),
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 	self.animation_speeds.Draw = 1 / WEAPON_STATS.draw_speed
@@ -193,7 +200,7 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 	self.Max_Reserve_Ammo = WEAPON_STATS.capacity * WEAPON_STATS.ammo_reserves_max
 	self.Ammo_Type = WEAPON_STATS.ammo_give
 	self.Penetration_Level = WEAPON_STATS.pen
-	self.Armor_Penetration_Level = WEAPON_STATS.pen
+	self.Armor_Penetration_Level = WEAPON_STATS.armor_pen
 	self.KnockBack_Force = 12
 	self.SoundFolder = whisperSounds
 	self.BulletSpeed = 1200
@@ -201,10 +208,10 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 	self.ShowBulletTrail = false
 
 	self.PedersenMode = false
-	self.PedersenCapacity = 0
-	self.PedersenReserve = 0
-	self.PedersenMaxCapacity = 40
-	self.PedersenMaxReserve = 40
+	-- The first 40-round magazine is installed with the device. Its reserve
+	-- starts empty and must be replenished separately.
+	self.PedersenCapacity = 40
+	self.PedersenMaxCapacity = self.IsVeteran and 41 or 40
 	self.ShotsUntilJam = math.random(7, 15)
 	self.Jammed = false
 	self.Alting = false
@@ -222,18 +229,95 @@ function WhisperRifle:_damageAtDistance(distance: number): number
 	return self.far_damage
 end
 
-function WhisperRifle:_restoreBase()
-	VolkRifle._restoreBase(self)
-	local animations = self.RegisteredAnimations
-	if not animations or not self.Equipped or self.Aiming or self:_isBusy() then return end
-	local normalHold = animations.Hold
-	local pedersenHold = animations.Pedersen_Hold
-	if self.PedersenMode then
-		if normalHold and normalHold.IsPlaying then normalHold:Stop(0.06) end
-		if pedersenHold and not pedersenHold.IsPlaying then pedersenHold:Play(0.06) end
-	elseif pedersenHold and pedersenHold.IsPlaying then
-		pedersenHold:Stop(0.06)
+local function setModelGroupVisible(group: Instance?, visible: boolean)
+	if not group then return end
+	local instances = group:GetDescendants()
+	table.insert(instances, group)
+	for _, descendant in instances do
+		if descendant:IsA("BasePart") then
+			local original = descendant:GetAttribute("WhisperOriginalTransparency")
+			if type(original) ~= "number" then
+				original = descendant.Transparency
+				descendant:SetAttribute("WhisperOriginalTransparency", original)
+			end
+			descendant.Transparency = if visible then original else 1
+		end
 	end
+end
+
+function WhisperRifle:_syncPedersenModel()
+	local model = self.actual_model
+	if not model then return end
+	local parts = model:FindFirstChild("parts")
+	if not parts then return end
+	setModelGroupVisible(parts:FindFirstChild("bolt"), not self.PedersenMode)
+	setModelGroupVisible(parts:FindFirstChild("pedersen"), self.PedersenMode)
+	setModelGroupVisible(parts:FindFirstChild("pedersenmag"), self.PedersenMode)
+end
+
+function WhisperRifle:_getMuzzlePart(): BasePart?
+	local model = self.actual_model
+	local muzzleName = self.PedersenMode and "altmuzzle" or "muzzle"
+	local muzzle = model and model:FindFirstChild(muzzleName, true)
+	if muzzle and muzzle:IsA("BasePart") then return muzzle end
+	return VolkRifle._getMuzzlePart(self)
+end
+
+function WhisperRifle:_refreshFastCast()
+	self:_setupFastCast(GunAssets.Effects, function(cast, result, velocity)
+		local origin = cast.UserData and cast.UserData.Origin
+		local distance = origin and (result.Position - origin).Magnitude or 0
+		local muzzle = self:_getMuzzlePart()
+		self:_onBulletHit(
+			cast,
+			result,
+			velocity,
+			muzzle,
+			self.Penetration_Level,
+			self:_damageAtDistance(distance),
+			self.KnockBack_Force
+		)
+	end)
+end
+
+-- Whisper has ordinary rifle sights. It inherits Volk's bolt mechanics, not
+-- Volk's scope camera or its iron-sight FOV override.
+function WhisperRifle:aim()
+	local character = game.Players.LocalPlayer.Character
+	if character then character:SetAttribute("WeaponFOV", nil) end
+	BaseRifle.aim(self)
+end
+
+function WhisperRifle:endAiming()
+	local character = game.Players.LocalPlayer.Character
+	if character then character:SetAttribute("WeaponFOV", nil) end
+	BaseRifle.endAiming(self)
+end
+
+function WhisperRifle:_playTimedAction(name: string, duration: number): boolean
+	local track = self:_playAnim(name)
+	if not track then
+		task.wait(duration)
+		return false
+	end
+
+	local loadDeadline = os.clock() + 0.25
+	while track.Length <= 0 and os.clock() < loadDeadline and self.Equipped do
+		RunService.Heartbeat:Wait()
+	end
+	if track.Length > 0 then
+		track:AdjustSpeed(track.Length / math.max(duration, 0.01))
+	end
+
+	local finished = false
+	local stoppedConnection = track.Stopped:Once(function() finished = true end)
+	local deadline = os.clock() + duration + 0.25
+	while not finished and self.Equipped and os.clock() < deadline do
+		RunService.Heartbeat:Wait()
+	end
+	stoppedConnection:Disconnect()
+	if track.IsPlaying then track:Stop(0.05) end
+	return self.Equipped
 end
 
 function WhisperRifle:setAltMode()
@@ -246,12 +330,7 @@ function WhisperRifle:setAltMode()
 		then { "Pedersen_Mag_Out", "Pedersen_Device_Off", "Pedersen_Bolt_Place", "Cycle_Pedersen" }
 		else { "Pedersen_Bolt_Remove", "Pedersen_Device_On", "Pedersen_Mag_In", "Pedersen_Charge" }
 	for _, animationName in switchSequence do
-		local track = self:_playAnim(animationName)
-		if track then
-			track:AdjustSpeed(math.max(track.Length / (PEDERSEN_SWITCH_TIME / #switchSequence), 0.01))
-			track.Stopped:Wait()
-		end
-		if not self.Equipped then break end
+		if not self:_playTimedAction(animationName, PEDERSEN_SWITCH_TIME / #switchSequence) then break end
 	end
 
 	if self.Equipped then
@@ -263,6 +342,8 @@ function WhisperRifle:setAltMode()
 			self.Ammo_Type = ".30 Light"
 			self.Penetration_Level = 0
 			self.Armor_Penetration_Level = 1
+			self.FireInterval = PEDERSEN_FIRE_INTERVAL
+			self.recoil = 1
 		else
 			self.PedersenCapacity = self.Capacity
 			self.Capacity = self._BoltCapacity or 5
@@ -270,7 +351,11 @@ function WhisperRifle:setAltMode()
 			self.Ammo_Type = ".30-06 Ball"
 			self.Penetration_Level = 2
 			self.Armor_Penetration_Level = 3
+			self.FireInterval = BOLT_FIRE_INTERVAL
+			self.recoil = WEAPON_STATS.recoil
 		end
+		self:_syncPedersenModel()
+		self:_refreshFastCast()
 		self:notify(self.PedersenMode and "Pedersen Device installed" or "Bolt action restored")
 	end
 
@@ -283,13 +368,7 @@ function WhisperRifle:fire()
 		if self.Cycling then return end
 		self.Cycling = true
 		self:notify("Clearing jam...")
-		local jamTrack = self:_playAnim("Pedersen_Jam")
-		if jamTrack then
-			jamTrack:AdjustSpeed(math.max(jamTrack.Length / PEDERSEN_JAM_CLEAR_TIME, 0.01))
-			jamTrack.Stopped:Wait()
-		else
-			task.wait(PEDERSEN_JAM_CLEAR_TIME)
-		end
+		self:_playTimedAction("Pedersen_Jam", PEDERSEN_JAM_CLEAR_TIME)
 		self.Jammed = false
 		self.ShotsUntilJam = math.random(7, 15)
 		self.Cycling = false
@@ -303,15 +382,17 @@ function WhisperRifle:fire()
 		return
 	end
 
+	local shotStartedAt = os.clock()
 	self.damage = self.PedersenMode and 55 or 130
-	local fireAnimation = if self.Capacity <= 1
-		then ((self.current_shoulder == "Right") and "Fire_Last" or "Fire_Last_Left")
-		else ((self.current_shoulder == "Right") and "Fire" or "Fire_Left")
-	local fireSound = whisperSounds:FindFirstChild("fire") or whisperSounds:FindFirstChild("Fire")
+	local fireAnimation = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
+	local fireSound = if self.PedersenMode
+		then whisperSounds:FindFirstChild("pedersen_fire") or whisperSounds:FindFirstChild("fire")
+		else whisperSounds:FindFirstChild("fire") or whisperSounds:FindFirstChild("Fire")
 	local fired = self:_fireSingleShot({
 		bulletSpeed = 1200,
 		fireAnimation = fireAnimation,
 		sound = fireSound,
+		fireDelay = self.PedersenMode and PEDERSEN_FIRE_INTERVAL or 0,
 	})
 	if fired then
 		if self.PedersenMode then self.ShotsUntilJam -= 1 end
@@ -319,10 +400,7 @@ function WhisperRifle:fire()
 	end
 	if not fired then return end
 
-	if self.PedersenMode then
-		local cycleTrack = self:_playAnim("Cycle_Pedersen")
-		if cycleTrack then cycleTrack.Stopped:Wait() else task.wait(PEDERSEN_FIRE_INTERVAL) end
-	else
+	if not self.PedersenMode then
 		self.Cycling = true
 		task.wait(0.25)
 		if self.Equipped then
@@ -333,7 +411,7 @@ function WhisperRifle:fire()
 			if cycleSound and cycleSound:IsA("Sound") and muzzle then self:_play_sfx(cycleSound, muzzle) end
 			if cycleTrack then cycleTrack.Stopped:Wait() end
 		end
-		task.wait(math.max(0, BOLT_FIRE_INTERVAL - 0.25))
+		task.wait(math.max(0, BOLT_FIRE_INTERVAL - (os.clock() - shotStartedAt)))
 		self.Cycling = false
 	end
 	self:_restoreBaseDeferred()
@@ -341,29 +419,53 @@ end
 
 function WhisperRifle:reload()
 	if not self.PedersenMode then
+		if self.IsVeteran and self.Capacity <= 1 then
+			self:_reloadByRound({
+				startAnim = self.Capacity <= 0 and "Reload_Clip_Start_Empty" or "Reload_Clip_Start_One",
+				useEmptyAnim = false,
+				useVeteranAnimations = false,
+				loopAnim = "Reload_Clip",
+				roundsPerLoop = self.Max_Capacity,
+				endAnim = "Reload_End",
+			})
+			return
+		end
 		VolkRifle.reload(self)
 		return
 	end
-	if self.Reloading or self.Capacity >= self.Max_Capacity or self.PedersenReserve <= 0 then return end
+	local reserve = self.tool and self.tool:FindFirstChild("Pedersen_Reserve")
+	if not reserve or not reserve:IsA("NumberValue") then
+		warn("[WhisperRifle] Pedersen_Reserve is missing")
+		return
+	end
+	if self.Reloading or self.Capacity >= self.Max_Capacity or reserve.Value <= 0 then return end
 
 	self.Reloading = true
 	self:_stopAllExcept()
-	local reloadOut = self:_playAnim(self.Capacity <= 0 and "Pedersen_Mag_Eject" or "Pedersen_Mag_Out")
-	if reloadOut then reloadOut.Stopped:Wait() end
-	local reloadIn = self:_playAnim("Pedersen_Mag_In")
-	if reloadIn then reloadIn.Stopped:Wait() end
-	if not reloadOut and not reloadIn then task.wait(PEDERSEN_RELOAD_TIME) end
+	local wasEmpty = self.Capacity <= 0
+	local sequence = {
+		wasEmpty and "Pedersen_Mag_Eject" or "Pedersen_Mag_Out",
+		"Pedersen_Mag_In",
+	}
+	if wasEmpty then table.insert(sequence, "Pedersen_Charge") end
+	for _, animationName in sequence do
+		if not self:_playTimedAction(animationName, PEDERSEN_RELOAD_TIME / #sequence) then break end
+	end
 	if self.Equipped then
-		local loaded = math.min(self.Max_Capacity - self.Capacity, self.PedersenReserve)
+		local loaded = math.min(self.Max_Capacity - self.Capacity, reserve.Value)
 		self.Capacity += loaded
-		self.PedersenReserve -= loaded
-		if self.Capacity == loaded then
-			local chargeTrack = self:_playAnim("Pedersen_Charge")
-			if chargeTrack then chargeTrack.Stopped:Wait() end
-		end
+		self:_fire_ammo(loaded, "Pedersen_Reserve")
 	end
 	self.Reloading = false
 	self:_restoreBaseDeferred()
+end
+
+function WhisperRifle:_on_equip()
+	VolkRifle._on_equip(self)
+	self:_refreshFastCast()
+	task.defer(function()
+		if self.Equipped then self:_syncPedersenModel() end
+	end)
 end
 
 WhisperRifle.Tool_Image = "rbxassetid://76707981179928"

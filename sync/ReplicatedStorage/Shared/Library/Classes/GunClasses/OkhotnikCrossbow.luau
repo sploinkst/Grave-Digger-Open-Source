@@ -1,8 +1,14 @@
-return require(script.Parent.LegacyGunFactory).create({
+local OkhotnikCrossbow = require(script.Parent.LegacyGunFactory).create({
 	className = "OkhotnikCrossbow",
 	assetName = "crossbow",
 	AnimationGunType = "OkhotnikCrossbow",
 	StrictAnimations = true,
+	AnimationMap = {
+		Hold = "held", Locked = "locked", Aim = "aim", Aim_Left = "aim_left", Draw = "draw",
+		Fire = "fire", Fire_Left = "fire_left", Check = "check", Reload_Start = "reload_start",
+		Melee1 = "melee1", Melee2 = "melee2", Altmelee1 = "altmelee1", Altmelee2 = "altmelee2",
+		Short = "short", Speen = "speen", Sprint = "sprint",
+	},
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 2,
@@ -44,3 +50,18 @@ return require(script.Parent.LegacyGunFactory).create({
 	},
 	bulletSpeed = 650,
 })
+
+function OkhotnikCrossbow:reload()
+	local reloaded = self:_reloadMagazine()
+	if reloaded then self.CrossbowCocked = true end
+	return reloaded
+end
+
+function OkhotnikCrossbow:fire()
+	if self.Capacity <= 0 or self.CrossbowCocked == false then return false end
+	local fired = self:_fireConfiguredShot(self.FireInterval)
+	if fired then self.CrossbowCocked = false end
+	return fired
+end
+
+return OkhotnikCrossbow

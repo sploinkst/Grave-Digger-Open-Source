@@ -16,6 +16,12 @@ local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
 local geistAnimations = Assets.Animations.Tools.Guns:FindFirstChild("GeistRifle")
+local princeAnimations = Assets.Animations.Tools.Guns:FindFirstChild("PrinceRifle")
+
+local function animation(folder: Instance?, name: string): Animation?
+	local clip = folder and folder:FindFirstChild(name)
+	return clip and clip:IsA("Animation") and clip or nil
+end
 local geistSounds = GunAssets.Sounds:FindFirstChild("GeistRifle") or GunAssets.Sounds:FindFirstChild("lever")
 local SoundFolder = geistSounds or GunAssets.Sounds.CrestfallRifle
 
@@ -115,37 +121,24 @@ function GeistRifle.new(info: Types.BaseToolCreateInfo): GeistRifle
 
 	self.AnimationGunType = "GeistRifle"
 	self.animations = {
-		Draw = geistAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
-		Hold = geistAnimations.held,
-		Unequip = geistAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
-
-		Aim      = geistAnimations.aim,
-		Aim_Left = geistAnimations.aim_left,
-
-		Fire      = geistAnimations.fire,
-		Fire_Left = geistAnimations.fire_left,
-
-		Reload_Empty = geistAnimations.reload_empty,
-		Reload_Start = geistAnimations.reload_start,
-		Reload_Loop  = geistAnimations.reload_loop,
-
-		Check  = geistAnimations.check,
-		Melee1 = geistAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
-		Melee2 = geistAnimations.Parent.PrinceRifle.PrinceRifle_Melee2,
-
-		Drop  = geistAnimations.Parent.Parent.Misc.Drop_Rifle,
-		Short = geistAnimations.Parent.PrinceRifle.PrinceRifle_Short,
-
-		Hip_Hold = geistAnimations.locked,
-		Hip_Aim = geistAnimations.alt_changeaim,
-		Hip_Aim_Left = geistAnimations.alt_changeaim_left,
-		Hip_Fire = geistAnimations.alt_changefire,
-		Hip_Fire_Left = geistAnimations.alt_changeaim_left,
-		Hip_Fire_Empty = geistAnimations.alt_changefire_empty,
-		Hip_Fire_Empty_Left = geistAnimations.alt_changefire_empty_left,
-		Hip_Fire_Last = geistAnimations.alt_changefire_last,
-		Hip_Fire_Last_Left = geistAnimations.alt_changefire_last_left,
-		Reload_Empty_Vet = geistAnimations:FindFirstChild("reload_empty_vet"),
+		Draw = animation(geistAnimations, "draw"),
+		Hold = animation(geistAnimations, "held"),
+		Unequip = animation(princeAnimations, "unequip"),
+		Aim = animation(geistAnimations, "aim"),
+		Aim_Left = animation(geistAnimations, "aim_left"),
+		Fire = animation(geistAnimations, "fire"),
+		Fire_Left = animation(geistAnimations, "fire_left"),
+		Cycle = animation(geistAnimations, "cycle"),
+		Cycle_Left = animation(geistAnimations, "cycle_left"),
+		Reload_Empty = animation(geistAnimations, "reload_empty"),
+		Reload_Start = animation(geistAnimations, "reload_start"),
+		Reload_Loop = animation(geistAnimations, "reload_loop"),
+		Check = animation(geistAnimations, "check"),
+		Melee1 = animation(geistAnimations, "melee1"),
+		Melee2 = animation(geistAnimations, "melee2"),
+		Short = animation(princeAnimations, "short"),
+		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
+		Hip_Hold = animation(geistAnimations, "locked"),
 	}
 
 	self.animation_speeds = {
@@ -173,7 +166,7 @@ function GeistRifle.new(info: Types.BaseToolCreateInfo): GeistRifle
 	self.Aiming_Number = 75
 	self.MuzzlePartName = "muzzle"
 	self.BulletSpeed = BULLET_SPEED
-	self.ShowBulletTrail = false
+	self.ShowBulletTrail = true
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
 	self.Short_Distance = 3.5
@@ -273,9 +266,10 @@ end
 
 function GeistRifle:_aimTrack(): AnimationTrack?
 	if self.HipBraced and self.RegisteredAnimations then
-		return (self.current_shoulder == "Right")
+		local track = (self.current_shoulder == "Right")
 			and self.RegisteredAnimations.Hip_Aim
 			or self.RegisteredAnimations.Hip_Aim_Left
+		if track then return track end
 	end
 	return BaseRifle._aimTrack(self)
 end
@@ -294,9 +288,10 @@ end
 
 function GeistRifle:_getFireAnim(): AnimationTrack?
 	if self.HipBraced and self.RegisteredAnimations then
-		return (self.current_shoulder == "Right")
+		local track = (self.current_shoulder == "Right")
 			and self.RegisteredAnimations.Hip_Fire
 			or self.RegisteredAnimations.Hip_Fire_Left
+		if track then return track end
 	end
 	return BaseRifle._getFireAnim(self)
 end
@@ -320,6 +315,9 @@ function GeistRifle:fire()
 		else
 			fireAnimation = left and "Fire_Left" or "Fire"
 		end
+	end
+	if not (self.RegisteredAnimations and self.RegisteredAnimations[fireAnimation]) then
+		fireAnimation = left and "Fire_Left" or "Fire"
 	end
 	local fireSound = self.SoundFolder and self.SoundFolder:FindFirstChild("fire")
 	local fired = self:_fireSingleShot({

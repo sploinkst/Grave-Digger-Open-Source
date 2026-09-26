@@ -13,6 +13,7 @@ local AccessoryService = require(script.Parent.AccessoryService)
 -- // Shared folders
 local Shared = ReplicatedStorage.Shared
 local Library = Shared.Library
+local SoundPlayback = require(Library.SoundPlayback)
 local Config = Library.Configuration.Scoring_Variables
 
 local TerrainService = require(script.TerrainService)
@@ -1048,12 +1049,7 @@ local function StartIntermission()
 	for i = intermissionTime, 1, -1 do
 		print("[GameManager] Round starts in:", i)
 		if i <= 5 and i ~= 1 then
-			local tickClone = Tick:Clone()
-			tickClone.Parent = game:GetService("SoundService")
-			tickClone:Play()
-			tickClone.Stopped:Connect(function()
-				tickClone:Destroy()
-			end)
+			SoundPlayback.Play(Tick)
 		elseif i == 1 then
 			SfxConnection:FireAllClients("BeginRound")
 			print("[GameManager] Intermission over, round begins.")

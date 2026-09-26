@@ -4,8 +4,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TalonRevolver = require(script.Parent.TalonRevolver)
 
-local TalonAnimations = ReplicatedStorage.Shared.Assets.Animations.Tools.Guns:WaitForChild("TalonRevolver")
-local OCELOT_FIRE_INTERVAL = 60 / 800
+local GunAnimations = ReplicatedStorage.Shared.Assets.Animations.Tools.Guns
+local TalonAnimations = GunAnimations:FindFirstChild("TalonRevolver") or GunAnimations:WaitForChild("saa")
+local OCELOT_FIRE_INTERVAL = 0.15
 
 local OcelotTalonRevolver = {}
 OcelotTalonRevolver.__index = OcelotTalonRevolver
@@ -19,12 +20,12 @@ function OcelotTalonRevolver.new(info)
 	self.name = "OcelotTalonRevolver"
 	self.Display_Name = "Ocelot Talon Revolver"
 	self.IsOcelotTrooper = true
+	self.StrictAnimations = true
 	if self.animations then
 		-- Ocelot always spins the revolver on draw and uses the actual
 		-- `hipfire` asset for unaimed shots.
 		self.animations.Draw = TalonAnimations:WaitForChild("ocelot_draw_spin")
 		self.animations.hipfire = TalonAnimations:WaitForChild("hipfire")
-		self.animations.Hold = self.animations.Quickdraw or self.animations.Hold
 	end
 	self.animation_speeds.Draw = 1 / self.draw_speed
 	self.animation_speeds.hipfire = 1 / OCELOT_FIRE_INTERVAL

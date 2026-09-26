@@ -3,6 +3,7 @@ return require(script.Parent.LegacyGunFactory).create({
 	assetName = "browningmg",
 	AnimationGunType = "BrowningMachineGun",
 	StrictAnimations = true,
+	AnimationMap = { Hold = "held", Aim = "aim", Draw = "draw", Fire = "fire", Reload_Start = "reload_start" },
 	soundNames = { "BrowningMachineGun", "browningmg" },
 	WeaponCategory = "Rifle",
 	Designation = "Primary",

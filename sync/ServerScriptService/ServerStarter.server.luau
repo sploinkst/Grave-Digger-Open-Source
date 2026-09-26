@@ -20,6 +20,16 @@ if not eventsFolder:FindFirstChild("Presentation") then
 	presentation.Name = "Presentation"
 	presentation.Parent = eventsFolder
 end
+if not eventsFolder:FindFirstChild("MountedWeapon") then
+	local mountedWeapon = Instance.new("RemoteEvent")
+	mountedWeapon.Name = "MountedWeapon"
+	mountedWeapon.Parent = eventsFolder
+end
+if not eventsFolder:FindFirstChild("Compass") then
+	local compass = Instance.new("RemoteEvent")
+	compass.Name = "Compass"
+	compass.Parent = eventsFolder
+end
 
 -- Publish the authored tool folders once; clients register sequences on demand.
 local authoredAnimations = ServerStorage:FindFirstChild("animations")

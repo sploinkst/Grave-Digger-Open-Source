@@ -18,6 +18,7 @@ local MusicService = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChi
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Library = Shared:WaitForChild("Library")
 local Utilities = require(Library:WaitForChild("Util"))
+local SoundPlayback = require(Library:WaitForChild("SoundPlayback"))
 
 local concussionBlur = Lighting:FindFirstChild("ConcussionBlur", true)
 if not concussionBlur or not concussionBlur:IsA("BlurEffect") then
@@ -777,13 +778,7 @@ local function ApplyProgress(
 	end
 
 	if playSound then
-		local clone = CapturePointLoopSound:Clone()
-		clone.Parent = game.SoundService
-		clone:Play()
-
-		clone.Ended:Connect(function()
-			clone:Destroy()
-		end)
+		SoundPlayback.Play(CapturePointLoopSound, SoundService)
 	end
 end
 
@@ -1417,6 +1412,7 @@ function Module.HandleSfxReplication(...)
 		if not player or not soundInstance then
 			return
 		end
+		if typeof(soundInstance) ~= "Instance" or not soundInstance:IsA("Sound") then return end
 
 		local parent = args[3]
 		local playbackSpeed = args[4] or soundInstance.PlaybackSpeed
@@ -1424,32 +1420,12 @@ function Module.HandleSfxReplication(...)
 		local pitchShift = args[6] or 0
 		local pitchVariation = args[7] or 0 -- pitch variation parameter
 
-		local soundClone = soundInstance:Clone()
-		soundClone.Parent = parent
-
-		-- // Set base pitch
-		soundClone.Pitch = soundInstance.Pitch or 1
-
-		-- // Apply pitch variation (same logic as the script)
-		if pitchVariation and typeof(pitchVariation) == "number" then
-			soundClone.Pitch = soundClone.Pitch + math.random(-pitchVariation * 100, pitchVariation * 100) / 100
-		end
-
-		-- // Apply pitch shift (from PitchShiftSoundEffect)
-		if pitchShift ~= 0 then
-			local pitchSound = Instance.new("PitchShiftSoundEffect")
-
-			pitchSound.Octave = pitchShift
-			pitchSound.Parent = soundClone
-		end
-
-		soundClone:Play()
-		soundClone.PlaybackSpeed = playbackSpeed
-		soundClone.Volume = volume
-
-		soundClone.Ended:Connect(function()
-			soundClone:Destroy()
-		end)
+		SoundPlayback.Play(soundInstance, parent, {
+			PlaybackSpeed = playbackSpeed,
+			Volume = volume,
+			PitchShift = pitchShift,
+			PitchVariation = pitchVariation,
+		})
 	end
 end
 

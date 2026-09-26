@@ -137,7 +137,7 @@ WeaponIds.LegacyToCanonical = {
 	MilitaryPistol = "HopePistol",
 	PieperCarbine = "KnellRevolver",
 	RemingtonShotgun = "NegotiatorShotgun",
-	SteyrRifle = "UnionPistol",
+	SteyrRifle = "UnionStockedPistol",
 	WalkerRevolver = "KingslayerRevolver",
 }
 

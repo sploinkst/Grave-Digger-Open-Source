@@ -26,6 +26,11 @@ local FxFolder      = Assets.Guns.Effects
 
 local fire_sound = SoundFolder.fire
 
+local function animation(name: string): Animation?
+	local found = AnimFolder:FindFirstChild(name)
+	return if found and found:IsA("Animation") then found else nil
+end
+
 -- // Tuning
 
 local CYCLE_REST_TIME = 0.25
@@ -57,6 +62,7 @@ local ANIM_LAYERS: { [string]: number } = {
 	Reload_Alt_Extra = 2,
 	Alt_Mode_On  = 2,
 	Alt_Mode_Off = 2,
+	Alt_Toggled_Off = 2,
 	Melee1       = 2,
 	Melee2       = 2,
 	Alt_Melee1   = 2,
@@ -125,39 +131,41 @@ local FIREARM_CONFIG = {
 	AnimationDrivenGrip = false,
 
 	animations = {
-		Draw = AnimFolder.PrinceRifle_Draw,
-		Hold = AnimFolder.PrinceRifle_Held,
-		Unequip = AnimFolder.PrinceRifle_Unequip,
+		Draw = animation("draw"),
+		Hold = animation("held"),
+		Unequip = animation("unequip"),
 
-		Aim      = AnimFolder.PrinceRifle_Aim,
-		Aim_Left = AnimFolder.PrinceRifle_Aim_Left,
+		Aim      = animation("aim"),
+		Aim_Left = animation("aim_left"),
 
-		Fire      = AnimFolder.PrinceRifle_Fire,
-		Fire_Left = AnimFolder.PrinceRifle_Fire_Left,
+		Fire      = animation("fire"),
+		Fire_Left = animation("fire_left"),
 
-		Cycle = AnimFolder.PrinceRifle_Cycle,
+		Cycle = animation("cycle"),
 
-		Reload_Empty = AnimFolder.PrinceRifle_Reload_Empty,
-		Reload_Empty_Vet = AnimFolder.PrinceRifle_Reload_Empty_Vet,
-		Reload_Start = AnimFolder.PrinceRifle_Reload_Start,
-		Reload_Start_Vet = AnimFolder.PrinceRifle_Reload_Start_Vet,
-		Reload_Loop  = AnimFolder.PrinceRifle_Reload_Loop,
-		Reload_End   = AnimFolder.PrinceRifle_Reload_End,
-		Reload_End_Vet = AnimFolder.PrinceRifle_Reload_End_Vet,
-		Reload_Alt   = AnimFolder.PrinceRifle_Reload_Alt,
-		Reload_Alt_Extra = AnimFolder.PrinceRifle_Reload_Alt_Extra,
+		Reload_Empty = animation("reload_empty"),
+		Reload_Empty_Vet = animation("reload_empty_vet"),
+		Reload_Start = animation("reload_start"),
+		Reload_Start_Vet = animation("reload_start_vet"),
+		Reload_Loop  = animation("reload_loop"),
+		Reload_End   = animation("reload_end"),
+		Reload_End_Vet = animation("reload_end_vet"),
+		Reload_Alt   = animation("reload_alt"),
+		Reload_Alt_Extra = animation("reload_alt_extra"),
 
-		Alt_Mode_On  = AnimFolder.PrinceRifle_Alt_Mode_On,
-		Alt_Mode_Off = AnimFolder.PrinceRifle_Alt_Mode_Off,
+		Alt_Mode_On  = animation("alt_mode_on"),
+		Alt_Mode_Off = animation("alt_mode_off"),
+		Alt_Toggled_Off = animation("alt_toggled_off"),
 
-		Check  = AnimFolder.PrinceRifle_Check,
-		Melee1 = AnimFolder.PrinceRifle_Melee1,
-		Melee2 = AnimFolder.PrinceRifle_Melee2,
-		Alt_Melee1 = AnimFolder.PrinceRifle_AltMelee1,
-		Alt_Melee2 = AnimFolder.PrinceRifle_AltMelee2,
+		Check  = animation("check"),
+		Melee1 = animation("melee1"),
+		Melee2 = animation("melee2"),
+		Alt_Melee1 = animation("altmelee1"),
+		Alt_Melee2 = animation("altmelee2"),
 
 		Drop  = AnimFolder.Parent.Parent.Misc.Drop_Rifle,
-		Short = AnimFolder.PrinceRifle_Short,
+		Short = animation("short"),
+		Sprint = animation("sprint"),
 	},
 
 	animation_speeds = {
@@ -304,7 +312,7 @@ function PrinceRifle:setAltMode()
 	local shouldCycle = false
 
 	if self.Alt_Mode then
-		local track = self:_playAnim("Alt_Mode_Off")
+		local track = self:_playAnim("Alt_Mode_On")
 		if track then track.Stopped:Wait() end
 		self.Alt_Mode = false
 		-- Single Fire uses a separately hand-loaded round, never the internal
@@ -312,7 +320,7 @@ function PrinceRifle:setAltMode()
 		self.Cycled = false
 		self:notify("Firemode: Single Fire")
 	else
-		local track = self:_playAnim("Alt_Mode_On")
+		local track = self:_playAnim("Alt_Mode_Off")
 		if track then track.Stopped:Wait() end
 		self.Alt_Mode = true
 		self:notify("Firemode: Repeating Fire")

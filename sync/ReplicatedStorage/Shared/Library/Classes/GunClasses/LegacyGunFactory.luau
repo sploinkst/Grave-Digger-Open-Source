@@ -43,6 +43,39 @@ local DEFAULT_LAYERS: { [string]: number } = {
 	Melee2 = 2,
 	Short = 2,
 	Tag_Look = 2,
+	Akimbo_Fire = 1,
+	Akimbo_Fire_Empty = 1,
+	Akimbo_Locked = 0,
+	Locked = 0,
+	Alt_Changeaim = 0,
+	Alt_Changeaim_Left = 0,
+	Alt_Changefire = 1,
+	Alt_Changefire_Left = 1,
+	Long_Sprint = 2,
+	Sprint = 2,
+	Speen = 2,
+	Spin_Left = 2,
+	Spin_Right = 2,
+	Spin_Cylinder = 2,
+	Spin_Start = 2,
+	Spin_Loop = 2,
+	Spin_End = 2,
+	Spin_End_Flashy = 2,
+	Fire_Break = 1,
+	Fire_Empty = 1,
+	Fire_Weak = 1,
+	Reload_Dual_Doom = 2,
+	Reload_Empty_Doom = 2,
+	Reload_End_Doom = 2,
+	Reload_Loop_Alt = 2,
+	Reload_Add_Ball = 2,
+	Reload_Cap_Add = 2,
+	Reload_Cap_Remove = 2,
+	Reload_Cylinder = 2,
+	Reload_Dump = 2,
+	Reload_Idle = 2,
+	Reload_Lever = 2,
+	Reload_Powder = 2,
 }
 
 local function firstChild(parent: Instance?, names: { string }): Instance?
@@ -107,7 +140,7 @@ local function canonicalAnimationName(name: string): string
 	return table.concat(pieces, "_")
 end
 
-local function buildAnimations(animationId: string, strict: boolean?, preferLong: boolean?): { [string]: Animation }?
+local function buildAnimations(animationId: string, strict: boolean?, preferLong: boolean?, animationMap, weaponCategory: string?): { [string]: Animation }?
 	local guns = Assets:FindFirstChild("Animations")
 		and Assets.Animations:FindFirstChild("Tools")
 		and Assets.Animations.Tools:FindFirstChild("Guns")
@@ -118,18 +151,19 @@ local function buildAnimations(animationId: string, strict: boolean?, preferLong
 	end
 	local result = {
 		Hold = (preferLong and animation(folder, { "long_held" }))
-			or animation(folder, { "held", "long_held", "locked", "Hold" }) or animation(prince, { "PrinceRifle_Held" }),
+			or animation(folder, { "held", "locked", "Hold" }) or animation(prince, { "held" }),
 		Draw = (preferLong and animation(folder, { "long_draw" }))
-			or animation(folder, { "draw", "long_draw", "steyrdraw", "Draw" }) or animation(prince, { "PrinceRifle_Draw" }),
-		Unequip = animation(folder, { "unequip", "Unequip" }) or animation(prince, { "PrinceRifle_Unequip" }),
+			or animation(folder, { "draw", "steyrdraw", "Draw" }) or animation(prince, { "draw" }),
+		Unequip = animation(folder, { "unequip", "Unequip" }) or animation(prince, { "unequip" }),
 		Aim = (preferLong and animation(folder, { "long_aim" }))
-			or animation(folder, { "aim", "long_aim", "Aim" }) or animation(prince, { "PrinceRifle_Aim" }),
+			or animation(folder, { "aim", "alt_changeaim", "Aim" })
+			or (weaponCategory ~= "Pistol" and animation(prince, { "aim" }) or nil),
 		Aim_Left = (preferLong and animation(folder, { "long_aim_left" }))
-			or animation(folder, { "aim_left", "long_aim_left", "Aim_Left" }) or animation(prince, { "PrinceRifle_Aim_Left" }),
+			or animation(folder, { "aim_left", "alt_changeaim_left", "Aim_Left" }),
 		Fire = (preferLong and animation(folder, { "long_fire" }))
-			or animation(folder, { "fire", "long_fire", "firing", "Fire" }) or animation(prince, { "PrinceRifle_Fire" }),
+			or animation(folder, { "fire", "firing", "Fire" }) or animation(prince, { "fire" }),
 		Fire_Left = (preferLong and animation(folder, { "long_fire_left" }))
-			or animation(folder, { "fire_left", "long_fire_left", "firing_left", "Fire_Left" }) or animation(prince, { "PrinceRifle_Fire_Left" }),
+			or animation(folder, { "fire_left", "firing_left", "Fire_Left" }),
 		Fire_Last = animation(folder, { "fire_last", "Fire_Last" }),
 		Fire_Last_Left = animation(folder, { "fire_last_left", "Fire_Last_Left" }),
 		Cycle = animation(folder, { "cycle", "Cycle", "reload_bolt" }),
@@ -137,7 +171,7 @@ local function buildAnimations(animationId: string, strict: boolean?, preferLong
 		Reload_Start_Vet = animation(folder, { "reload_start_vet", "Reload_Start_Vet" }),
 		Reload_Empty = animation(folder, { "reload_empty", "Reload_Empty" }),
 		Reload_Empty_Vet = animation(folder, { "reload_empty_vet", "Reload_Empty_Vet" }),
-		Reload_Loop = animation(folder, { "reload_loop", "Reload_Loop", "reload_one", "reload_one_vet" }),
+		Reload_Loop = animation(folder, { "reload_loop", "Reload_Loop", "reload_one", "reload_one_vet", "reload_dual_vet" }),
 		Reload_Loop_Vet = animation(folder, { "reload_loop_vet", "reload_dual_vet", "Reload_Loop_Vet" }),
 		Reload_End = animation(folder, { "reload_end", "Reload_End" }),
 		Reload_End_Vet = animation(folder, { "reload_end_vet", "Reload_End_Vet" }),
@@ -147,10 +181,28 @@ local function buildAnimations(animationId: string, strict: boolean?, preferLong
 		Reload_Full_Vet = animation(folder, { "reload_full_vet", "reload_empty_vet", "Reload_Full_Vet" }),
 		Check = (preferLong and animation(folder, { "long_check" })) or animation(folder, { "check", "Check" }),
 		Check_Empty = animation(folder, { "check_empty", "Check_Empty" }),
-		Melee1 = animation(folder, { "melee1", "Melee1" }) or animation(prince, { "PrinceRifle_Melee1" }),
-		Melee2 = animation(folder, { "melee2", "Melee2" }) or animation(prince, { "PrinceRifle_Melee2" }),
-		Short = animation(folder, { "short", "Short" }) or animation(prince, { "PrinceRifle_Short" }),
+		Melee1 = animation(folder, { "melee1", "Melee1" }) or animation(prince, { "melee1" }),
+		Melee2 = animation(folder, { "melee2", "Melee2" }) or animation(prince, { "melee2" }),
+		Short = animation(folder, { "short", "Short" }) or animation(prince, { "short" }),
+		Sprint = (preferLong and animation(folder, { "long_sprint" })) or animation(folder, { "sprint", "Sprint" }),
+		Locked = animation(folder, { "locked", "Locked" }),
+		Akimbo_Fire = animation(folder, { "akimbo_fire" }),
+		Akimbo_Fire_Empty = animation(folder, { "akimbo_fire_empty" }),
+		Akimbo_Locked = animation(folder, { "akimbo_locked" }),
+		Alt_Changeaim = animation(folder, { "alt_changeaim" }),
+		Alt_Changeaim_Left = animation(folder, { "alt_changeaim_left" }),
+		Alt_Changefire = animation(folder, { "alt_changefire" }),
+		Alt_Changefire_Left = animation(folder, { "alt_changefire_left" }),
 	}
+
+	-- Each migrated gun owns its authored animation-to-action mapping. This
+	-- override is resolved only inside that gun's selected animation folder.
+	if animationMap then
+		for actionName, sourceNames in pairs(animationMap) do
+			local names = if type(sourceNames) == "table" then sourceNames else { sourceNames }
+			result[actionName] = animation(folder, names)
+		end
+	end
 
 	-- Weapon master loaded every animation in the selected weapon folder. Keep
 	-- the standard aliases above, but also retain all special-purpose clips so
@@ -281,16 +333,19 @@ function Factory.create(config)
 		local assetName = config.assetName or WeaponIds.AssetName(className)
 		local modelNames = aliasNames(config.modelNames or {}, assetName, className)
 		local soundNames = aliasNames(config.soundNames or {}, assetName, className)
-		local animationNames = aliasNames(config.AnimationGunType or config.animations or {}, assetName, className)
+		local animationNames = if config.StrictAnimations == true
+			then { config.AnimationGunType or config.animations or className }
+			else aliasNames(config.AnimationGunType or config.animations or {}, assetName, className)
 
 		self.className = className
 		self.name = config.name or className
+		self.StrictAnimations = config.StrictAnimations == true
 		self.item_image = Class.Tool_Image
 		self.Designation = Class.Designation
 		self.ANIM_LAYERS = config.ANIM_LAYERS or DEFAULT_LAYERS
 		self.AnimationGunType = animationId
 		for _, candidate in animationNames do
-			self.animations = buildAnimations(candidate, config.StrictAnimations == true, config.preferLongAnimations == true)
+			self.animations = buildAnimations(candidate, config.StrictAnimations == true, config.preferLongAnimations == true, config.AnimationMap, config.WeaponCategory)
 			if self.animations then
 				self.AnimationGunType = candidate
 				break

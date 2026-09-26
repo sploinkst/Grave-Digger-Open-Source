@@ -23,6 +23,11 @@ local FxFolder       = Assets.Guns.Effects
 local SoundFolder = Assets.Guns:WaitForChild("Sounds"):WaitForChild("GraceRevolver")
 local fire_sound  = SoundFolder.fire
 
+local function animation(name: string): Animation?
+	local clip = Anim_Folder:FindFirstChild(name)
+	return clip and clip:IsA("Animation") and clip or nil
+end
+
 -- // Tuning
 
 local FIRE_RATE    = 0.75
@@ -164,34 +169,37 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	}
 
 	self.animations = {
-		Hold    = Anim_Folder.GraceRevolver_Held,
-		Draw    = Anim_Folder.GraceRevolver_Draw,
-		Unequip = Anim_Folder.GraceRevolver_Unequip,
+		Hold    = animation("held"),
+		Draw    = animation("draw"),
+		Unequip = animation("unequip"),
+		Sprint  = animation("sprint"),
 
-		Aim      = Anim_Folder.GraceRevolver_Aim,
-		Aim_Left = Anim_Folder.GraceRevolver_Aim_left,
+		Aim      = animation("aim"),
+		Aim_Left = animation("aim_left"),
 
-		Fire            = Anim_Folder.GraceRevolver_Fire,
-		Fire_Left       = Anim_Folder.GraceRevolver_Fire_Left,
-		Fire_Empty      = Anim_Folder.GraceRevolver_Fire_Empty,
-		Fire_Empty_Left = Anim_Folder.GraceRevolver_Fire_Empty_Left,
+		Fire            = animation("fire"),
+		Fire_Left       = animation("fire_left"),
+		Fire_Empty      = animation("fire_empty"),
+		Fire_Empty_Left = animation("fire_empty_left"),
+		Akimbo_Fire       = animation("akimbo_fire"),
+		Akimbo_Fire_Empty = animation("akimbo_fire_empty"),
 
-		Short     = Anim_Folder.GraceRevolver_Short,
-		Short_Alt = Anim_Folder.GraceRevolver_Short_alt,
+		Short     = animation("short"),
+		Short_Alt = animation("short_alt"),
 
-		Spin       = Anim_Folder.GraceRevolver_Spin,
-		Spin_Start = Anim_Folder.GraceRevolver_Spin_start,
+		Spin       = animation("spin"),
+		Spin_Start = animation("spin_start"),
 
-		Reload_Start      = Anim_Folder.GraceRevolver_Reload_start,
-		Reload_Start_Vet  = Anim_Folder.GraceRevolver_Reload_start_vet,
-		Reload_Loop       = Anim_Folder.GraceRevolver_Reload_loop,
-		Reload_Loop_After = Anim_Folder.GraceRevolver_Reload_loop_after,
-		Reload_End        = Anim_Folder.GraceRevolver_Reload_end,
-		Reload_End_Vet    = Anim_Folder.GraceRevolver_Reload_end_vet,
+		Reload_Start      = animation("reload_start"),
+		Reload_Start_Vet  = animation("reload_start_vet"),
+		Reload_Loop       = animation("reload_loop"),
+		Reload_Loop_After = animation("reload_loop_after"),
+		Reload_End        = animation("reload_end"),
+		Reload_End_Vet    = animation("reload_end_vet"),
 
-		Check  = Anim_Folder.GraceRevolver_Check,
-		Melee1 = Anim_Folder.GraceRevolver_Melee1,
-		Melee2 = Anim_Folder.GraceRevolver_Melee2,
+		Check  = animation("check"),
+		Melee1 = animation("melee1"),
+		Melee2 = animation("melee2"),
 
 		Drop = Anim_Folder.Parent.Parent.Misc.Drop_Pistol,
 	}

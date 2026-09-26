@@ -20,10 +20,13 @@ return {
 	[3519641862] = true, -- // Engineer
 	[103391924] = true, -- // Puro
 
+
 	[3330580713] = true, -- // RearedGlobe
-	[999442131] = true, -- // Z_Clan,
+	[999442131] = true, -- // ZClan
 	[2707824098] = true, -- // NexusTheNormie
 	[4055144969] = true, -- // ThatOneWebbyBoi
-	
+
 	[154144307] = true, -- // theManNamedKake
+	[136256181] = true, -- // b_rownee
+	[5373426393] =true, -- // GreenSlayer4598 
 }

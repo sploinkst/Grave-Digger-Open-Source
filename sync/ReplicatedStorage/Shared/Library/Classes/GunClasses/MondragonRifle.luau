@@ -132,13 +132,13 @@ function MondragonRifle.new(info: Types.BaseToolCreateInfo): MondragonRifle
 	}
 
 	self.animations = {
-		Hold = anim({ "held", "Hold" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("PrinceRifle_Held")),
-		Draw = anim({ "draw", "Draw" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("PrinceRifle_Draw")),
-		Unequip = anim({ "unequip", "Unequip" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("PrinceRifle_Unequip")),
-		Aim = anim({ "aim", "Aim" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("PrinceRifle_Aim")),
-		Aim_Left = anim({ "aim_left", "Aim_Left" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("PrinceRifle_Aim_Left")),
-		Fire = anim({ "fire", "Fire" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("PrinceRifle_Fire")),
-		Fire_Left = anim({ "fire_left", "Fire_Left" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("PrinceRifle_Fire_Left")),
+		Hold = anim({ "held", "Hold" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("held")),
+		Draw = anim({ "draw", "Draw" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("draw")),
+		Unequip = anim({ "unequip", "Unequip" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("unequip")),
+		Aim = anim({ "aim", "Aim" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("aim")),
+		Aim_Left = anim({ "aim_left", "Aim_Left" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("aim_left")),
+		Fire = anim({ "fire", "Fire" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("fire")),
+		Fire_Left = anim({ "fire_left", "Fire_Left" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("fire_left")),
 		Fire_Last = anim({ "fire_last", "Fire_Last" }),
 		Fire_Last_Left = anim({ "fire_last_left", "Fire_Last_Left" }),
 		Reload_Start = anim({ "reload_start", "Reload_Start" }),
@@ -147,9 +147,9 @@ function MondragonRifle.new(info: Types.BaseToolCreateInfo): MondragonRifle
 		Reload_End = anim({ "reload_end", "Reload_End" }),
 		Reload_Full = anim({ "reload_full", "Reload_Full" }),
 		Check = anim({ "check", "Check" }),
-		Melee1 = anim({ "melee1", "Melee1" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("PrinceRifle_Melee1")),
-		Melee2 = anim({ "melee2", "Melee2" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("PrinceRifle_Melee2")),
-		Short = anim({ "short", "Short" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("PrinceRifle_Short")),
+		Melee1 = anim({ "melee1", "Melee1" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("melee1")),
+		Melee2 = anim({ "melee2", "Melee2" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("melee2")),
+		Short = anim({ "short", "Short" }) or (PrinceAnimations and PrinceAnimations:FindFirstChild("short")),
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 

@@ -163,12 +163,12 @@ function AdjudicatorRifle.new(info: Types.BaseToolCreateInfo): AdjudicatorRifle
 
 	self.AnimationGunType = "AdjudicatorRifle"
 	self.animations = {
-		Hold = Animations.locked,
+		Hold = Animations:FindFirstChild("held"),
 		Aim = Animations.aim,
 		Aim_Left = Animations.aim_left,
 		Fire = Animations.fire,
 		Fire_Left = Animations.fire_left,
-		Hip_Hold = Animations.locked,
+		Hip_Hold = Animations:FindFirstChild("held"),
 		Hip_Aim = Animations.alt_changeaim,
 		Hip_Aim_Left = Animations.alt_changeaim_left,
 		Hip_Fire = Animations.alt_changefire,

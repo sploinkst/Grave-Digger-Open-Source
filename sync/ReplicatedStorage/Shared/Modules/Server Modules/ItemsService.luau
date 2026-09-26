@@ -194,6 +194,11 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 		maximumAmmo.Name = "Max_Ammo"
 		maximumAmmo.Value = max_ammo or 0
 		maximumAmmo.Parent = tool
+		local pedersenReserve
+		if class_item == "WhisperRifle" then
+			pedersenReserve = weaponValue("NumberValue", "Pedersen_Reserve", 0)
+			weaponValue("NumberValue", "Pedersen_Max_Reserve", 40)
+		end
 
 		local ammo = weaponValue("NumberValue", "ammo", clip_size or 0)
 		weaponValue("NumberValue", "max_ammo", max_ammo or 0)
@@ -214,6 +219,13 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 							fullAmmo.Value = false
 							return
 						end
+						local pedersen = candidate:FindFirstChild("Pedersen_Reserve")
+						local pedersenMax = candidate:FindFirstChild("Pedersen_Max_Reserve")
+						if pedersen and pedersenMax and pedersen:IsA("NumberValue") and pedersenMax:IsA("NumberValue")
+							and pedersen.Value < pedersenMax.Value then
+							fullAmmo.Value = false
+							return
+						end
 					end
 				end
 			end
@@ -225,6 +237,7 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 			updateFullAmmo()
 		end
 		reserveAmmo:GetPropertyChangedSignal("Value"):Connect(syncAmmo)
+		if pedersenReserve then pedersenReserve:GetPropertyChangedSignal("Value"):Connect(updateFullAmmo) end
 	end
 	weaponEvent.OnServerEvent:Connect(function(sender, kind, enabled)
 		if sender ~= player or kind ~= "left_aiming" or type(enabled) ~= "boolean" then return end

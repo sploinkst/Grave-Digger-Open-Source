@@ -6,6 +6,7 @@ local player_service = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local replicant_folder = ReplicatedStorage.Shared.Library.Events
+local SoundPlayback = require(ReplicatedStorage.Shared.Library.SoundPlayback)
 
 local PresentationEvent = replicant_folder:FindFirstChild("Presentation") :: RemoteEvent?
 if not PresentationEvent then
@@ -41,9 +42,6 @@ local casing_connection = replicant_folder.Casing
 local InputChange = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("InputChange")
 local SettingChange = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("SettingChange")
 
-local GiveCompassEvent:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("GiveCompass")
-local RemoveCompass:RemoteEvent = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("RemoveCompass")
-
 local status_service = require(script.Parent.StatusService)
 
 local item_service = require(script.Parent.ItemsService)
@@ -75,7 +73,6 @@ local hellionHelmetHits = {}
 -- is recorded now so the client-only sound can be played for them later.
 local HELMET_POP_SOUND_ID = "rbxassetid://0"
 
-local CompassConnections = {}
 local function canDamageThroughHelmet(weaponName: string?, attackerCharacter: Model?): boolean
 	if not attackerCharacter then return false end
 	return (weaponName == "AntiMaterialRifle" and attackerCharacter:FindFirstChild("AntiMaterialRifle") ~= nil)
@@ -389,49 +386,6 @@ function module.pop_helmet(character, helmet_model, knockable: boolean, shooter:
 	end
 end
 
-local function tweenLid(lidRotate: Motor6D, angle: number)
-	local currentC0 = lidRotate.C0
-
-	local targetC0 = CFrame.new(currentC0.Position) * CFrame.fromOrientation(
-		0,
-		0,
-		math.rad(angle)
-	)
-
-	local tween = TweenService:Create(
-		lidRotate,
-		TweenInfo.new(
-			0.3,
-			Enum.EasingStyle.Sine,
-			Enum.EasingDirection.Out
-		),
-		{
-			C0 = targetC0
-		}
-	)
-
-	tween:Play()
-	return tween
-end
-
-local function getCompassData(player, arm)
-	local character = player.Character
-	if not character then
-		return
-	end
-
-	local armPart = character:FindFirstChild(arm)
-	if not armPart then
-		return
-	end
-
-	local compass = if player.Team and player.Team.Name == "Golden Empire"
-		then ReplicatedStorage.Shared.Assets.Items.empirecompass
-		else ReplicatedStorage.Shared.Assets.Items.nationcompass
-
-	return armPart, compass
-end
-
 function module.start_module()
 	-- A call is evaluated server-side every quarter second.  This keeps range,
 	-- team checks, death, and players walking out of the radius authoritative.
@@ -573,12 +527,10 @@ function module.start_module()
 
 		local sound = WhistleSounds and WhistleSounds:FindFirstChild("whistle_" .. string.lower(order))
 		if sound and sound:IsA("Sound") then
-			local clone = sound:Clone()
-			clone.PlaybackSpeed = 1.15
-			clone.Volume *= 5
-			clone.Parent = root
-			clone:Play()
-			Debris:AddItem(clone, math.max(clone.TimeLength + 0.25, 2))
+			SoundPlayback.Play(sound, root, {
+				PlaybackSpeed = 1.15,
+				Volume = sound.Volume * 5,
+			})
 		end
 	end)
 
@@ -1160,9 +1112,15 @@ function module.start_module()
 		end
 	end)
 	
-	ammo_connection.OnServerEvent:Connect(function(player, tool, count)
-		print("Received ammo_connection from", tool.Name, "count:", count)
-		tool.Reserve_Ammo.Value -= count
+	ammo_connection.OnServerEvent:Connect(function(player, tool, count, reserveName)
+		if typeof(tool) ~= "Instance" or not tool:IsA("Tool")
+			or (tool.Parent ~= player.Character and tool.Parent ~= player.Backpack)
+			or type(count) ~= "number" or count <= 0 or count ~= math.floor(count) then return end
+		local valueName = reserveName == "Pedersen_Reserve" and "Pedersen_Reserve" or "Reserve_Ammo"
+		local reserve = tool:FindFirstChild(valueName)
+		if not reserve or not reserve:IsA("NumberValue") then return end
+		print("Received ammo_connection from", tool.Name, "count:", count, "pool:", valueName)
+		reserve.Value = math.max(0, reserve.Value - count)
 	end)
 	
 	local ammoCharges = setmetatable({}, {__mode = "k"})
@@ -1205,10 +1163,7 @@ function module.start_module()
 			end
 		end
 		if #choices > 0 then
-			local sound = choices[math.random(1, #choices)]:Clone()
-			sound.Parent = clone
-			sound:Play()
-			Debris:AddItem(sound, math.max(sound.TimeLength + 0.25, 2))
+			SoundPlayback.Play(choices[math.random(1, #choices)], clone)
 		else
 			warn("[AmmoPack] Missing Assets.Equipment.Sounds.ammopouch ammo1/ammo2/ammo3")
 		end
@@ -1227,109 +1182,6 @@ function module.start_module()
 		Debris:AddItem(clone, 30)
 	end)
 
-	GiveCompassEvent.OnServerEvent:Connect(function(player, arm)
-		local armPart, compass = getCompassData(player, arm)
-		if not armPart then
-			return
-		end
-
-		local existing = player.Character:FindFirstChild(compass.Name, true)
-		if existing then
-			existing:Destroy()
-		end
-
-		local clone = compass:Clone()
-		clone.Parent = armPart
-		clone:PivotTo(armPart.CFrame)
-
-		local weld = Util.quick_weld(
-			armPart,
-			clone.base,
-			clone,
-			"Weld"
-		)
-
-		if arm == "Right Arm" then
-			weld.C0 =
-				CFrame.new(-0.6, -0.5, 0)
-				* CFrame.fromOrientation(math.rad(180), 0, math.rad(90))
-		else
-			weld.C0 =
-				CFrame.new(0.6, -0.5, 0)
-				* CFrame.fromOrientation(0, 0, math.rad(-90))
-		end
-
-		local lidRotate = clone.base:FindFirstChild("lid_rotate")
-		if lidRotate then
-			task.delay(0.3, function()
-				tweenLid(lidRotate, -90)
-			end)
-		end
-
-		local compass_rotate = clone:FindFirstChild("compass_rotate", true)
-		if not compass_rotate then
-			return
-		end
-
-		local needle_weld = compass_rotate:FindFirstChildWhichIsA("Weld")
-		if not needle_weld then
-			return
-		end
-
-		local original_c0 = needle_weld.C0
-		local original_position = original_c0.Position
-		local original_rotation = original_c0 - original_position
-
-		local connection
-		connection = RunService.Heartbeat:Connect(function()
-			if not clone.Parent then
-				connection:Disconnect()
-				return
-			end
-
-			
-			local north_direction = Vector3.new(0, 0, 1)
-
-			-- Convert world north into the compass_rotate's local space
-			local local_north = compass_rotate.CFrame:VectorToObjectSpace(north_direction)
-
-			-- Find the horizontal angle to north
-			local angle = math.atan2(
-				local_north.X,
-				-local_north.Z
-			)
-
-			needle_weld.C0 =
-				CFrame.new(original_position)
-				* original_rotation
-				* CFrame.Angles(0, angle, 0)
-		end)
-
-		CompassConnections[player.Name] = connection
-	end)
-
-	RemoveCompass.OnServerEvent:Connect(function(player, arm)
-		local armPart, compass = getCompassData(player, arm)
-		if not armPart then
-			return
-		end
-
-		local existingCompass = armPart:FindFirstChild(compass.Name)
-		if not existingCompass then
-			return
-		end
-
-		print("Destroying Existing Compass")
-
-		local lidRotate = existingCompass.base:FindFirstChild("lid_rotate")
-		if lidRotate then
-			local tween = tweenLid(lidRotate, 0)
-			tween.Completed:Wait()
-		end
-
-		existingCompass:Destroy()
-	end)
-	
 	Helmet_RemoteEvent.OnServerEvent:Connect(function(player, lift: boolean)
 		local character = player.Character
 		local helmet, _ = Util.check_for_helmet(character)

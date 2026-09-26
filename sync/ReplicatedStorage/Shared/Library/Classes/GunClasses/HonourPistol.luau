@@ -148,6 +148,7 @@ function HonourPistol.new(info: Types.BaseToolCreateInfo): HonourPistol
 
 	local blackHand = hasPerk("blackhand")
 	self.className = "HonourPistol"
+	self.StrictAnimations = true
 	self.item_image = "rbxassetid://18193612933"
 	self.Designation = "Secondary"
 	self.ANIM_LAYERS = ANIM_LAYERS
@@ -165,15 +166,16 @@ function HonourPistol.new(info: Types.BaseToolCreateInfo): HonourPistol
 	}
 
 	self.animations = {
-		Hold = animation("locked"),
+		Hold = animation("held"),
 		Stock_Hold = animation("akimbo_locked"),
-		Draw = animation("locked"),
-		Aim = animation("locked"),
-		Aim_Left = animation("akimbo_locked"),
-		Stock_Aim = animation("alt_changeaim"),
-		Stock_Aim_Left = animation("alt_changeaim_left"),
+		-- This folder has no dedicated draw clip. Never reuse the looping idle
+		-- as Draw, since it can survive the equip transition indefinitely.
+		Aim = animation("aim"),
+		Aim_Left = animation("aim_left"),
+		Stock_Aim = animation("aim"),
+		Stock_Aim_Left = animation("aim_left"),
 		Fire = animation("fire"),
-		Fire_Left = animation("fire"),
+		Fire_Left = animation("fire_left"),
 		Stock_Fire = animation("alt_changefire"),
 		Stock_Fire_Left = animation("alt_changefire_left"),
 		Stock_On = animation("alt_stockon"),
@@ -401,8 +403,14 @@ end
 
 function HonourPistol:_on_unequip()
 	if self.StockAttached then
-		self.Equipped = true
 		Players.LocalPlayer:SetAttribute("CantUnequip", true)
+		task.defer(function()
+			local character = Players.LocalPlayer.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if humanoid and self.tool and self.tool.Parent ~= character then
+				humanoid:EquipTool(self.tool)
+			end
+		end)
 		return
 	end
 	self.Equipped = false

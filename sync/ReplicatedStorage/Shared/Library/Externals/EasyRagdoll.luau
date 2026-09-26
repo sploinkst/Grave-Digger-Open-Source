@@ -9,6 +9,7 @@ local PhysicsService = game:GetService("PhysicsService")
 local AccessoryService = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules")["Server Modules"]:WaitForChild("AccessoryService"))
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 local ClassAppearance = require(ReplicatedStorage.Shared.Library.ClassAppearance)
+local SoundPlayback = require(ReplicatedStorage.Shared.Library.SoundPlayback)
 
 local BodySounds = game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Sounds"):WaitForChild("BodySounds")
 --- Module ---
@@ -189,14 +190,8 @@ local function replaceJoints(character: Model, humanoid: Humanoid)
 			TouchConn = part.Touched:Connect(function(touched)
 				if touched.Parent == character then return end
 
-				local sound:Sound = BodySounds:FindFirstChild("bodyhit" .. math.random(0, #BodySounds:GetChildren())):Clone()
-
-				sound.Parent = part
-				sound:Play()
-
-				sound.Ended:Once(function()
-					sound:Destroy()
-				end)
+				local sound = BodySounds:FindFirstChild("bodyhit" .. math.random(0, #BodySounds:GetChildren()))
+				if sound and sound:IsA("Sound") then SoundPlayback.Play(sound, part) end
 
 				task.delay(2, function()
 					TouchConn:Disconnect()

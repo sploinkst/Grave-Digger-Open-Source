@@ -236,6 +236,13 @@ function Util.register_animations(player: Player, animations_table: table, gunTy
 
 		if success and loadedAnim then
 			Animations[name] = loadedAnim
+			print(string.format(
+				"[WeaponAnimation][%s] registered action=%s source=%s track=%s",
+				tostring(gunType or "<unknown>"),
+				tostring(name),
+				tostring(anim:GetFullName()),
+				tostring(loadedAnim.Name)
+			))
 		else
 			warn("Failed to load animation:", name, loadedAnim)
 		end
@@ -259,9 +266,7 @@ end
 		bulletTemplate    : Instance        -- cosmetic bullet part template
 		bulletContainer   : Instance        -- where cosmetic bullets are parented
 		penetrationLevel  : number?         -- 1-4, drives CanPierceFunction (default 1)
-		trailFadeTime     : number?         -- seconds for trail to fade out (default 0.15)
-		trailColor        : BrickColor?     -- trail color (default White)
-		trailThickness    : number?         -- trail diameter (default 0.07)
+		trailsEnabled     : boolean?        -- disables the authored projectile Trail when false
 		onHit             : (cast, result: RaycastResult, velocity: Vector3) -> ()?
 	}
 
@@ -274,9 +279,6 @@ function Util.setupFastCast(config: {
 	bulletTemplate: Instance,
 	bulletContainer: Instance,
 	penetrationLevel: number?,
-	trailFadeTime: number?,
-	trailColor: BrickColor?,
-	trailThickness: number?,
 	trailsEnabled: boolean?,
 	onHit: ((cast: any, result: RaycastResult, velocity: Vector3) -> ())?,
 	})
@@ -291,7 +293,25 @@ function Util.setupFastCast(config: {
 	rayParams.FilterDescendantsInstances = { config.bulletContainer }
 	behavior.RaycastParams = rayParams
 
-	behavior.CosmeticBulletTemplate  = config.bulletTemplate
+	-- Use the authored projectile used by Prince. It already contains its own
+	-- attachments and Trail; cloning here lets suppressed weapons disable that
+	-- Trail without mutating the shared template for every other firearm.
+	local localPlayer = Players.LocalPlayer
+	local playerData = localPlayer and localPlayer:FindFirstChild("PlayerData")
+	local settings = playerData and playerData:FindFirstChild("Settings Data")
+	local performance = settings and settings:FindFirstChild("Performance")
+	local bulletTrail = performance and performance:FindFirstChild("BulletTrail")
+	local current = bulletTrail and bulletTrail:FindFirstChild("Current")
+	local performanceDisablesTrails = current ~= nil and current:IsA("BoolValue") and current.Value
+	local trailsEnabled = config.trailsEnabled ~= false and not performanceDisablesTrails
+
+	local cosmeticBulletTemplate = config.bulletTemplate:Clone()
+	for _, descendant in cosmeticBulletTemplate:GetDescendants() do
+		if descendant:IsA("Trail") then
+			descendant.Enabled = trailsEnabled
+		end
+	end
+	behavior.CosmeticBulletTemplate  = cosmeticBulletTemplate
 	behavior.CosmeticBulletContainer = config.bulletContainer
 	behavior.AutoIgnoreContainer     = true
 
@@ -341,24 +361,46 @@ function Util.setupFastCast(config: {
 			cast.UserData = {}
 		end
 
-		local shooter    = cast.UserData and cast.UserData.Shooter
-		print("UserData is:", table.concat(cast.UserData, ","))
+		local shooter = cast.UserData and cast.UserData.Shooter
 
 		local hit = result.Instance
 		if not hit then return false end
 
+		-- Character limbs are normally non-collidable (and accessories may be
+		-- transparent), so resolve characters before the generic visual-part
+		-- piercing rules below. Otherwise FastCast pierces straight through a
+		-- player and RayHit never runs, which means no damage remote is sent.
+		local ancestorModel: Model? = nil
+		local ancestor = hit.Parent
+		while ancestor and ancestor ~= workspace do
+			if ancestor:IsA("Model") and ancestor:FindFirstChildOfClass("Humanoid") then
+				ancestorModel = ancestor
+				break
+			end
+			ancestor = ancestor.Parent
+		end
+		local humanoid = ancestorModel and ancestorModel:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			local hitPlayer = Players:GetPlayerFromCharacter(ancestorModel)
+			if shooter and ancestorModel == shooter.Character then
+				return true
+			end
+			if hitPlayer and shooter and hitPlayer ~= shooter
+				and hitPlayer.Team and shooter.Team and hitPlayer.Team == shooter.Team then
+				return true
+			end
+			return false
+		end
+
 		if hit.Name == "innerprotection" then
-			print("innerprotection hit")
 			local faction = hit.Parent.Parent.Name
-			local team = shooter.Team.Name
+			local team = shooter and shooter.Team and shooter.Team.Name
 
 			if (faction == "Empire" and team == "Golden Empire")
 				or (faction == "Nation" and team == "Royal Nation") then
-				print("friendly fire guard passed", faction.Name, team.Name, shooter.Name)
 				return true
 			end
 
-			print("friendly fire guard failed", faction.Name, team.Name, shooter.Name)
 			return false
 		end
 		if hit.Transparency >= 1 then
@@ -396,17 +438,6 @@ function Util.setupFastCast(config: {
 		)
 
 		if tooThick then return false end
-
-		local ancestorModel = hit:FindFirstAncestorWhichIsA("Model")
-		if ancestorModel and ancestorModel:FindFirstChild("Humanoid") then
-			local hitPlayer = Players:GetPlayerFromCharacter(ancestorModel)
-
-			if hitPlayer and shooter and hitPlayer ~= shooter
-				and hitPlayer.Team and shooter.Team
-				and hitPlayer.Team.Name ~= shooter.Team.Name then
-				return false
-			end
-		end
 
 		-- // FX
 
@@ -461,72 +492,8 @@ function Util.setupFastCast(config: {
 		return true
 	end
 
-	-- // Trail helpers
-
-	local fadeTime       = config.trailFadeTime  or 0.15
-	local trailColor     = config.trailColor     or BrickColor.new("White")
-	local trailThickness = config.trailThickness or 0.07
-
-	local castTrails: { [any]: Part } = {}
-	local castOrigins: { [any]: Vector3 } = {}
-
-	local function bulletTrailsDisabled(): boolean
-		local localPlayer = Players.LocalPlayer
-		local playerData = localPlayer and localPlayer:FindFirstChild("PlayerData")
-		local settings = playerData and playerData:FindFirstChild("Settings Data")
-		local performance = settings and settings:FindFirstChild("Performance")
-		local bulletTrail = performance and performance:FindFirstChild("BulletTrail")
-		local current = bulletTrail and bulletTrail:FindFirstChild("Current")
-		return current ~= nil and current:IsA("BoolValue") and current.Value
-	end
-
-	local function updateTrail(cast, origin: Vector3, endpoint: Vector3)
-		if config.trailsEnabled == false then return end
-		if bulletTrailsDisabled() then return end
-		local displacement = endpoint - origin
-		local distance = displacement.Magnitude
-		if distance <= 0.01 then return end
-
-		local trail = castTrails[cast]
-		if not trail then
-			trail = Instance.new("Part")
-			trail.Name = "BulletTrail"
-			trail.Anchored = true
-			trail.CanCollide = false
-			trail.CanQuery = false
-			trail.CanTouch = false
-			trail.CastShadow = false
-			trail.Material = Enum.Material.Neon
-			trail.Color = trailColor.Color
-			trail.Transparency = 0.1
-			trail.Parent = config.bulletContainer
-			castTrails[cast] = trail
-		end
-
-		trail.Size = Vector3.new(trailThickness, trailThickness, distance)
-		trail.CFrame = CFrame.lookAt(origin:Lerp(endpoint, 0.5), endpoint)
-	end
-
-	local function fadeAndDestroy(part: Part)
-		local tween = TweenService:Create(
-			part,
-			TweenInfo.new(fadeTime, Enum.EasingStyle.Linear),
-			{ Transparency = 1 }
-		)
-		tween:Play()
-		tween.Completed:Connect(function()
-			part:Destroy()
-		end)
-	end
-
 	caster.LengthChanged:Connect(function(cast, lastPoint, direction, length, velocity, cosmeticBullet)
 		local endpoint = lastPoint + (direction * length)
-		local origin = castOrigins[cast]
-		if not origin then
-			origin = cast.UserData and cast.UserData.Origin or lastPoint
-			castOrigins[cast] = origin
-		end
-		updateTrail(cast, origin, endpoint)
 
 		if cosmeticBullet then
 			local snapPos = pierceSnapData[cast]
@@ -557,14 +524,6 @@ function Util.setupFastCast(config: {
 		end
 
 		pierceSnapData[cast] = nil
-		castOrigins[cast] = nil
-
-		local trail = castTrails[cast]
-		if trail then
-			castTrails[cast] = nil
-			fadeAndDestroy(trail)
-		end
-
 		-- Only the player who fired this cast gets a hitmarker.
 		local shooter = cast.UserData and cast.UserData.Shooter
 
@@ -596,13 +555,6 @@ function Util.setupFastCast(config: {
 
 	caster.CastTerminating:Connect(function(cast)
 		pierceSnapData[cast] = nil
-		castOrigins[cast] = nil
-
-		local trail = castTrails[cast]
-		if trail then
-			castTrails[cast] = nil
-			fadeAndDestroy(trail)
-		end
 	end)
 
 	return caster, behavior
@@ -784,21 +736,24 @@ end
 
 function Util.hasfullammo(player)
 	local full = true
+	local function toolIsFull(tool: Instance): boolean
+		local reserve = tool:FindFirstChild("Reserve_Ammo")
+		local maximum = tool:FindFirstChild("Max_Ammo")
+		if reserve and maximum and reserve:IsA("NumberValue") and maximum:IsA("NumberValue")
+			and reserve.Value ~= maximum.Value then return false end
+		local pedersenReserve = tool:FindFirstChild("Pedersen_Reserve")
+		local pedersenMaximum = tool:FindFirstChild("Pedersen_Max_Reserve")
+		if pedersenReserve and pedersenMaximum and pedersenReserve:IsA("NumberValue")
+			and pedersenMaximum:IsA("NumberValue") and pedersenReserve.Value ~= pedersenMaximum.Value then return false end
+		return true
+	end
 
 	for _, tool in player.Backpack:GetChildren() do
-		if tool:FindFirstChild("Reserve_Ammo") then
-			if tool.Max_Ammo.Value ~= tool.Reserve_Ammo.Value then
-				full = false
-			end
-		end
+		if not toolIsFull(tool) then full = false end
 	end
 
 	for _, tool in player.Character:GetChildren() do
-		if tool:FindFirstChild("Reserve_Ammo") then
-			if tool.Max_Ammo.Value ~= tool.Reserve_Ammo.Value then
-				full = false
-			end
-		end
+		if not toolIsFull(tool) then full = false end
 	end
 
 	return full
@@ -810,12 +765,18 @@ function Util.setammo(player)
 			tool.Reserve_Ammo.Value = tool.Max_Ammo.Value
 			print("[INTERACTIONMANAGER] Added ammo to " .. tool.Name)
 		end
+		if tool:FindFirstChild("Pedersen_Reserve") and tool:FindFirstChild("Pedersen_Max_Reserve") then
+			tool.Pedersen_Reserve.Value = tool.Pedersen_Max_Reserve.Value
+		end
 	end
 
 	for _, tool in player.Character:GetChildren() do
 		if tool:FindFirstChild("Reserve_Ammo") then
 			tool.Reserve_Ammo.Value = tool.Max_Ammo.Value
 			print("[INTERACTIONMANAGER] Added ammo to " .. tool.Name)
+		end
+		if tool:FindFirstChild("Pedersen_Reserve") and tool:FindFirstChild("Pedersen_Max_Reserve") then
+			tool.Pedersen_Reserve.Value = tool.Pedersen_Max_Reserve.Value
 		end
 	end
 end

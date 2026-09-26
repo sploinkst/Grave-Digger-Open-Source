@@ -565,7 +565,13 @@ function BaseFirearm:_fireProjectile(bulletSpeed, penetrationLevel, damage, knoc
 	activeCast.UserData.Origin     = muzzle.Position
 	activeCast.UserData.Shooter    = LOCAL_PLAYER
 
-	self:_connect_FastCast(muzzle.Position, shootDir, bulletSpeed)
+	self:_connect_FastCast(muzzle.Position, shootDir, bulletSpeed, {
+		bulletTemplate = ReplicatedStorage.Shared.Assets.Guns.Effects.Bullet,
+		bulletContainer = workspace.Game_Details.Effects.Bullets,
+		isPenetration = false,
+		penetrationLevel = self.Penetration_Level,
+		trailsEnabled = self.ShowBulletTrail ~= false,
+	})
 	return true
 end
 
@@ -611,6 +617,7 @@ function BaseFirearm:_fireCastFromMuzzle(muzzle: BasePart, direction: Vector3, b
 		bulletContainer = workspace.Game_Details.Effects.Bullets,
 		isPenetration = false,
 		penetrationLevel = self.Penetration_Level,
+		trailsEnabled = self.ShowBulletTrail ~= false,
 		damage = self.damage,
 		knockbackForce = self.KnockBack_Force,
 	})
@@ -890,8 +897,8 @@ function BaseFirearm:_play_sfx(...)
 	replicant_service.ConnectSfx(LOCAL_PLAYER, ...)
 end
 
-function BaseFirearm:_fire_ammo(count)
-	ammo_communication:FireServer(self.tool, count or 1)
+function BaseFirearm:_fire_ammo(count, reserveName: string?)
+	ammo_communication:FireServer(self.tool, count or 1, reserveName)
 	print("Firing ammo:", count)
 end
 

@@ -22,20 +22,19 @@ local Assets         = ReplicatedStorage.Shared.Assets
 local Holster_Folder = Assets.Guns.Holsters
 local Tool_Folder    = Assets.Guns.ToolModels
 local Guns_Anim_Folder = Assets.Animations.Tools.Guns
-local Anim_Folder    = Guns_Anim_Folder:FindFirstChild("TalonRevolver")
-local Grace_Anim_Folder = Guns_Anim_Folder:FindFirstChild("GraceRevolver")
+local Anim_Folder = Guns_Anim_Folder:FindFirstChild("TalonRevolver")
+local Legacy_Anim_Folder = Guns_Anim_Folder:FindFirstChild("saa")
 local FxFolder       = Assets.Guns.Effects
 
-local SoundFolder = Assets.Guns:WaitForChild("Sounds"):FindFirstChild("TalonRevolver")
-	or Assets.Guns:WaitForChild("Sounds"):WaitForChild("GraceRevolver")
+local SoundFolder = Assets.Guns:WaitForChild("Sounds"):WaitForChild("TalonRevolver")
 local fire_sound  = SoundFolder.fire
 
 -- // Tuning
 
-local FIRE_RATE    = 0.75
+local FIRE_RATE    = 60 / 86
 local BLACK_HAND_FIRE_RATE = 60 / 92
 local FAN_FIRE_RATE = 60 / 170
-local OCELOT_FIRE_RATE = 60 / 170
+local OCELOT_FIRE_RATE = 0.15
 local OCELOT_HIP_SPREAD = 25
 local BULLET_SPEED = 800
 local QUICKDRAW_READY_TIME = 0.75
@@ -43,8 +42,6 @@ local QUICKDRAW_HOLD_SPEED = 0.5
 local MODEL_ALIASES = {
 	"saa",
 	"TalonRevolver",
-	"GraceRevolver",
-	"scho",
 }
 local WEAPON_STATS = {
     name = "'Talon' Army Revolver",
@@ -76,7 +73,7 @@ local WEAPON_STATS = {
     wallpen_studs = 3,
     accuracy = 18,
     moving_accuracy = 38,
-    fire_rate = 0.7,
+    fire_rate = FIRE_RATE,
     black_hand_fire_rate = BLACK_HAND_FIRE_RATE,
     fan_fire_rate = FAN_FIRE_RATE,
     cycle = 0,
@@ -146,17 +143,15 @@ local ANIM_LAYERS: { [string]: number } = {
 	Drop         = 2,
 }
 
-local function animation(name: string, graceName: string?): Animation?
+local function animation(name: string): Animation?
 	local candidate = Anim_Folder and Anim_Folder:FindFirstChild(name)
+	if not candidate then
+		candidate = Legacy_Anim_Folder and Legacy_Anim_Folder:FindFirstChild(name)
+	end
 	if candidate and candidate:IsA("Animation") then
 		return candidate
 	end
-
-	local fallback = Grace_Anim_Folder and Grace_Anim_Folder:FindFirstChild(graceName or name)
-	if fallback and fallback:IsA("Animation") then
-		return fallback
-	end
-
+	warn(string.format("[WeaponAnimation][TalonRevolver] authored clip missing: %s", name))
 	return nil
 end
 
@@ -257,6 +252,8 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	local self = setmetatable(BasePistol.new(info), TalonRevolver)
 
 	self.className   = "TalonRevolver"
+	self.StrictAnimations = true
+	self.AllowAnimationlessAim = true
 	self.item_image  = "rbxassetid://17601078078"
 	self.Designation = "Secondary"
 	self.ANIM_LAYERS = ANIM_LAYERS
@@ -265,21 +262,15 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	self.holster_reference = firstChild(Holster_Folder, {
 		"TalonRevolverHolster",
 		"saaHolster",
-		"GraceRevolverHolster",
-		"schoHolster",
 	})
 	self.model_reference = firstUsableChild(Tool_Folder, MODEL_ALIASES)
 	self.Round = firstChild(Assets.Guns.Rounds, {
 		"TalonRevolver_Round",
 		"saa_Round",
-		"GraceRevolver_Round",
-		"scho_Round",
 	})
 	self.Round_Target_Part = "Left Arm"
 	local modelPartPrefix = if self.model_reference and self.model_reference:FindFirstChild("TalonRevolver_Middle", true)
 		then "TalonRevolver"
-		elseif self.model_reference and self.model_reference:FindFirstChild("GraceRevolver_Middle", true)
-		then "GraceRevolver"
 		else nil
 
 	self.AnimationDrivenGrip = false
@@ -288,7 +279,6 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 		Part0  = "Right Arm",
 		Part1  = self.model_reference and firstBasePart(self.model_reference, {
 			"TalonRevolver_Middle",
-			"GraceRevolver_Middle",
 			"hitbox",
 			"body",
 			"barrel",
@@ -297,35 +287,34 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	}
 
 	self.animations = {
-		Hold    = animation("hipfire", "GraceRevolver_Held"),
-		Draw    = animation("ocelot_draw_spin", "GraceRevolver_Draw"),
-
-		Aim      = animation("hipfire", "GraceRevolver_Aim"),
-		Aim_Left = animation("akimbo_fire", "GraceRevolver_Aim_left"),
-
-		Fire            = animation("stock_fire", "GraceRevolver_Fire"),
-		Fire_Left       = animation("stock_fire_left", "GraceRevolver_Fire_Left"),
-		Fire_Empty      = animation("stock_fire_empty", "GraceRevolver_Fire_Empty"),
-		Fire_Empty_Left = animation("stock_fire_empty_left", "GraceRevolver_Fire_Empty_Left"),
+		Hold            = animation("held"),
+		Aim             = animation("aim"),
+		Aim_Left        = animation("aim_left"),
+		Fire            = animation("fire"),
+		Fire_Empty      = animation("fire_empty"),
 		hipfire         = animation("hipfire"),
 		Quickdraw_Fire  = animation("quickdraw"),
+		Akimbo_Fire       = animation("akimbo_fire"),
+		Akimbo_Fire_Empty = animation("akimbo_fire_empty"),
+		Stock_Fire        = animation("stock_fire"),
+		Stock_Fire_Left   = animation("stock_fire_left"),
+		Stock_Fire_Empty  = animation("stock_fire_empty"),
+		Stock_Fire_Empty_Left = animation("stock_fire_empty_left"),
+		Ocelot_Draw_Spin = animation("ocelot_draw_spin"),
 
-		Short     = animation("fire", "GraceRevolver_Short"),
-		Short_Alt = animation("akimbo_fire", "GraceRevolver_Short_alt"),
-
-		Spin       = animation("akimbo_saa_spins", "GraceRevolver_Spin"),
-		Spin_Start = animation("quickdraw_start", "GraceRevolver_Spin_start"),
+		Spin       = animation("akimbo_saa_spins"),
+		Spin_Start = animation("quickdraw_start"),
 		Quickdraw       = animation("quickdraw"),
 		Quickdraw_Start = animation("quickdraw_start"),
 
-		Reload_Start      = animation("reload_start", "GraceRevolver_Reload_start"),
-		Reload_Start_Vet  = animation("reload_start_vet") or animation("reload_start", "GraceRevolver_Reload_start"),
-		Reload_Loop       = animation("reload_loop", "GraceRevolver_Reload_loop"),
-		Reload_Loop_After = animation("reload_loop_after", "GraceRevolver_Reload_loop_after"),
-		Reload_Loop_After_Twice = animation("reload_loop_after_twice") or animation("reload_loop_after", "GraceRevolver_Reload_loop_after"),
-		Reload_End        = animation("reload_end", "GraceRevolver_Reload_end"),
+		Reload_Start      = animation("reload_start"),
+		Reload_Start_Vet  = animation("reload_start_vet") or animation("reload_start"),
+		Reload_Loop       = animation("reload_loop"),
+		Reload_Loop_After = animation("reload_loop_after"),
+		Reload_Loop_After_Twice = animation("reload_loop_after_twice") or animation("reload_loop_after"),
+		Reload_End        = animation("reload_end"),
 
-		Check  = animation("check", "GraceRevolver_Check"),
+		Check  = animation("check"),
 
 		Drop = Assets.Animations.Tools.Misc.Drop_Pistol,
 	}
@@ -375,10 +364,7 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	self.FireInterval            = WEAPON_STATS.fire_rate
 	local localPlayer = RunService:IsClient() and Players.LocalPlayer or nil
 	local character = localPlayer and localPlayer.Character
-	local isOcelotTrooper = character and character:GetAttribute("EliteClass") == "OcelotTrooper"
-	if isOcelotTrooper then
-		self.animations.Hold = animation("quickdraw") or self.animations.Hold
-	end
+	local isOcelotTrooper = false
 	if character and character:FindFirstChild("perk") and character.perk.Value == "blackhand" then
 		self.FireInterval = WEAPON_STATS.black_hand_fire_rate
 	end
@@ -394,6 +380,8 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	self.Quickdrawing     = false
 	self._quickdrawReady  = false
 	self._quickdrawCancelled = false
+	self.HipFireMode = false
+	self.Alt_Mode = false
 	self._cylinderIndexOffset = 0
 
 	self.FireEmissions = {
@@ -516,10 +504,20 @@ end
 
 function TalonRevolver:setAltMode()
 	if not self.Equipped or self:_isBusy() then return end
+	if self.HipFireMode then
+		self.HipFireMode = false
+		self.Alt_Mode = false
+		self:_cancelQuickdraw()
+		self:notify("Fan fire disabled")
+		self:_restoreBaseDeferred()
+		return
+	end
 
-	-- Legacy alternate action readies one perfectly accurate quick-draw shot.
-	-- Ocelot uses this too: quick-draw is perfectly accurate, while ordinary
-	-- unaimed shots use the faster, less accurate fan-fire path.
+	-- Entering Talon's alternate stance prepares the perfect quick-draw shot.
+	-- Once drawn, unaimed shots fan the hammer until the mode is disabled.
+	self.HipFireMode = true
+	self.Alt_Mode = true
+	self:notify("Fan fire ready")
 	task.spawn(function()
 		self:quickdraw()
 	end)
@@ -629,7 +627,8 @@ function TalonRevolver:fire()
 	if self.Quickdrawing then self:_cancelQuickdraw() end
 
 	local quickdrawShot = self._quickdrawReady == true
-	local fanFiring = self.HipFireMode == true or quickdrawShot or not self.Aiming
+	local fanFiring = not self.Aiming
+		and (self.HipFireMode == true or self.IsOcelotTrooper == true or quickdrawShot)
 	local left = self.current_shoulder ~= "Right"
 	local fireAnim
 	if fanFiring then
@@ -806,7 +805,11 @@ function TalonRevolver:activate()
 	end
 	if (self:_isBusy() and not self.Quickdrawing) or self.Firing then return end
 
-	self:fire()
+	if self.Aiming or self.HipFireMode == true or self.IsOcelotTrooper == true then
+		self:fire()
+	else
+		self:melee()
+	end
 end
 
 -- // Lifecycle hooks
@@ -845,6 +848,8 @@ function TalonRevolver:_on_unequip()
 	self.Reloading = false
 	self.Spinning  = false
 	self.Quickdrawing = false
+	self.HipFireMode = false
+	self.Alt_Mode = false
 
 	local char = game.Players.LocalPlayer.Character
 	if char then
@@ -866,7 +871,10 @@ TalonRevolver.Weight     = 1
 TalonRevolver.Designation = "Secondary"
 TalonRevolver.Display_Name = WEAPON_STATS.name
 TalonRevolver.desc = WEAPON_STATS.desc
+TalonRevolver.lore = WEAPON_STATS.lore
+TalonRevolver.assists = WEAPON_STATS.assists
 TalonRevolver.icon = WEAPON_STATS.icon
+TalonRevolver.tooltype = WEAPON_STATS.tooltype
 TalonRevolver.damage = WEAPON_STATS.damage
 TalonRevolver.range = WEAPON_STATS.range
 TalonRevolver.range_damage = WEAPON_STATS.range_damage

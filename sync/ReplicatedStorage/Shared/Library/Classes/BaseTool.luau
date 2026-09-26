@@ -60,6 +60,22 @@ local NON_RESTARTING_ANIMATIONS = {
 	Locked_Alt = true,
 }
 
+local ACTION_FALLBACK_NAMES = {
+	Fire_Last_Left = { "Fire_Left", "Fire" },
+	Fire_Empty_Left = { "Fire_Left", "Fire" },
+	Fire_Last = { "Fire" },
+	Fire_Empty = { "Fire" },
+	Cycle_Left = { "Cycle" },
+	Check_Empty = { "Check" },
+	Short_Alt = { "Short" },
+	Reload_Start_Vet = { "Reload_Start" },
+	Reload_Empty_Vet = { "Reload_Empty", "Reload_Start" },
+	Reload_End_Vet = { "Reload_End" },
+	Reload_End_Locked = { "Reload_End" },
+	Reload_End_Locked_Vet = { "Reload_End_Locked", "Reload_End" },
+	Reload_Full_Vet = { "Reload_Full", "Reload_Empty", "Reload_Start" },
+}
+
 local function find_animation_track(animations, ...): AnimationTrack?
 	if not animations then return nil end
 	for index = 1, select("#", ...) do
@@ -89,6 +105,22 @@ local function get_prince_animation(name: string): Animation?
 		return clip
 	end
 	return nil
+end
+
+local function get_grace_animation(name: string): Animation?
+	local animations = Assets:FindFirstChild("Animations")
+	local tools = animations and animations:FindFirstChild("Tools")
+	local guns = tools and tools:FindFirstChild("Guns")
+	local grace = guns and guns:FindFirstChild("GraceRevolver")
+	local clip = grace and grace:FindFirstChild(name)
+	if clip and clip:IsA("Animation") then
+		return clip
+	end
+	return nil
+end
+
+local function get_grace_aim_animation(name: string): Animation?
+	return get_grace_animation(if name == "Aim_Left" then "aim_left" else "aim")
 end
 
 local function should_use_prince_hold(self, hold: Animation?): boolean
@@ -232,22 +264,184 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 	end
 	self._setLeftAiming = setLeftAiming
 
+	if self.IsFirearm and not self.animations then
+		self.animations = {}
+	end
 	if self.animations then
-		if self.IsFirearm and not self.StrictAnimations and not self.animations.Draw then
-			local princeDraw = get_prince_animation("PrinceRifle_Draw")
+		-- Weapon folders use `held`; the controller uses the canonical `Hold`
+		-- slot for every non-ADS idle, including sprint and alternate modes.
+		if self.IsFirearm and not self.animations.Hold then
+			self.animations.Hold = self.animations.held or self.animations.Held
+		end
+		if self.IsFirearm and self.WeaponCategory == "Pistol" and not self.animations.Hold then
+			-- Revolvers such as Talon have no authored idle. Keep a pistol-shaped
+			-- stance outside ADS without ever reusing their hip-fire action.
+			self.animations.Hold = get_grace_animation("held")
+		end
+		if self.IsFirearm and not self.animations.Draw then
+			local princeDraw = get_prince_animation("draw")
 			if princeDraw then
 				self.animations.Draw = princeDraw
 			end
 		end
-		if not self.StrictAnimations and should_use_prince_hold(self, self.animations.Hold) then
-			local princeHold = get_prince_animation("PrinceRifle_Held")
+		if should_use_prince_hold(self, self.animations.Hold) then
+			local princeHold = get_prince_animation("held")
 			if princeHold then
 				self.animations.Hold = princeHold
 			end
 		end
+		if self.IsFirearm and self.animations.Fire_Left ~= nil
+			and self.animations.Fire_Left == self.animations.Fire then
+			-- A right-side clip aliased into Fire_Left is not an authored left
+			-- animation. Remove it so the universal Prince fallback below owns the
+			-- left action instead.
+			warn(string.format(
+				"[WeaponAnimation][%s] rejected right-fire alias in Fire_Left; using PrinceRifle.fire_left",
+				tostring(self.className)
+			))
+			self.animations.Fire_Left = nil
+		end
 		self.RegisteredAnimations = utilities_module.register_animations(LOCAL_PLAYER, self.animations, self.AnimationGunType)
 		if not self.RegisteredAnimations then
 			warn("[" .. self.className .. "] Failed to register animations")
+		end
+
+		if self.WeaponCategory == "Pistol" then
+			self.RegisteredAnimations = self.RegisteredAnimations or {}
+			local missingAimAnimations = {}
+			for _, aimName in { "Aim" } do
+				if not self.RegisteredAnimations[aimName] then
+					local graceAim = get_grace_aim_animation(aimName)
+					if graceAim then missingAimAnimations[aimName] = graceAim end
+				end
+			end
+			if next(missingAimAnimations) then
+				local graceTracks = utilities_module.register_animations(
+					LOCAL_PLAYER,
+					missingAimAnimations,
+					"GraceRevolver"
+				)
+				if graceTracks then
+					for aimName, track in pairs(graceTracks) do
+						self.RegisteredAnimations[aimName] = track
+						print(string.format(
+							"[WeaponAnimation][%s] fallback %s -> GraceRevolver.%s",
+							tostring(self.className),
+							aimName,
+							tostring(track.Name)
+						))
+					end
+				end
+			end
+		end
+
+		-- Every firearm must have a valid left-shoulder ADS stance. Modes which
+		-- select their own aim tracks inherit the same Prince left stance when
+		-- their authored variant is absent or failed to load.
+		if self.IsFirearm then
+			self.RegisteredAnimations = self.RegisteredAnimations or {}
+			local princeLeft = get_prince_animation("aim_left")
+			if princeLeft then
+				local leftFallbacks = {}
+				if not self.RegisteredAnimations.Aim_Left then
+					leftFallbacks.Aim_Left = princeLeft
+				end
+				for _, pair in {
+					{ "Hip_Aim", "Hip_Aim_Left" },
+					{ "Shoulder_Aim", "Shoulder_Aim_Left" },
+					{ "Stock_Aim", "Stock_Aim_Left" },
+					{ "Long_Aim", "Long_Aim_Left" },
+					{ "Alt_Changeaim", "Alt_Changeaim_Left" },
+				} do
+					local modeExists = self.RegisteredAnimations[pair[1]]
+						or self.animations[pair[1]]
+						or self.animations[pair[2]]
+					if modeExists and not self.RegisteredAnimations[pair[2]] then
+						leftFallbacks[pair[2]] = princeLeft
+					end
+				end
+
+				if next(leftFallbacks) then
+					local fallbackTracks = utilities_module.register_animations(
+						LOCAL_PLAYER,
+						leftFallbacks,
+						"PrinceRifle"
+					)
+					if fallbackTracks then
+						for aimName, track in pairs(fallbackTracks) do
+							self.RegisteredAnimations[aimName] = track
+							print(string.format(
+								"[WeaponAnimation][%s] fallback %s -> PrinceRifle.aim_left track=%s",
+								tostring(self.className),
+								aimName,
+								tostring(track.Name)
+							))
+						end
+					end
+				end
+			else
+				warn(string.format(
+					"[WeaponAnimation][%s] cannot provide left stance: PrinceRifle.aim_left is missing",
+					tostring(self.className)
+				))
+			end
+		end
+
+		-- Left-shoulder firing follows the same rule as left ADS: keep every
+		-- authored variant, but guarantee a playable Prince fire_left anywhere a
+		-- firearm or one of its alternate modes can request a left firing track.
+		if self.IsFirearm then
+			self.RegisteredAnimations = self.RegisteredAnimations or {}
+			local princeFireLeft = get_prince_animation("fire_left")
+			if princeFireLeft then
+				local fireFallbacks = {}
+				if not self.RegisteredAnimations.Fire_Left then
+					fireFallbacks.Fire_Left = princeFireLeft
+				end
+				for _, pair in {
+					{ "Fire_Last", "Fire_Last_Left" },
+					{ "Fire_Empty", "Fire_Empty_Left" },
+					{ "Hip_Fire", "Hip_Fire_Left" },
+					{ "Hip_Fire_Last", "Hip_Fire_Last_Left" },
+					{ "Hip_Fire_Empty", "Hip_Fire_Empty_Left" },
+					{ "Shoulder_Fire", "Shoulder_Fire_Left" },
+					{ "Shoulder_Fire_Last", "Shoulder_Fire_Last_Left" },
+					{ "Stock_Fire", "Stock_Fire_Left" },
+					{ "Long_Fire", "Long_Fire_Left" },
+					{ "Alt_Changefire", "Alt_Changefire_Left" },
+				} do
+					local modeExists = self.RegisteredAnimations[pair[1]]
+						or self.animations[pair[1]]
+						or self.animations[pair[2]]
+					if modeExists and not self.RegisteredAnimations[pair[2]] then
+						fireFallbacks[pair[2]] = princeFireLeft
+					end
+				end
+
+				if next(fireFallbacks) then
+					local fallbackTracks = utilities_module.register_animations(
+						LOCAL_PLAYER,
+						fireFallbacks,
+						"PrinceRifle"
+					)
+					if fallbackTracks then
+						for fireName, track in pairs(fallbackTracks) do
+							self.RegisteredAnimations[fireName] = track
+							print(string.format(
+								"[WeaponAnimation][%s] fallback %s -> PrinceRifle.fire_left track=%s",
+								tostring(self.className),
+								fireName,
+								tostring(track.Name)
+							))
+						end
+					end
+				end
+			else
+				warn(string.format(
+					"[WeaponAnimation][%s] cannot provide left fire: PrinceRifle.fire_left is missing",
+					tostring(self.className)
+				))
+			end
 		end
 
 		-- Saved KeyframeSequences retain their authoring loop/priority settings,
@@ -259,6 +453,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 					or animName == "Aim_Dual" or animName == "Aim_Normal"
 					or animName == "Hip_Hold" or animName == "Hip_Aim" or animName == "Hip_Aim_Left"
 					or animName == "Shoulder_Hold" or animName == "Shoulder_Aim" or animName == "Shoulder_Aim_Left"
+					or animName == "Sprint"
 					or animName == "Charge"
 				track.Looped = persistent
 
@@ -266,7 +461,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 					-- Character animations stay below this pose while a gun is
 					-- equipped; weapon actions retain their higher priorities.
 					track.Priority = Enum.AnimationPriority.Action2
-				elseif animName == "Aim" or animName == "Aim_Left"
+				elseif animName == "Aim" or animName == "Aim_Left" or animName == "Sprint"
 					or animName == "Aim_Dual" or animName == "Aim_Normal"
 					or animName == "Hip_Aim" or animName == "Hip_Aim_Left" then
 					track.Priority = Enum.AnimationPriority.Action2
@@ -615,6 +810,9 @@ function BaseTool:equip()
 
 	character:SetAttribute("GunEquipped", self.IsFirearm == true)
 	character:SetAttribute("Sprint_Animation", self.className)
+	if self.RegisteredAnimations and self.RegisteredAnimations.Sprint then
+		character:SetAttribute("No_Sprint_Animation", true)
+	end
 	local baseline = WeaponHandling.Baseline[self.className]
 	if self.IsFirearm and baseline then
 		self.draw_speed = baseline.draw
@@ -659,7 +857,10 @@ function BaseTool:equip()
 		-- Weapon master kept the held pose alive under the draw clip from frame
 		-- zero. This matters for partial-body draw animations.
 		local hold = self.RegisteredAnimations and self.RegisteredAnimations.Hold
-		if hold and not hold.IsPlaying then hold:Play(0, 1, 0.25) end
+		if hold and not hold.IsPlaying then
+			print(string.format("[WeaponAnimation][%s] equip base play Hold track=%s", tostring(self.className), tostring(hold.Name)))
+			hold:Play(0, 1, 0.25)
+		end
 		task.delay(self:_drawDuration(), function()
 			if generation ~= self._equipGeneration or not self.Equipped then return end
 			if draw and draw.IsPlaying then draw:Stop(0) end
@@ -895,6 +1096,7 @@ function BaseTool:unequip()
 	self.Equipped = false
 	self.Equipping = false
 	self.Aiming = false
+	self.holding_aim_button = false
 	self.Firing = false
 	self.Reloading = false
 	self.Cycling = false
@@ -908,6 +1110,13 @@ function BaseTool:unequip()
 	local unequipTrack = self.RegisteredAnimations and self.RegisteredAnimations.Unequip
 	if unequipTrack then
 		self:_playAnim("Unequip", true)
+		unequipTrack.Stopped:Once(function()
+			-- Do not let a completed put-away clip or any action from this item
+			-- survive in the Animator after the tool has left the character.
+			if not self.Equipped then self:_stopItemAnimations() end
+		end)
+	else
+		self:_stopItemAnimations()
 	end
 
 	local character = LOCAL_PLAYER.Character
@@ -1088,9 +1297,28 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean, playbackOptio
 		if anims[veteranName] then name = veteranName end
 	end
 	local track = anims[name]
+	if not track then
+		-- Authored sets intentionally omit many state variants. Resolve to the
+		-- closest stance-correct action instead of dropping animation playback or
+		-- borrowing a right-side clip for a left-side action.
+		for _, fallbackName in ACTION_FALLBACK_NAMES[name] or {} do
+			if anims[fallbackName] then
+				name = fallbackName
+				track = anims[fallbackName]
+				break
+			end
+		end
+	end
+	local debugName = track and track.Name or "MISSING"
+	print(string.format("[WeaponAnimation][%s] requested=%s resolved=%s track=%s aiming=%s equipped=%s",
+		tostring(self.className), tostring(requestedName), tostring(name), tostring(debugName),
+		tostring(self.Aiming == true), tostring(self.Equipped == true)))
 	-- Optional clips are absent on some weapons. Callers can skip the action
 	-- or restore idle instead of leaving a busy flag set after an assertion.
-	if not track then return nil end
+	if not track then
+		warn(string.format("[WeaponAnimation][%s] missing animation for action %s", tostring(self.className), tostring(name)))
+		return nil
+	end
 
 
 	if not self.Equipped and not bypass_equiped then
@@ -1233,8 +1461,14 @@ end
 function BaseTool:_killAimTracks()
 	local anims = self.RegisteredAnimations
 	if not anims then return end
-	if anims.Aim      and anims.Aim.IsPlaying      then anims.Aim:Stop(self:_aimDuration())      end
-	if anims.Aim_Left and anims.Aim_Left.IsPlaying then anims.Aim_Left:Stop(self:_aimDuration()) end
+	for _, name in {
+		"Aim", "Aim_Left", "Aim_Dual", "Aim_Normal",
+		"Hip_Aim", "Hip_Aim_Left", "Shoulder_Aim", "Shoulder_Aim_Left",
+		"Stock_Aim", "Stock_Aim_Left", "Long_Aim", "Long_Aim_Left",
+	} do
+		local track = anims[name]
+		if track and track.IsPlaying then track:Stop(self:_aimDuration()) end
+	end
 end
 
 function BaseTool:_restoreBase()
@@ -1242,6 +1476,15 @@ function BaseTool:_restoreBase()
 
 	local anims = self.RegisteredAnimations
 	if not anims then return end
+	local sprinting = self:_if_sprinting()
+	local sprintTrack = anims.Sprint
+	if sprintTrack then
+		if sprinting and not sprintTrack.IsPlaying then
+			sprintTrack:Play(CUT)
+		elseif not sprinting and sprintTrack.IsPlaying then
+			sprintTrack:Stop(CUT)
+		end
+	end
 
 	if self.ANIM_LAYERS then
 		for trackName, layer in pairs(self.ANIM_LAYERS) do
@@ -1252,21 +1495,18 @@ function BaseTool:_restoreBase()
 		end
 	end
 
-	if not self:_if_sprinting() and (self.Aiming or self.holding_aim_button == true) then
-		if self.Aiming then
-			local want = self:_aimTrack()
-			local kill = (want == anims.Aim) and anims.Aim_Left or anims.Aim
-			if kill and kill.IsPlaying then kill:Stop(CUT) end
-			if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT) end
-			if want and not want.IsPlaying then want:Play(self:_aimDuration(), 1, 0.5) end
-		else
-			self:aim()
-		end
+	if not sprinting and self.Aiming then
+		local want = self:_aimTrack()
+		local kill = (want == anims.Aim) and anims.Aim_Left or anims.Aim
+		if kill and kill.IsPlaying then kill:Stop(CUT) end
+		if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT) end
+		if want and not want.IsPlaying then want:Play(self:_aimDuration(), 1, 0.5) end
 
 		self:init_short_mechanic()
 	else
 		self:_killAimTracks()
 		if anims.Hold and not anims.Hold.IsPlaying then
+			print(string.format("[WeaponAnimation][%s] restore base play Hold track=%s", tostring(self.className), tostring(anims.Hold.Name)))
 			anims.Hold:Play(CUT)
 			anims.Hold:AdjustSpeed(0.2)
 		end
@@ -1282,7 +1522,7 @@ function BaseTool:_restoreBaseDeferred()
 end
 
 function BaseTool:_set_sprint_arms(enabled: boolean)
-	if enabled then
+	if enabled or (self.RegisteredAnimations and self.RegisteredAnimations.Sprint) then
 		LOCAL_PLAYER.Character:SetAttribute("No_Sprint_Animation", true)
 	else
 		LOCAL_PLAYER.Character:SetAttribute("No_Sprint_Animation", nil)
@@ -1453,7 +1693,11 @@ end
 function BaseTool:aim()
 	if not self.Equipped then return end 
 	if self.Aiming or self:_isBusy() then return end
-	if not self.RegisteredAnimations or not self.RegisteredAnimations.Aim then return end
+	if not self.RegisteredAnimations then return end
+	if not self.RegisteredAnimations.Aim and self.AllowAnimationlessAim ~= true then
+		warn(string.format("[WeaponAnimation][%s] ADS rejected: Aim is not registered", tostring(self.className)))
+		return
+	end
 	if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
 	if self.Equipping or self.IsShorted then return end
 	if self:_if_jumping() then return end
@@ -1479,7 +1723,13 @@ function BaseTool:aim()
 
 		local aimTrack = self:_aimTrack()
 		if aimTrack then
+			print(string.format("[WeaponAnimation][%s] ADS play %s", tostring(self.className), tostring(aimTrack.Name)))
 			self:_blendAim(aimTrack)
+		elseif self.AllowAnimationlessAim == true then
+			warn(string.format("[WeaponAnimation][%s] ADS active without a track for shoulder %s",
+				tostring(self.className), tostring(self.current_shoulder)))
+		end
+		if aimTrack or self.AllowAnimationlessAim == true then
 			self.ForceBlockFire = false
 			self.Aiming = true
 		end
@@ -1548,6 +1798,7 @@ function BaseTool:endAiming()
 	if not self:_isBusy() then
 		local anims = self.RegisteredAnimations
 		if anims and anims.Hold and not anims.Hold.IsPlaying then
+			print(string.format("[WeaponAnimation][%s] leave ADS play Hold track=%s", tostring(self.className), tostring(anims.Hold.Name)))
 			anims.Hold:Play(CUT)
 			anims.Hold:AdjustSpeed(0.2)
 		end

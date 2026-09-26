@@ -198,7 +198,7 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		Fire = judgementAnimations.fire,
 		Fire_Left = judgementAnimations.fire_left,
 		Draw = judgementAnimations.draw,
-		Unequip = judgementAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
+		Unequip = judgementAnimations.Parent.PrinceRifle:FindFirstChild("unequip"),
 		Reload_Start = judgementAnimations.reload_start,
 		Reload_Start_Vet = judgementAnimations.reload_start_vet,
 		Vet_Roundreplace = judgementAnimations.vet_roundreplace,

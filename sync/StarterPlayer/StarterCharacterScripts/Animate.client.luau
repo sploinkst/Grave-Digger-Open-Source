@@ -56,8 +56,6 @@ local animations_table = {
 	sprint_animation("Sprint_Lean"),
 	sprint_animation("Sprinting_Full"),
 	sprint_animation("Sprint_Arms"),
-	sprint_animation("PrinceRifle_Sprint"),
-	sprint_animation("GraceRevolver_Sprint"),
 
 	animations_folder.Walking.Crouch.CrouchWalk_Forward,
 	animations_folder.Walking.Crouch.CrouchWalk_Left,
@@ -115,8 +113,6 @@ local ORIGINAL_HIP_HEIGHT = humanoid.HipHeight
 local SPRINT_OVERLAY_NAMES = {
 	"Sprint_Lean",
 	"Sprint_Arms",
-	"PrinceRifle_Sprint",
-	"GraceRevolver_Sprint",
 }
 
 -- // (Utils)

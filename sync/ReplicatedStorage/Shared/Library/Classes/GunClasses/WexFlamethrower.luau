@@ -2,6 +2,11 @@ return require(script.Parent.LegacyGunFactory).create({
 	className = "WexFlamethrower",
 	assetName = "wex",
 	AnimationGunType = "Flamethrower",
+	StrictAnimations = true,
+	AnimationMap = {
+		Hold = "held", Aim = "aim", Aim_Left = "aim_left", Draw = "draw",
+		Fire = "firing", Fire_Left = "firing_left",
+	},
 	WeaponCategory = "Flamer",
 	Designation = "Primary",
 	Weight = 3,

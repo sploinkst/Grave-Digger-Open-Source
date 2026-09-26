@@ -3,6 +3,7 @@ local module = {}
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local sound_folder = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Sounds"):WaitForChild('Movement')
 local sfx_replicant = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Events"):WaitForChild("Sounds")
+local SoundPlayback = require(ReplicatedStorage.Shared.Library.SoundPlayback)
 
 local function get_floor()
 	local FloorMaterial = script.Parent.Parent.Humanoid.FloorMaterial
@@ -17,10 +18,7 @@ local function get_sound()
 		-- // select random sound
 		
 		local sound = sound:FindFirstChild("step" .. math.random(1,3))
-		local sound_clone = sound:Clone()
-		sound_clone.Parent = script.Parent.Parent.HumanoidRootPart
-		
-		return sound_clone
+		return sound
 	end
 	
 end
@@ -28,15 +26,8 @@ module.Play_WalkSFX = function()
 	local sound = get_sound()
 	
 	if not sound then return end
-	sound.Volume = 1
-
-
-	sound:Play()
-	sfx_replicant:FireServer(sound, script.Parent.Parent.HumanoidRootPart)
-	
-	sound.Ended:Connect(function()
-		sound:Destroy()
-	end)
+	SoundPlayback.Play(sound, script.Parent.Parent.HumanoidRootPart, { Volume = 1 })
+	sfx_replicant:FireServer(sound, script.Parent.Parent.HumanoidRootPart, sound.PlaybackSpeed, 1, 0, 0)
 end
 
 return module

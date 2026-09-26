@@ -3,6 +3,7 @@ local Module = {}
 -- // Services
 local WorkspaceService = game:GetService("Workspace")
 local ReplicatedStorageService = game:GetService("ReplicatedStorage")
+local SoundPlayback = require(ReplicatedStorageService.Shared.Library.SoundPlayback)
 
 -- // Constants
 local GameSetup = WorkspaceService.Game_Details.Main_Game
@@ -196,8 +197,7 @@ local function playRockImpact(position, normal)
 	end
 	sound.RollOffMaxDistance = 70
 	if sound.SoundId ~= "" and sound.SoundId ~= "rbxassetid://0" then
-		sound:Play()
-		lifetime = math.max(lifetime, sound.TimeLength + 1)
+		SoundPlayback.Play(sound, anchor)
 	end
 	Debris:AddItem(anchor, lifetime)
 end

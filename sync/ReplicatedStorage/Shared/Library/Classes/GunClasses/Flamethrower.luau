@@ -16,6 +16,12 @@ local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
 local crestfallAnimations = Assets.Animations.Tools.Guns:FindFirstChild("Flamethrower")
+local princeAnimations = Assets.Animations.Tools.Guns:FindFirstChild("PrinceRifle")
+
+local function animation(folder: Instance?, name: string): Animation?
+	local clip = folder and folder:FindFirstChild(name)
+	return clip and clip:IsA("Animation") and clip or nil
+end
 local crestfallSounds = GunAssets.Sounds:FindFirstChild("lever") or GunAssets.Sounds:FindFirstChild("Flamethrower")
 local SoundFolder = crestfallSounds or GunAssets.Sounds.CrestfallRifle
 
@@ -113,37 +119,15 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 
 	self.AnimationGunType = "Flamethrower"
 	self.animations = {
-		Draw = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
-		Hold = crestfallAnimations.held,
-		Unequip = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
-
-		Aim      = crestfallAnimations.aim,
-		Aim_Left = crestfallAnimations.aim_left,
-
-		Fire      = crestfallAnimations.fire,
-		Fire_Left = crestfallAnimations.fire_left,
-
-		Reload_Empty = crestfallAnimations.reload_empty,
-		Reload_Start = crestfallAnimations.reload_start,
-		Reload_Loop  = crestfallAnimations.reload_loop,
-
-		Check  = crestfallAnimations.check,
-		Melee1 = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
-		Melee2 = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Melee2,
-
-		Drop  = crestfallAnimations.Parent.Parent.Misc.Drop_Rifle,
-		Short = crestfallAnimations.Parent.PrinceRifle.PrinceRifle_Short,
-
-		Hip_Hold = crestfallAnimations.locked,
-		Hip_Aim = crestfallAnimations.alt_changeaim,
-		Hip_Aim_Left = crestfallAnimations.alt_changeaim_left,
-		Hip_Fire = crestfallAnimations.alt_changefire,
-		Hip_Fire_Left = crestfallAnimations.alt_changeaim_left,
-		Hip_Fire_Empty = crestfallAnimations.alt_changefire_empty,
-		Hip_Fire_Empty_Left = crestfallAnimations.alt_changefire_empty_left,
-		Hip_Fire_Last = crestfallAnimations.alt_changefire_last,
-		Hip_Fire_Last_Left = crestfallAnimations.alt_changefire_last_left,
-		Reload_Empty_Vet = crestfallAnimations:FindFirstChild("reload_empty_vet"),
+		Draw = animation(crestfallAnimations, "draw"),
+		Hold = animation(crestfallAnimations, "held"),
+		Unequip = animation(princeAnimations, "unequip"),
+		Aim = animation(crestfallAnimations, "aim"),
+		Aim_Left = animation(crestfallAnimations, "aim_left"),
+		Fire = animation(crestfallAnimations, "firing"),
+		Fire_Left = animation(crestfallAnimations, "firing_left"),
+		Short = animation(princeAnimations, "short"),
+		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 
 	self.animation_speeds = {
@@ -270,9 +254,10 @@ end
 
 function Crestfall:_aimTrack(): AnimationTrack?
 	if self.HipBraced and self.RegisteredAnimations then
-		return (self.current_shoulder == "Right")
+		local track = (self.current_shoulder == "Right")
 			and self.RegisteredAnimations.Hip_Aim
 			or self.RegisteredAnimations.Hip_Aim_Left
+		if track then return track end
 	end
 	return BaseRifle._aimTrack(self)
 end
@@ -291,9 +276,10 @@ end
 
 function Crestfall:_getFireAnim(): AnimationTrack?
 	if self.HipBraced and self.RegisteredAnimations then
-		return (self.current_shoulder == "Right")
+		local track = (self.current_shoulder == "Right")
 			and self.RegisteredAnimations.Hip_Fire
 			or self.RegisteredAnimations.Hip_Fire_Left
+		if track then return track end
 	end
 	return BaseRifle._getFireAnim(self)
 end
@@ -317,6 +303,9 @@ function Crestfall:fire()
 		else
 			fireAnimation = left and "Fire_Left" or "Fire"
 		end
+	end
+	if not (self.RegisteredAnimations and self.RegisteredAnimations[fireAnimation]) then
+		fireAnimation = left and "Fire_Left" or "Fire"
 	end
 	local fireSound = self.SoundFolder and self.SoundFolder:FindFirstChild("fire")
 	local fired = self:_fireSingleShot({

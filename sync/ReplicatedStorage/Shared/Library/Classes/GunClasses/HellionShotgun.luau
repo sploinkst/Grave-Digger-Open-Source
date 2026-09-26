@@ -166,7 +166,7 @@ function HellionShotgun.new(info: Types.BaseToolCreateInfo): HellionShotgun
 
 	self.AnimationGunType = "HellionShotgun"
 	self.animations = {
-		Hold = animation("locked", rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Held") :: Animation?),
+		Hold = animation("locked", rifleFallback and rifleFallback:FindFirstChild("held") :: Animation?),
 		Aim = animation("aim"),
 		Aim_Left = animation("aim_left"),
 		Fire = animation("fire"),
@@ -186,11 +186,11 @@ function HellionShotgun.new(info: Types.BaseToolCreateInfo): HellionShotgun
 		Reload_Loop = animation("reload_loop"),
 		Check = animation("check"),
 		Check_Empty = animation("check_empty"),
-		Draw = rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Draw") :: Animation?,
-		Unequip = rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Unequip") :: Animation?,
-		Melee1 = rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Melee1") :: Animation?,
-		Melee2 = rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Melee2") :: Animation?,
-		Short = rifleFallback and rifleFallback:FindFirstChild("PrinceRifle_Short") :: Animation?,
+		Draw = rifleFallback and rifleFallback:FindFirstChild("draw") :: Animation?,
+		Unequip = rifleFallback and rifleFallback:FindFirstChild("unequip") :: Animation?,
+		Melee1 = rifleFallback and rifleFallback:FindFirstChild("melee1") :: Animation?,
+		Melee2 = rifleFallback and rifleFallback:FindFirstChild("melee2") :: Animation?,
+		Short = rifleFallback and rifleFallback:FindFirstChild("short") :: Animation?,
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 	self.animation_speeds = {

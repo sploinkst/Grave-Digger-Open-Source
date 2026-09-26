@@ -173,9 +173,9 @@ function JesseRifle.new(info: Types.BaseToolCreateInfo): JesseRifle
 	self.animations = {
 		Hold = getAnimation("locked"),
 		Aim = getAnimation("aim"),
-		Aim_Left = getAnimation("aim"),
+		-- Jesse has no authored left variants; BaseTool supplies Prince's left
+		-- stance/fire instead of mirroring the right-side clips.
 		Fire = getAnimation("fire"),
-		Fire_Left = getAnimation("fire"),
 		Cycle = getAnimation("cycle"),
 		Reload_Start = getAnimation("reload_start"),
 		Reload_Start_Vet = getAnimation("reload_start_vet"),
@@ -195,9 +195,9 @@ function JesseRifle.new(info: Types.BaseToolCreateInfo): JesseRifle
 		Blank_Reload = getAnimation("blank_reload"),
 		Cutoff_On = getAnimation("cutoff_on"),
 		Cutoff_Off = getAnimation("cutoff_off"),
-		Draw = princeAnimations and princeAnimations:FindFirstChild("PrinceRifle_Draw") :: Animation?,
-		Unequip = princeAnimations and princeAnimations:FindFirstChild("PrinceRifle_Unequip") :: Animation?,
-		Short = princeAnimations and princeAnimations:FindFirstChild("PrinceRifle_Short") :: Animation?,
+		Draw = princeAnimations and princeAnimations:FindFirstChild("draw") :: Animation?,
+		Unequip = princeAnimations and princeAnimations:FindFirstChild("unequip") :: Animation?,
+		Short = princeAnimations and princeAnimations:FindFirstChild("short") :: Animation?,
 		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
 	}
 	self.animation_speeds = {
