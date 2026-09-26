@@ -32,6 +32,13 @@ end
 function Handling.Duration(player: Player, duration: number, kind: string): number
 	local character = player.Character
 	local modifier = character and character:GetAttribute(kind == "draw" and "DrawSpeed" or "AimSpeed") or 1
+	if character then
+		modifier *= character:GetAttribute(kind == "draw" and "OrderDrawMultiplier" or "OrderAimMultiplier") or 1
+		modifier *= character:GetAttribute("RallyHandlingMultiplier") or 1
+	end
+	if kind ~= "draw" and character then
+		modifier *= character:GetAttribute("DebuffAimSpeedMultiplier") or 1
+	end
 	if Classes.HasPerk(player, "Black Hand") or Classes.HasPerk(player, "BlackHand") or Classes.HasPerk(player, "blackhand") then
 		modifier *= if kind == "draw" then 1.4 else 1.14
 	end

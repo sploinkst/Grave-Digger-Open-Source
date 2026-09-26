@@ -119,6 +119,7 @@ local ANIM_LAYERS: { [string]: number } = {
 	Reload_Start = 2,
 	Reload_Loop = 2,
 	Reload_End = 2,
+	Vet_Roundreplace = 2,
 	Check = 2,
 	Melee1 = 2,
 	Melee2 = 2,
@@ -200,6 +201,7 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		Unequip = judgementAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
 		Reload_Start = judgementAnimations.reload_start,
 		Reload_Start_Vet = judgementAnimations.reload_start_vet,
+		Vet_Roundreplace = judgementAnimations.vet_roundreplace,
 		Check = judgementAnimations.check,
 		Melee1 = judgementAnimations.melee1,
 		Melee2 = judgementAnimations.melee2,
@@ -213,6 +215,8 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		Aim = 1 / WEAPON_STATS.aim_speed,
 		Aim_Left = 1 / WEAPON_STATS.aim_speed,
 		Reload_Start = 1 / WEAPON_STATS.reload_start,
+		Reload_Start_Vet = 1 / WEAPON_STATS.reload_start,
+		Vet_Roundreplace = 2,
 	}
 
 	self.damage = WEAPON_STATS.damage
@@ -275,6 +279,14 @@ end
 
 function JudgementRifle:endAiming()
 	BaseRifle.endAiming(self)
+end
+
+function JudgementRifle:reload(): boolean
+	return self:_reloadByRound({
+		startAnim = "Reload_Start",
+		loopAnim = false,
+		endAnim = self.IsVeteran and "Vet_Roundreplace" or false,
+	})
 end
 
 function JudgementRifle:setAltMode()

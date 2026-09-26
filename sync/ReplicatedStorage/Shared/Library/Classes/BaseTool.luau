@@ -300,6 +300,8 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 		self._activationConnection:Disconnect()
 	end
 	self._activationConnection = tool.Activated:Connect(function()
+		local character = LOCAL_PLAYER.Character
+		if character and character:GetAttribute("ActionBlocked") then return end
 		self:activate()
 		-- Reload input is shared by every firearm controller.  Gate it here,
 		-- immediately after an attempted shot, so custom gun reload methods
@@ -720,18 +722,20 @@ function BaseTool:equip()
 
 			elseif keyframe == "vfx_cylinder_rotate_other" then
 				if not self.actual_model then return end
-				local middle = self.actual_model:FindFirstChild(self.className .. "_Middle", true)
-					or self.actual_model:FindFirstChild("body", true)
-					or self.actual_model
-				local cylinder = middle and (
-					middle:FindFirstChild(self.className .. "_Cylinder", true)
-					or middle:FindFirstChild("cylinder", true)
-				)
-				local cylinder_motor = if cylinder and cylinder:IsA("Motor6D") then cylinder
-					else cylinder and cylinder:FindFirstChildWhichIsA("Motor6D", true)
+				local cylinder: BasePart? = nil
+				for _, descendant in self.actual_model:GetDescendants() do
+					if descendant:IsA("BasePart") and (
+						descendant.Name == self.className .. "_Cylinder"
+						or string.lower(descendant.Name) == "cylinder"
+					) then
+						cylinder = descendant
+						break
+					end
+				end
+				local cylinder_motor: JointInstance? = nil
 				if not cylinder_motor then
 					for _, descendant in self.actual_model:GetDescendants() do
-						if descendant:IsA("Motor6D") and (
+						if (descendant:IsA("Motor6D") or descendant:IsA("Weld")) and (
 							string.find(string.lower(descendant.Name), "cylinder", 1, true)
 							or descendant.Part1 == cylinder
 						) then
@@ -759,8 +763,16 @@ function BaseTool:equip()
 
 			elseif keyframe == "vfx_cylinder_load" then
 				if not self.actual_model then return end
-				local cylinder = self.actual_model:FindFirstChild(self.className .. "_Cylinder", true)
-					or self.actual_model:FindFirstChild("cylinder", true)
+				local cylinder: BasePart? = nil
+				for _, descendant in self.actual_model:GetDescendants() do
+					if descendant:IsA("BasePart") and (
+						descendant.Name == self.className .. "_Cylinder"
+						or string.lower(descendant.Name) == "cylinder"
+					) then
+						cylinder = descendant
+						break
+					end
+				end
 				if not cylinder then
 					warn("[BASETOOL] vfx_cylinder_load: no cylinder for " .. self.className)
 					return
@@ -776,14 +788,22 @@ function BaseTool:equip()
 
 			elseif keyframe == "vfx_cylinder_empty" then
 				if not self.actual_model then return end
-				local cylinder = self.actual_model:FindFirstChild(self.className .. "_Cylinder", true)
-					or self.actual_model:FindFirstChild("cylinder", true)
+				local cylinder: BasePart? = nil
+				for _, descendant in self.actual_model:GetDescendants() do
+					if descendant:IsA("BasePart") and (
+						descendant.Name == self.className .. "_Cylinder"
+						or string.lower(descendant.Name) == "cylinder"
+					) then
+						cylinder = descendant
+						break
+					end
+				end
 				if not cylinder then
 					warn("[BASETOOL] vfx_cylinder_empty: no cylinder for " .. self.className)
 					return
 				end
 				for _, r in pairs(cylinder:GetChildren()) do
-					if not r:IsA("MeshPart") or not string.find(r.Name, "Round") then continue end
+					if not r:IsA("BasePart") or not string.find(string.lower(r.Name), "round", 1, true) then continue end
 					if r.Transparency == 1 then continue end
 					r.Transparency = 1
 					if r:FindFirstChild("bullet") then r.bullet.Transparency = 1 end
@@ -998,6 +1018,10 @@ end
 function BaseTool:getFireDelay(baseDelay: number): number
 	local character = LOCAL_PLAYER.Character
 	local multiplier = character and character:GetAttribute("OrderFireRateMultiplier") or 1
+	if character and self.auto ~= true then
+		multiplier *= character:GetAttribute("RadioFocusFireRateMultiplier") or 1
+		multiplier *= character:GetAttribute("BulwarkFireRateMultiplier") or 1
+	end
 	return baseDelay / math.max(multiplier, 0.01)
 end
 
@@ -1106,6 +1130,7 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean, playbackOptio
 	end
 	if self.IsFirearm and name:find("Reload") and LOCAL_PLAYER.Character then
 		speed *= LOCAL_PLAYER.Character:GetAttribute("OrderReloadMultiplier") or 1
+		speed *= LOCAL_PLAYER.Character:GetAttribute("MoraleReloadMultiplier") or 1
 		if self.IsVeteran then
 			speed *= self.VeteranReloadSpeed or 1.2
 		end
@@ -1280,6 +1305,7 @@ end
 function BaseTool:melee()
 	if self.Meleeing then return end
 	if game.Players.LocalPlayer:GetAttribute("FreeLook") then return end
+	if LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:GetAttribute("ActionBlocked") then return end
 
 	self.Meleeing = true
 

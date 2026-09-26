@@ -116,12 +116,23 @@ local function getOrderSpeedMultiplier()
 	return Character:GetAttribute("OrderSpeedMultiplier") or 1
 end
 
+local function needsSurgery()
+	if not Character then return false end
+	local data = Character:FindFirstChild("CharacterData")
+	local wounds = data and data:FindFirstChild("Wounds")
+	return wounds ~= nil and #wounds:GetChildren() > 0
+end
+
 local function getMovementSpeedMultiplier()
 	if not Character then
 		return 1
 	end
 
-	return Character:GetAttribute("MovementSpeedMultiplier") or 1
+	local positive = if needsSurgery() then 1 else (Character:GetAttribute("BloodlustWalkMultiplier") or 1)
+	return (Character:GetAttribute("MovementSpeedMultiplier") or 1)
+		* (Character:GetAttribute("DebuffMovementMultiplier") or 1)
+		* (Character:GetAttribute("BurnMovementMultiplier") or 1)
+		* positive
 end
 
 local function getSprintSpeedMultiplier()
@@ -129,7 +140,13 @@ local function getSprintSpeedMultiplier()
 		return 1
 	end
 
-	return Character:GetAttribute("SprintSpeedMultiplier") or 1
+	local positive = 1
+	if not needsSurgery() then
+		positive *= Character:GetAttribute("OrderSprintSpeedMultiplier") or 1
+		positive *= Character:GetAttribute("MoraleSprintMultiplier") or 1
+		positive *= Character:GetAttribute("BloodlustSprintMultiplier") or 1
+	end
+	return (Character:GetAttribute("SprintSpeedMultiplier") or 1) * positive
 end
 
 local function getSprintRampMultiplier()
@@ -137,7 +154,8 @@ local function getSprintRampMultiplier()
 		return 1
 	end
 
-	return Character:GetAttribute("SprintRampMultiplier") or 1
+	return (Character:GetAttribute("SprintRampMultiplier") or 1)
+		* (Character:GetAttribute("OrderSprintRampMultiplier") or 1)
 end
 
 local function isAiming()
@@ -157,11 +175,12 @@ end
 
 local function getAimingSpeed()
 	local orderSpeed = getOrderSpeedMultiplier()
+	local restrictedMultiplier = if Character and Character:GetAttribute("FocusOrder") then 0.65 else RestrictedSpeedMultiplier
 
 	-- Normal aiming movement.
 	if not isADSMovementExempt() then
 		return BaseSpeed
-			* RestrictedSpeedMultiplier
+			* restrictedMultiplier
 			* orderSpeed
 			* getMovementSpeedMultiplier()
 	end
@@ -410,6 +429,10 @@ local function canStartSprint()
 
 	-- NEVER sprint while crouching.
 	if Character:GetAttribute("Crouching") then
+		return false
+	end
+
+	if Character:GetAttribute("SprintBlocked") or Character:GetAttribute("ActionBlocked") then
 		return false
 	end
 
@@ -1078,6 +1101,28 @@ local function bindCharacterConnections()
 		)
 	end
 
+	local function updateJumpEnabled()
+		local blocked = Character:GetAttribute("JumpBlocked") == true
+		Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, not blocked)
+		if blocked then
+			Sprinting = false
+			resetSpeed()
+		end
+	end
+	track(Character:GetAttributeChangedSignal("JumpBlocked"):Connect(updateJumpEnabled))
+	track(Character:GetAttributeChangedSignal("DebuffMovementMultiplier"):Connect(resetSpeed))
+	track(Character:GetAttributeChangedSignal("BurnMovementMultiplier"):Connect(resetSpeed))
+	track(Character:GetAttributeChangedSignal("BloodlustWalkMultiplier"):Connect(resetSpeed))
+	track(Character:GetAttributeChangedSignal("MoraleSprintMultiplier"):Connect(resetSpeed))
+	track(Character:GetAttributeChangedSignal("OrderSprintSpeedMultiplier"):Connect(resetSpeed))
+	track(Character:GetAttributeChangedSignal("SprintBlocked"):Connect(function()
+		if Character:GetAttribute("SprintBlocked") then
+			Sprinting = false
+			resetSpeed()
+		end
+	end))
+	updateJumpEnabled()
+
 	-- // Vault cooldown
 	track(
 		Humanoid.StateChanged:Connect(
@@ -1167,7 +1212,7 @@ local function bindCharacterConnections()
 
 								Humanoid:SetStateEnabled(
 									Enum.HumanoidStateType.Jumping,
-									true
+									Character:GetAttribute("JumpBlocked") ~= true
 								)
 							end
 						end

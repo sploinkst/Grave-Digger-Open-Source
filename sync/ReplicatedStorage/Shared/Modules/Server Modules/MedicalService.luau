@@ -35,7 +35,9 @@ local function health_loop(humanoid)
 		while humanoid.Parent and humanoid.Health > 0 do
 			task.wait(HEALTH_WAIT)
 
-			if humanoid.Health >= 100 and humanoid.Health < humanoid.MaxHealth then
+			local player = Players:GetPlayerFromCharacter(humanoid.Parent)
+			local regenerationBlocked = player and (player:GetAttribute("Clotting") or player:GetAttribute("Sickness"))
+			if not regenerationBlocked and humanoid.Health >= 100 and humanoid.Health < humanoid.MaxHealth then
 				if os.clock() - lastDamageTime >= HEALTH_DELAY then
 					humanoid.Health = math.min(
 						humanoid.Health + HEALTH_TICK,

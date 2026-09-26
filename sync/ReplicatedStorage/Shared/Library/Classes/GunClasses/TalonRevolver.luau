@@ -10,6 +10,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local Types    = require(script.Parent.Parent.Parent.Types)
 local BasePistol = require(script.Parent.Parent.BasePistol)
@@ -321,7 +322,7 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 		Reload_Start_Vet  = animation("reload_start_vet") or animation("reload_start", "GraceRevolver_Reload_start"),
 		Reload_Loop       = animation("reload_loop", "GraceRevolver_Reload_loop"),
 		Reload_Loop_After = animation("reload_loop_after", "GraceRevolver_Reload_loop_after"),
-		Reload_Loop_After_Twice = animation("reload_loop_after_twic") or animation("reload_loop_after_twice") or animation("reload_loop_after", "GraceRevolver_Reload_loop_after"),
+		Reload_Loop_After_Twice = animation("reload_loop_after_twice") or animation("reload_loop_after", "GraceRevolver_Reload_loop_after"),
 		Reload_End        = animation("reload_end", "GraceRevolver_Reload_end"),
 
 		Check  = animation("check", "GraceRevolver_Check"),
@@ -442,6 +443,67 @@ function TalonRevolver:_damageAtDistance(distance: number): number
 	if distance < self.range then return self.damage end
 	if distance <= self.far then return self.range_damage end
 	return self.far_damage
+end
+
+function TalonRevolver:_syncCylinderRounds()
+	local model = self.actual_model
+	if not model then return end
+	local cylinder: BasePart? = nil
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") and string.lower(descendant.Name) == "cylinder" then
+			cylinder = descendant
+			break
+		end
+	end
+	if not cylinder then return end
+
+	for index = 1, self.Max_Capacity do
+		local round = cylinder:FindFirstChild("round" .. index)
+			or cylinder:FindFirstChild("Round" .. index)
+		if round and round:IsA("BasePart") then
+			local visible = index <= self.Capacity
+			round.Transparency = visible and 0 or 1
+			local bullet = round:FindFirstChild("bullet")
+			if bullet and bullet:IsA("BasePart") then bullet.Transparency = visible and 0 or 1 end
+		end
+	end
+end
+
+function TalonRevolver:_getCylinderJoint(): JointInstance?
+	local model = self.actual_model
+	if not model then return nil end
+	local cylinder: BasePart? = nil
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") and string.lower(descendant.Name) == "cylinder" then
+			cylinder = descendant
+			break
+		end
+	end
+	if not cylinder then return nil end
+
+	for _, descendant in model:GetDescendants() do
+		if (descendant:IsA("Motor6D") or descendant:IsA("Weld")) and (
+			descendant.Part1 == cylinder
+			or string.find(string.lower(descendant.Name), "cylinder", 1, true)
+		) then
+			return descendant
+		end
+	end
+	return nil
+end
+
+function TalonRevolver:_rotateCylinder(steps: number, duration: number?)
+	local joint = self:_getCylinderJoint()
+	if not joint then return end
+	if not self._cylinderBaseC0 or self._cylinderJoint ~= joint then
+		self._cylinderJoint = joint
+		self._cylinderBaseC0 = joint.C0
+	end
+	self._cylinderVisualIndex = ((self._cylinderVisualIndex or 0) + steps) % self.Max_Capacity
+	self.cylinder_rotation = self._cylinderVisualIndex + 1
+	local target = self._cylinderBaseC0
+		* CFrame.Angles(math.rad((360 / self.Max_Capacity) * self._cylinderVisualIndex), 0, 0)
+	TweenService:Create(joint, TweenInfo.new(duration or 0.1, Enum.EasingStyle.Quad), { C0 = target }):Play()
 end
 
 -- // Key bindings
@@ -597,6 +659,7 @@ function TalonRevolver:fire()
 	})
 	self._fanFiring = false
 	self._quickdrawShot = false
+	if fired then self:_syncCylinderRounds() end
 	if fired and quickdrawShot then
 		self:_blockFireFor(self.fan_fire_rate or WEAPON_STATS.fan_fire_rate)
 	end
@@ -643,51 +706,51 @@ function TalonRevolver:reload()
 	local startTrack = self:_playAnim(startName)
 	if startTrack then startTrack.Stopped:Wait() end
 	self.Capacity = 0
+	self:_syncCylinderRounds()
 
 	while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
+		local rotationBefore = self.cylinder_rotation
 		local loopTrack = self:_playAnim("Reload_Loop")
 		if loopTrack then loopTrack.Stopped:Wait() end
 		if self._reloadCancelled then break end
 		self.Capacity += 1
 		self:_fire_ammo(1)
+		self:_syncCylinderRounds()
 		self._cylinderIndexOffset = (self._cylinderIndexOffset + 1) % self.Max_Capacity
 		if self.Capacity < self.Max_Capacity then
 			local afterTrack = self:_playAnim("Reload_Loop_After")
 			if afterTrack then afterTrack.Stopped:Wait() end
+		end
+		if self.cylinder_rotation == rotationBefore then
+			self:_rotateCylinder(1, self.reload_loop_after or WEAPON_STATS.reload_loop_after)
+		else
+			self._cylinderVisualIndex = ((tonumber(self.cylinder_rotation) or 1) - 1) % self.Max_Capacity
 		end
 	end
 
 	if not self._reloadCancelled then
 		self:_playAnim("Reload_End").Stopped:Wait()
 
-		-- Reset cylinder rotation
-		local middle = self.actual_model
-			and (
-				self.actual_model:FindFirstChild("TalonRevolver_Middle", true)
-				or self.actual_model:FindFirstChild("GraceRevolver_Middle", true)
-			)
-		local cylinder_motor = middle
-			and (
-				middle:FindFirstChild("TalonRevolver_Cylinder")
-				or middle:FindFirstChild("GraceRevolver_Cylinder")
-			)
-
-		if cylinder_motor and cylinder_motor:IsA("Motor6D") then
-			local pos = cylinder_motor.C0.Position
-			cylinder_motor.C0 = CFrame.new(pos)
-		end
 	else
 		if anims.Reload_Loop  and anims.Reload_Loop.IsPlaying  then anims.Reload_Loop:Stop(0)  end
 		if anims.Reload_Start and anims.Reload_Start.IsPlaying then anims.Reload_Start:Stop(0) end
 		local missingIndexes = math.max(0, self.Max_Capacity - self.Capacity)
 		while missingIndexes >= 2 do
+			local rotationBefore = self.cylinder_rotation
 			local indexTrack = self:_playAnim("Reload_Loop_After_Twice")
 			if indexTrack then indexTrack.Stopped:Wait() else task.wait(self.reload_index_two_time or WEAPON_STATS.reload_index_two_time) end
+			if self.cylinder_rotation == rotationBefore then
+				self:_rotateCylinder(2, self.reload_index_two_time or WEAPON_STATS.reload_index_two_time)
+			end
 			missingIndexes -= 2
 		end
 		if missingIndexes == 1 then
+			local rotationBefore = self.cylinder_rotation
 			local indexTrack = self:_playAnim("Reload_Loop_After")
 			if indexTrack then indexTrack.Stopped:Wait() else task.wait(self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time) end
+			if self.cylinder_rotation == rotationBefore then
+				self:_rotateCylinder(1, self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time)
+			end
 		end
 	end
 
@@ -753,6 +816,9 @@ function TalonRevolver:_on_equip()
 	self:_cacheMotor6D()
 	self:_connectInput()
 	self:_initShoulderTracking()
+	task.defer(function()
+		if self.Equipped then self:_syncCylinderRounds() end
+	end)
 
 	self:_setupFastCast(FxFolder, function(cast, result, velocity)
 		local origin = cast.UserData and cast.UserData.Origin

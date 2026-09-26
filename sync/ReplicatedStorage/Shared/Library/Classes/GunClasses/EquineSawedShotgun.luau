@@ -44,4 +44,5 @@ return require(script.Parent.LegacyGunFactory).create({
 		reload_alt = 1.4,
 	},
 	bulletSpeed = 750,
+	doubleBarrelReload = true,
 })

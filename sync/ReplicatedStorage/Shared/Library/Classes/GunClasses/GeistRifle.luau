@@ -173,6 +173,7 @@ function GeistRifle.new(info: Types.BaseToolCreateInfo): GeistRifle
 	self.Aiming_Number = 75
 	self.MuzzlePartName = "muzzle"
 	self.BulletSpeed = BULLET_SPEED
+	self.ShowBulletTrail = false
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
 	self.Short_Distance = 3.5

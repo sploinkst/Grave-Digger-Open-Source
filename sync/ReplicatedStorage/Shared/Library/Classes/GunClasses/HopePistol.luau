@@ -1,4 +1,4 @@
-return require(script.Parent.LegacyGunFactory).create({
+local HopePistol = require(script.Parent.LegacyGunFactory).create({
 	className = "HopePistol",
 	assetName = "mpistol",
 	AnimationGunType = "HopePistol",
@@ -43,3 +43,51 @@ return require(script.Parent.LegacyGunFactory).create({
 	},
 	bulletSpeed = 850,
 })
+
+-- Alternate Action inspects the dog tag. The authored animation pauses at its
+-- presentation frame while the input is held, matching the original weapon.
+function HopePistol:_onAltInput(pressed: boolean)
+	self._tagInspectHeld = pressed
+	if not pressed or not self.Equipped or self:_isBusyForActivation() then return end
+
+	local animations = self.RegisteredAnimations
+	if not animations or not animations.Tag_Look then return end
+
+	self.Alting = true
+	local generation = (self._tagInspectGeneration or 0) + 1
+	self._tagInspectGeneration = generation
+
+	task.spawn(function()
+		local track = self:_playAnim("Tag_Look", false, {
+			fade = 0.1,
+			speed = 0.5,
+			restart = true,
+			cutFade = 0,
+		})
+		if not track then
+			self.Alting = false
+			return
+		end
+
+		task.wait(1)
+		if generation ~= self._tagInspectGeneration or not self.Equipped then return end
+		self:_setAnimationFrame("Tag_Look", 0.5, 0)
+
+		local pausedAt = os.clock()
+		repeat
+			self:_setAnimationFrame("Tag_Look", 0.5, 0)
+			task.wait()
+		until generation ~= self._tagInspectGeneration
+			or not self.Equipped
+			or (not self._tagInspectHeld and os.clock() - pausedAt >= 0.5)
+
+		if generation ~= self._tagInspectGeneration or not self.Equipped then return end
+		self:_setAnimationFrame("Tag_Look", 0.5, 0.5)
+		task.wait(1.2)
+		if generation ~= self._tagInspectGeneration then return end
+		self.Alting = false
+		self:_restoreBaseDeferred()
+	end)
+end
+
+return HopePistol

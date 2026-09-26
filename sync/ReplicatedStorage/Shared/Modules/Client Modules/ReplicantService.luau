@@ -29,6 +29,7 @@ if not concussionBlur or not concussionBlur:IsA("BlurEffect") then
 end
 local concussionActive = false
 local concussionConnection: RBXScriptConnection? = nil
+local injuryHealthConnection: RBXScriptConnection? = nil
 local heartbeatSound: Sound? = nil
 local lastHeartbeatTime = 0
 
@@ -1203,7 +1204,12 @@ local function StartConcussionEffect()
 end
 
 local function UpdateConcussionState()
-	local state = LocalPlayer:GetAttribute("Concussion") == true
+	local character = LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local injured = humanoid ~= nil
+		and humanoid.Health > 0
+		and humanoid.Health < LowHealthThreshold
+	local state = LocalPlayer:GetAttribute("Concussion") == true or injured
 
 	if state then
 		StartConcussionEffect()
@@ -1212,8 +1218,21 @@ local function UpdateConcussionState()
 	end
 end
 
+local function BindInjuryEffect(character: Model)
+	if injuryHealthConnection then
+		injuryHealthConnection:Disconnect()
+		injuryHealthConnection = nil
+	end
+
+	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
+	injuryHealthConnection = humanoid.HealthChanged:Connect(UpdateConcussionState)
+	UpdateConcussionState()
+end
+
 Module.FlinchLocalPlayer = function(direction)
-	if LocalPlayer:GetAttribute("CantFlinch") or (LocalPlayer.Character and LocalPlayer.Character:GetAttribute("SuppressionImmune")) then
+	if LocalPlayer:GetAttribute("CantFlinch") or (LocalPlayer.Character
+		and (LocalPlayer.Character:GetAttribute("SuppressionImmune")
+			or LocalPlayer.Character:GetAttribute("DamageFlinchImmune"))) then
 		return
 	end
 	if tick() - lastFlinched < flinchCooldown then
@@ -1523,6 +1542,10 @@ function Module.start_module()
 
 	-- // Rebind UI on character respawn
 	LocalPlayer.CharacterAdded:Connect(RebindUI)
+	LocalPlayer.CharacterAdded:Connect(BindInjuryEffect)
+	if LocalPlayer.Character then
+		BindInjuryEffect(LocalPlayer.Character)
+	end
 
 	-- // Watch capture points
 	WatchAllPoints()
@@ -1556,6 +1579,7 @@ function Module.start_module()
 
 	-- // Listen for changes
 	LocalPlayer:GetAttributeChangedSignal("Concussion"):Connect(UpdateConcussionState)
+	UpdateConcussionState()
 
 	LocalPlayer:GetAttributeChangedSignal("Force_Flinch"):Connect(function()
 		print("FLINCHING")

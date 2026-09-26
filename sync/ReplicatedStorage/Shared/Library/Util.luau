@@ -277,6 +277,7 @@ function Util.setupFastCast(config: {
 	trailFadeTime: number?,
 	trailColor: BrickColor?,
 	trailThickness: number?,
+	trailsEnabled: boolean?,
 	onHit: ((cast: any, result: RaycastResult, velocity: Vector3) -> ())?,
 	})
 	local FastCast = require(game:GetService("ReplicatedStorage").Shared.Library.Externals.FastCast)
@@ -467,6 +468,44 @@ function Util.setupFastCast(config: {
 	local trailThickness = config.trailThickness or 0.07
 
 	local castTrails: { [any]: Part } = {}
+	local castOrigins: { [any]: Vector3 } = {}
+
+	local function bulletTrailsDisabled(): boolean
+		local localPlayer = Players.LocalPlayer
+		local playerData = localPlayer and localPlayer:FindFirstChild("PlayerData")
+		local settings = playerData and playerData:FindFirstChild("Settings Data")
+		local performance = settings and settings:FindFirstChild("Performance")
+		local bulletTrail = performance and performance:FindFirstChild("BulletTrail")
+		local current = bulletTrail and bulletTrail:FindFirstChild("Current")
+		return current ~= nil and current:IsA("BoolValue") and current.Value
+	end
+
+	local function updateTrail(cast, origin: Vector3, endpoint: Vector3)
+		if config.trailsEnabled == false then return end
+		if bulletTrailsDisabled() then return end
+		local displacement = endpoint - origin
+		local distance = displacement.Magnitude
+		if distance <= 0.01 then return end
+
+		local trail = castTrails[cast]
+		if not trail then
+			trail = Instance.new("Part")
+			trail.Name = "BulletTrail"
+			trail.Anchored = true
+			trail.CanCollide = false
+			trail.CanQuery = false
+			trail.CanTouch = false
+			trail.CastShadow = false
+			trail.Material = Enum.Material.Neon
+			trail.Color = trailColor.Color
+			trail.Transparency = 0.1
+			trail.Parent = config.bulletContainer
+			castTrails[cast] = trail
+		end
+
+		trail.Size = Vector3.new(trailThickness, trailThickness, distance)
+		trail.CFrame = CFrame.lookAt(origin:Lerp(endpoint, 0.5), endpoint)
+	end
 
 	local function fadeAndDestroy(part: Part)
 		local tween = TweenService:Create(
@@ -481,6 +520,14 @@ function Util.setupFastCast(config: {
 	end
 
 	caster.LengthChanged:Connect(function(cast, lastPoint, direction, length, velocity, cosmeticBullet)
+		local endpoint = lastPoint + (direction * length)
+		local origin = castOrigins[cast]
+		if not origin then
+			origin = cast.UserData and cast.UserData.Origin or lastPoint
+			castOrigins[cast] = origin
+		end
+		updateTrail(cast, origin, endpoint)
+
 		if cosmeticBullet then
 			local snapPos = pierceSnapData[cast]
 			if snapPos then
@@ -492,7 +539,7 @@ function Util.setupFastCast(config: {
 					pierceSnapData[cast] = nil
 				end)
 			else
-				cosmeticBullet.Position = lastPoint + (direction * length)
+				cosmeticBullet.Position = endpoint
 			end
 		end
 	end)
@@ -510,6 +557,7 @@ function Util.setupFastCast(config: {
 		end
 
 		pierceSnapData[cast] = nil
+		castOrigins[cast] = nil
 
 		local trail = castTrails[cast]
 		if trail then
@@ -548,6 +596,7 @@ function Util.setupFastCast(config: {
 
 	caster.CastTerminating:Connect(function(cast)
 		pierceSnapData[cast] = nil
+		castOrigins[cast] = nil
 
 		local trail = castTrails[cast]
 		if trail then
@@ -591,6 +640,10 @@ function Util.applyRecoil(
 	local horizontal = math.rad(horizontalDegrees)
 	local character = game.Players.LocalPlayer.Character
 	local recoilMultiplier = character and character:GetAttribute("OrderRecoilMultiplier") or 1
+	if character then
+		recoilMultiplier *= character:GetAttribute("DebuffRecoilMultiplier") or 1
+		recoilMultiplier *= character:GetAttribute("RallyRecoilMultiplier") or 1
+	end
 	vertical *= recoilMultiplier
 	horizontal *= recoilMultiplier
 

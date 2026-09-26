@@ -288,8 +288,12 @@ function Service.ApplySpawn(player, character)
 		character:SetAttribute("MeleeDamageMultiplier", math.min(character:GetAttribute("MeleeDamageMultiplier") or 1, 0.7))
 	end
 	character:SetAttribute("Marksman", hasPerk(player, "Marksman") or nil)
+	character:SetAttribute("Veteran", hasPerk(player, "Veteran") or nil)
+	character:SetAttribute("Butcher", hasPerk(player, "Butcher") or nil)
+	character:SetAttribute("Hippocratic", hasPerk(player, "Hippocratic") or nil)
 	character:SetAttribute("TunnelRat", hasPerk(player, "Tunnel-rat") or nil)
 	character:SetAttribute("DevilDog", hasPerk(player, "Devil Dog") or nil)
+	character:SetAttribute("Greyhound", hasPerk(player, "Greyhound") or nil)
 	character:SetAttribute("Chemist", hasPerk(player, "Chemist") or nil)
 	character:SetAttribute("Apparition", hasPerk(player, "Apparition") or nil)
 	-- Snapshot weapons with the class; menu edits cannot be changed until respawn

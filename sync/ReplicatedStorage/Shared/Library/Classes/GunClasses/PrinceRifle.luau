@@ -47,14 +47,20 @@ local ANIM_LAYERS: { [string]: number } = {
 	Unequip      = 2,
 	Check        = 2,
 	Reload_Empty = 2,
+	Reload_Empty_Vet = 2,
 	Reload_Start = 2,
+	Reload_Start_Vet = 2,
 	Reload_Loop  = 2,
 	Reload_End   = 2,
+	Reload_End_Vet = 2,
 	Reload_Alt   = 2,
+	Reload_Alt_Extra = 2,
 	Alt_Mode_On  = 2,
 	Alt_Mode_Off = 2,
 	Melee1       = 2,
 	Melee2       = 2,
+	Alt_Melee1   = 2,
+	Alt_Melee2   = 2,
 }
 
 local FIREARM_CONFIG = {
@@ -132,10 +138,14 @@ local FIREARM_CONFIG = {
 		Cycle = AnimFolder.PrinceRifle_Cycle,
 
 		Reload_Empty = AnimFolder.PrinceRifle_Reload_Empty,
+		Reload_Empty_Vet = AnimFolder.PrinceRifle_Reload_Empty_Vet,
 		Reload_Start = AnimFolder.PrinceRifle_Reload_Start,
+		Reload_Start_Vet = AnimFolder.PrinceRifle_Reload_Start_Vet,
 		Reload_Loop  = AnimFolder.PrinceRifle_Reload_Loop,
 		Reload_End   = AnimFolder.PrinceRifle_Reload_End,
+		Reload_End_Vet = AnimFolder.PrinceRifle_Reload_End_Vet,
 		Reload_Alt   = AnimFolder.PrinceRifle_Reload_Alt,
+		Reload_Alt_Extra = AnimFolder.PrinceRifle_Reload_Alt_Extra,
 
 		Alt_Mode_On  = AnimFolder.PrinceRifle_Alt_Mode_On,
 		Alt_Mode_Off = AnimFolder.PrinceRifle_Alt_Mode_Off,
@@ -143,6 +153,8 @@ local FIREARM_CONFIG = {
 		Check  = AnimFolder.PrinceRifle_Check,
 		Melee1 = AnimFolder.PrinceRifle_Melee1,
 		Melee2 = AnimFolder.PrinceRifle_Melee2,
+		Alt_Melee1 = AnimFolder.PrinceRifle_AltMelee1,
+		Alt_Melee2 = AnimFolder.PrinceRifle_AltMelee2,
 
 		Drop  = AnimFolder.Parent.Parent.Misc.Drop_Rifle,
 		Short = AnimFolder.PrinceRifle_Short,
@@ -155,10 +167,14 @@ local FIREARM_CONFIG = {
 		Aim          = 2.857143,
 		Aim_Left     = 2.857143,
 		Reload_Start = 0.625,
+		Reload_Start_Vet = 0.625,
 		Reload_Empty = 0.689655,
+		Reload_Empty_Vet = 0.689655,
 		Reload_Loop  = 1.538462,
 		Reload_End   = 0.689655,
+		Reload_End_Vet = 0.689655,
 		Reload_Alt   = 0.714286,
+		Reload_Alt_Extra = 0.714286,
 		Melee1       = 1.428571,
 		Melee2       = 1.428571,
 	},
@@ -316,6 +332,10 @@ function PrinceRifle:_damageAtDistance(distance: number): number
 	return BaseRifle._damageAtDistance(self, distance)
 end
 
+function PrinceRifle:_getMeleeAnimationName(index: number): string
+	return (self.Alt_Mode and "Melee" or "Alt_Melee") .. index
+end
+
 function PrinceRifle:fire()
 	if self.Checking then return end
 	if self.CantFire then return end
@@ -356,7 +376,8 @@ function PrinceRifle:_autoCycle()
 		end
 
 		self:_stopAllExcept()
-		local reloadTrack = self:_playAnim("Reload_Alt")
+		local reloadName = self.Capacity > 0 and "Reload_Alt_Extra" or "Reload_Alt"
+		local reloadTrack = self:_playAnim(reloadName)
 		if reloadTrack then reloadTrack.Stopped:Wait() end
 
 		if self:_hasReserveAmmo() then

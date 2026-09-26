@@ -75,7 +75,9 @@ local function damage(player, target, amount, instant)
 	end
 	
 	if targetPlayer then targetPlayer:SetAttribute("LastTagged", player.Name) end
-	local finalDamage = instant and humanoid.Health or amount * (target:GetAttribute("MeleeDamageMultiplier") or 1)
+	local finalDamage = instant and humanoid.Health or amount
+		* (target:GetAttribute("MeleeDamageMultiplier") or 1)
+		* (target:GetAttribute("DamageTakenMultiplier") or 1)
 	require(script.Parent.ReplicantManager).play_damage_sound(target, finalDamage, player)
 	humanoid:TakeDamage(finalDamage)
 end
@@ -145,7 +147,22 @@ local function inspire(player, character, state)
 	state.inspire = os.clock() + 30
 	character:SetAttribute("InspireReadyAt", workspace:GetServerTimeNow() + 30)
 	remote:FireClient(player, "Inspire")
-	-- Morale/Clotting gameplay is deferred until those status systems exist.
+	local statusService = require(script.Parent.StatusService)
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	for _, ally in ipairs(Players:GetPlayers()) do
+		local allyCharacter = ally.Character
+		local allyHumanoid = allyCharacter and allyCharacter:FindFirstChildOfClass("Humanoid")
+		local allyRoot = allyCharacter and allyCharacter:FindFirstChild("HumanoidRootPart")
+		if allyHumanoid and allyHumanoid.Health > 0 and allyRoot
+			and (ally == player or (player.Team and ally.Team == player.Team))
+			and (allyRoot.Position - root.Position).Magnitude <= 80 then
+			statusService.GiveStatus(ally, "MoraleStatus", 33)
+			if statusService.HasStatus(ally, "ClottingStatus") then
+				statusService.RemoveStatus(ally, "ClottingStatus")
+			end
+		end
+	end
 
 end
 

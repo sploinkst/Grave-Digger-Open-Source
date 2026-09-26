@@ -15,6 +15,11 @@ if not eventsFolder:FindFirstChild("Datapush") then
 	datapush.Name = "Datapush"
 	datapush.Parent = eventsFolder
 end
+if not eventsFolder:FindFirstChild("Presentation") then
+	local presentation = Instance.new("RemoteEvent")
+	presentation.Name = "Presentation"
+	presentation.Parent = eventsFolder
+end
 
 -- Publish the authored tool folders once; clients register sequences on demand.
 local authoredAnimations = ServerStorage:FindFirstChild("animations")

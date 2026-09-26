@@ -7,6 +7,21 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local replicant_folder = ReplicatedStorage.Shared.Library.Events
 
+local PresentationEvent = replicant_folder:FindFirstChild("Presentation") :: RemoteEvent?
+if not PresentationEvent then
+	PresentationEvent = Instance.new("RemoteEvent")
+	PresentationEvent.Name = "Presentation"
+	PresentationEvent.Parent = replicant_folder
+end
+
+function module.SendPresentation(player: Player, action: string, payload)
+	PresentationEvent:FireClient(player, action, payload)
+end
+
+function module.BroadcastPresentation(action: string, payload)
+	PresentationEvent:FireAllClients(action, payload)
+end
+
 local fastcast_replicant = replicant_folder.FastCast
 local vfx_replicant = replicant_folder.VFX
 local sfx_replicant = replicant_folder.Sounds
@@ -102,6 +117,14 @@ local function handleLethalHipfireHeadshot(player: Player, attacker: Model, targ
 	tryUnlockOcelotTrooper(player, attacker, targetPlayer, weaponName, hitData)
 end
 
+local function awardKillMorale(player: Player, target: Model?, headshot: boolean?)
+	local character = player.Character
+	if not character or not target then return end
+	local duration = if target:GetAttribute("IsShockTrooper") then 60
+		elseif headshot and character:GetAttribute("Marksman") then 12 else nil
+	if duration then status_service.GiveStatus(player, "MoraleStatus", duration) end
+end
+
 local jesseGrenadeEvent=replicant_folder:FindFirstChild("JesseGrenade")::RemoteEvent?
 if not jesseGrenadeEvent then jesseGrenadeEvent=Instance.new("RemoteEvent"); jesseGrenadeEvent.Name="JesseGrenade"; jesseGrenadeEvent.Parent=replicant_folder end
 local dualWieldEvent = replicant_folder:FindFirstChild("DualWield") :: RemoteEvent?
@@ -140,6 +163,8 @@ end
 
 local function applyKnockback(part: BasePart, forceDir: Vector3, force: number)
 	if part.Anchored then return end
+	local character = part:FindFirstAncestorOfClass("Model")
+	if character and character:GetAttribute("KnockbackImmune") then return end
 
 	local bodyVelocity = Instance.new("BodyVelocity")
 	bodyVelocity.Velocity = Vector3.new(forceDir.X * force, 2, forceDir.Z * force)
@@ -422,9 +447,9 @@ function module.start_module()
 		"I'm being ignored, this is un-acceptable.", "Why is no one listening to me?",
 	}
 	local callMultipliers = {
-		Advance = { speed = 1.15, reload = 1, fireRate = 1, focus = 1, recoil = 1 },
-		Defend = { speed = 1, reload = 1.15, fireRate = 1.15, focus = 1, recoil = 1 },
-		Focus = { speed = 1, reload = 1, fireRate = 1, focus = 1.15, recoil = 0.8 },
+		Advance = { sprint = 1.2, ramp = 0.75 },
+		Defend = { damage = 0.9, surgery = 1.15 },
+		Focus = { focus = 1.2, draw = 1.3, aim = 1.2, recoil = 0.8 },
 	}
 	WhistleEquipEvent.OnServerEvent:Connect(function(player, equipped)
 		if type(equipped) ~= "boolean" then return end
@@ -588,7 +613,8 @@ function module.start_module()
 			local root = character and character:FindFirstChild("HumanoidRootPart")
 			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 			if character and root and humanoid then
-				local speed, reload, fireRate, focus, recoil = 1, 1, 1, 1, 1
+				local sprint, ramp, damage, surgery = 1, 1, 1, 1
+				local focus, draw, aim, recoil = 1, 1, 1, 1
 				local applied = {}
 				for officer, calls in pairs(officerCalls) do
 					local officerCharacter = officer.Character
@@ -608,17 +634,33 @@ function module.start_module()
 								-- Same-name orders from several Officers never stack.
 								applied[call.order] = true
 								local bonus = callMultipliers[call.order]
-								speed *= bonus.speed; reload *= bonus.reload; fireRate *= bonus.fireRate
-								focus *= bonus.focus; recoil *= bonus.recoil
+								sprint *= bonus.sprint or 1; ramp *= bonus.ramp or 1
+								damage *= bonus.damage or 1; surgery *= bonus.surgery or 1
+								focus *= bonus.focus or 1; draw *= bonus.draw or 1
+								aim *= bonus.aim or 1; recoil *= bonus.recoil or 1
 							end
 						end
 					end
 				end
-				character:SetAttribute("OrderSpeedMultiplier", speed)
-				character:SetAttribute("OrderReloadMultiplier", reload)
-				character:SetAttribute("OrderFireRateMultiplier", fireRate)
+				if recipient:GetAttribute("RadioFocus") then
+					applied.Advance = true; applied.Defend = true; applied.Focus = true
+					sprint = 1.2; ramp = 0.75; damage = 0.9; surgery = 1.15
+					focus = 1.2; draw = 1.3; aim = 1.2; recoil = 0.8
+				end
+				character:SetAttribute("OrderSprintSpeedMultiplier", sprint)
+				character:SetAttribute("OrderSprintRampMultiplier", ramp)
+				character:SetAttribute("DamageTakenMultiplier", damage)
+				character:SetAttribute("OrderSurgeryMultiplier", surgery)
 				character:SetAttribute("OrderFocusMultiplier", focus)
+				character:SetAttribute("OrderDrawMultiplier", draw)
+				character:SetAttribute("OrderAimMultiplier", aim)
 				character:SetAttribute("OrderRecoilMultiplier", recoil)
+				character:SetAttribute("KnockbackImmune", applied.Defend or nil)
+				character:SetAttribute("ClottingImmune", applied.Defend or nil)
+				character:SetAttribute("DamageFlinchImmune", applied.Defend or nil)
+				character:SetAttribute("AdvanceOrder", applied.Advance or nil)
+				character:SetAttribute("DefendOrder", applied.Defend or nil)
+				character:SetAttribute("FocusOrder", applied.Focus or nil)
 			end
 		end
 	end)
@@ -637,7 +679,11 @@ function module.start_module()
 					local c=target.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); local r=c and c:FindFirstChild("HumanoidRootPart")
 					if h and r and h.Health>0 and (r.Position-position).Magnitude<=18 then
 						h:TakeDamage(99*(c:GetAttribute("ExplosiveDamageMultiplier") or 1))
-						if result and result.Instance:IsDescendantOf(c) then h:TakeDamage(5); status_service.GiveStatus(target,"RagdollStatus",direction); task.delay(2,function() if target.Parent then status_service.RemoveStatus(target,"RagdollStatus") end end) end
+						status_service.GiveStatus(target, "ConcussionStatus", 3)
+						if result and result.Instance:IsDescendantOf(c) then
+							h:TakeDamage(5)
+							status_service.GiveStatus(target, "KnockdownStatus", 2)
+						end
 					end
 				end
 			end
@@ -678,6 +724,7 @@ function module.start_module()
 
 	hit_connection.OnServerEvent:Connect(function(player, hitData, damage: number, knockback_force: number)
 		if not hitData then return end
+		if player.Character and player.Character:GetAttribute("DamageDealingBlocked") then return end
 
 		local instance: BasePart = hitData.Instance
 		local position: Vector3  = hitData.Position
@@ -685,6 +732,7 @@ function module.start_module()
 
 		if not instance or not instance:IsDescendantOf(workspace) then return end
 		if not direction then return end
+		if require(script.Parent.HunterKitService).TriggerHit(instance) then return end
 
 		local character = player.Character
 		if not character then return end
@@ -763,6 +811,9 @@ function module.start_module()
 
 				if hitPlayer then
 					status_service.GiveStatus(hitPlayer, "ConcussionStatus")
+					if weaponName == "JudgementRifle" or weaponName == "AntiMaterialRifle" then
+						status_service.GiveStatus(hitPlayer, "KnockdownStatus", 2)
+					end
 				end
 				markHelmetProtectedShot(hitCharacter, player, hitData)
 
@@ -786,6 +837,7 @@ function module.start_module()
 					module.pop_helmet(hitCharacter, helmet, true, player)
 					if canDamageThroughHelmet(weaponName, character) then
 						humanoid:TakeDamage(humanoid.MaxHealth)
+						awardKillMorale(player, hitCharacter, true)
 						player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
 					end
 				elseif action == HelmetRules.Action.KnockOff then
@@ -800,9 +852,11 @@ function module.start_module()
 				return
 			elseif isHellion then
 				local finalDamage = (damage or 0) * 1.2
+					* (hitCharacter:GetAttribute("DamageTakenMultiplier") or 1)
 				module.play_damage_sound(hitCharacter, finalDamage, player)
 				humanoid:TakeDamage(finalDamage)
 				if humanoid.Health <= 0 then
+					awardKillMorale(player, hitCharacter, true)
 					handleLethalHipfireHeadshot(player, character, hitPlayer, weaponName, hitData, position)
 					player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
 				end
@@ -811,21 +865,37 @@ function module.start_module()
 				module.play_damage_sound(hitCharacter, humanoid.Health, player)
 				handleLethalHipfireHeadshot(player, character, hitPlayer, weaponName, hitData, position)
 				humanoid.Health = 0
+				awardKillMorale(player, hitCharacter, true)
 				player:SetAttribute("RoundKills", player:GetAttribute("RoundKills") + 1)
 				return
 			end
 		end
 
 		-- Normal damage
+		damage = (damage or 0) * (hitCharacter:GetAttribute("DamageTakenMultiplier") or 1)
 		module.play_damage_sound(hitCharacter, damage, player)
-		humanoid:TakeDamage(damage or 0)
+		humanoid:TakeDamage(damage)
+		if hitPlayer then
+			if weaponName == "AntiMaterialRifle" then
+				status_service.GiveStatus(hitPlayer, "ConcussionStatus")
+				status_service.GiveStatus(hitPlayer, "KnockdownStatus", 2)
+			elseif weaponName == "JudgementIncendiaryRifle" then
+				status_service.GiveStatus(hitPlayer, "MinorBurnStatus", 5)
+			elseif weaponName == "WexFlamethrower" or weaponName == "Flamethrower" then
+				status_service.GiveStatus(hitPlayer, "LethalBurningStatus")
+			end
+			if character:GetAttribute("Class") == "Officer" then
+				status_service.GiveStatus(hitPlayer, "SpottedStatus", 10,
+					character:GetAttribute("EliteClass") == "Radio Trooper" or player:GetAttribute("RadioFocus"), player)
+			end
+		end
 		
 		if humanoid.Health < 100 and hitPlayer then
 			status_service.GiveStatus(hitPlayer, "WoundStatus", nil, instance.Name)
-			status_service.GiveStatus(hitPlayer, "ConcussionStatus")
 		end
 		
 		if humanoid.Health <= 0 then
+			awardKillMorale(player, hitCharacter, false)
 			player:SetAttribute("RoundKills", player:GetAttribute("RoundKills") + 1)
 		end
 	end)
@@ -844,6 +914,12 @@ function module.start_module()
 			or (root.Position - targetRoot.Position).Magnitude > 12 then return end
 		status_service.RemoveStatus(healed, "WoundStatus")
 		status_service.RemoveStatus(healed, "ConcussionStatus")
+		if status_service.HasStatus(healed, "ClottingStatus") then
+			status_service.RemoveStatus(healed, "ClottingStatus")
+		end
+		if character:GetAttribute("Hippocratic") then
+			status_service.GiveStatus(healed, "MoraleStatus", 40)
+		end
 		local health = if sender ~= healed then character:GetAttribute("AllyHealHealth") or 100 else 100
 		humanoid.Health = math.max(humanoid.Health, math.min(humanoid.MaxHealth, health))
 	end)
@@ -856,9 +932,9 @@ function module.start_module()
 	end)
 	
 	status_connection.OnServerEvent:Connect(function(player, status, enabled: boolean)
-		if enabled then
-			status_service.GiveStatus(player, status)
-		else
+		-- The client only needs this remote to finish its own concussion treatment.
+		-- Status application is server-authoritative.
+		if status == "ConcussionStatus" and enabled ~= true then
 			status_service.RemoveStatus(player, status)
 		end
 	end)
@@ -910,6 +986,7 @@ function module.start_module()
 	
 	melee_connection.OnServerEvent:Connect(function(player, targetCharacter, meleeRange, damage, weaponName)
 		local character = player.Character
+		if character and character:GetAttribute("DamageDealingBlocked") then return end
 		if not character or typeof(targetCharacter) ~= "Instance" or not targetCharacter:IsA("Model")
 			or not character:FindFirstChild("HumanoidRootPart") or not targetCharacter:FindFirstChild("HumanoidRootPart")
 			or type(meleeRange) ~= "number" or type(damage) ~= "number" or damage ~= damage or meleeRange ~= meleeRange
@@ -948,8 +1025,17 @@ function module.start_module()
 		-- Instant kills retain their behavior; normal melee receives class armor.
 		if not fromBehind and appliedDamage < humanoid.MaxHealth then
 			appliedDamage *= targetCharacter:GetAttribute("MeleeDamageMultiplier") or 1
+			appliedDamage *= targetCharacter:GetAttribute("DamageTakenMultiplier") or 1
 		end
 		humanoid:TakeDamage(fromBehind and humanoid.MaxHealth or appliedDamage)
+		if healthBefore > 0 and humanoid.Health <= 0 then
+			awardKillMorale(player, targetCharacter, false)
+			local lowerWeapon = string.lower(weaponName)
+			if character:GetAttribute("Butcher")
+				and (string.find(lowerWeapon, "knife", 1, true) or string.find(lowerWeapon, "mace", 1, true)) then
+				status_service.GiveStatus(player, "MoraleStatus")
+			end
+		end
 		if isCavalrySword and healthBefore > 0 and humanoid.Health <= 0 then
 			local factionName = targetPlayer and targetPlayer.Team and targetPlayer.Team.Name or "Unknown"
 			local dogtagName = string.find(string.lower(factionName), "empire", 1, true) and "Empire" or "Nation"
@@ -959,6 +1045,10 @@ function module.start_module()
 			local counter = dogtags and dogtags:FindFirstChild(dogtagName)
 			if counter and counter:IsA("NumberValue") then counter.Value += 1 end
 			player:SetAttribute(dogtagName .. "Dogtags", (player:GetAttribute(dogtagName .. "Dogtags") or 0) + 1)
+			module.SendPresentation(player, "dogtag", {
+				name = targetPlayer and targetPlayer.DisplayName or dogtagName,
+				duration = 3,
+			})
 		end
 		print("Applied damage to", targetCharacter.Name)
 	end)

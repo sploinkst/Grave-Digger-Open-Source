@@ -23,6 +23,8 @@ local ammo_communication = events.Ammo
 local FX_BULLET_HOLE = ReplicatedStorage.Shared.Assets.Guns.Effects.BulletHole
 local CUT = 0.06
 local MIN_AMMO_CHECK_DISPLAY_TIME = 1
+-- At 150 RPM or faster the shot pulse reads as permanent crosshair growth.
+local FAST_CROSSHAIR_INTERVAL = 0.4
 
 local function hasVeteranPerk(): boolean
 	local player = LOCAL_PLAYER
@@ -528,6 +530,7 @@ function BaseFirearm:_setupFastCast(fxFolder: Folder, onHitCallback: (any, Rayca
 		bulletTemplate   = fxFolder.Bullet,
 		bulletContainer  = workspace.Game_Details.Effects.Bullets,
 		penetrationLevel = self.Penetration_Level or 1,
+		trailsEnabled    = self.ShowBulletTrail ~= false,
 		onHit            = onHitCallback,
 	})
 end
@@ -710,17 +713,21 @@ function BaseFirearm:_reloadByRound(options): boolean
 
 	local startAnim = if options and options.startAnim ~= nil then options.startAnim else "Reload_Start"
 	local loopAnim = if options and options.loopAnim ~= nil then options.loopAnim else "Reload_Loop"
+	local alternateLoopAnim = options and options.alternateLoopAnim
 	local endAnim = if options and options.endAnim ~= nil then options.endAnim else "Reload_End"
-	if self.Capacity <= 0 and self.RegisteredAnimations and self.RegisteredAnimations.Reload_Empty then
+	if (not options or options.useEmptyAnim ~= false)
+		and self.Capacity <= 0 and self.RegisteredAnimations and self.RegisteredAnimations.Reload_Empty then
 		startAnim = "Reload_Empty"
 	end
 	local function veteranAnimation(name)
-		if not self.IsVeteran or not name or not self.RegisteredAnimations then return name end
+		if (options and options.useVeteranAnimations == false)
+			or not self.IsVeteran or not name or not self.RegisteredAnimations then return name end
 		local veteranName = name .. "_Vet"
 		return self.RegisteredAnimations[veteranName] and veteranName or name
 	end
 	startAnim = veteranAnimation(startAnim)
 	loopAnim = veteranAnimation(loopAnim)
+	alternateLoopAnim = veteranAnimation(alternateLoopAnim)
 	endAnim = veteranAnimation(endAnim)
 	local startTrack = startAnim and self:_playAnim(startAnim) or nil
 	if startTrack then startTrack.Stopped:Wait() end
@@ -734,9 +741,10 @@ function BaseFirearm:_reloadByRound(options): boolean
 	local loopIndex = 0
 	while self.Equipped and self.Capacity < self.Max_Capacity and reserveAmmo.Value > 0 and not self._reloadCancelled do
 		loopIndex += 1
+		local currentLoopAnim = alternateLoopAnim and loopIndex % 2 == 0 and alternateLoopAnim or loopAnim
 		-- Weapon master blended into the first insertion for 0.05 seconds, then
 		-- hard-cut each subsequent loop so repeated rounds stay frame-accurate.
-		local loopTrack = loopAnim and self:_playAnim(loopAnim, false, {
+		local loopTrack = currentLoopAnim and self:_playAnim(currentLoopAnim, false, {
 			fade = if loopIndex > 1 then 0 else 0.05,
 			restart = true,
 			cutFade = 0,
@@ -749,8 +757,10 @@ function BaseFirearm:_reloadByRound(options): boolean
 		if self._reloadCancelled then break end
 		if options and options.stopAfterLoop and options.stopAfterLoop(self) then break end
 
-		self.Capacity += 1
-		self:_fire_ammo(options and options.ammoCost or 1)
+		local roundsPerLoop = options and options.roundsPerLoop or 1
+		local roundsLoaded = math.min(roundsPerLoop, self.Max_Capacity - self.Capacity, reserveAmmo.Value)
+		self.Capacity += roundsLoaded
+		self:_fire_ammo(roundsLoaded * (options and options.ammoCost or 1))
 	end
 
 	if not self._reloadCancelled then
@@ -894,6 +904,12 @@ function BaseFirearm:_enable_aiming_ui(max_aiming: number)
 
 	local scoped = aiming_gui.Scoped_In.main
 	local down, left, right, up = scoped.down, scoped.left, scoped.right, scoped.up
+	-- Preserve the authored size. Shot feedback must always return here rather
+	-- than using the size of an in-progress tween as its next starting point.
+	if not self._crosshairBaseSize then self._crosshairBaseSize = scoped.Size end
+	if self._crosshairKickTween then self._crosshairKickTween:Cancel() end
+	if self._crosshairReturnTween then self._crosshairReturnTween:Cancel() end
+	scoped.Size = self._crosshairBaseSize
 
 	local character = game.Players.LocalPlayer.Character or game.Players.LocalPlayer.CharacterAdded:Wait()
 	local root = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 5)
@@ -962,20 +978,33 @@ function BaseFirearm:_enable_aiming_ui(max_aiming: number)
 end
 
 function BaseFirearm:_bounce_scoped_ui()
+	-- Automatic weapons already communicate sustained recoil through the gun
+	-- and camera. Fast semi-automatic weapons have the same visual problem, so
+	-- neither category is allowed to resize the crosshair.
+	local fireInterval = self:_effectiveFireDelay(self.FireInterval or self.fire_rate or 0)
+	if self.auto == true or (fireInterval > 0 and fireInterval <= FAST_CROSSHAIR_INTERVAL) then return end
 	local Scoped_In = LOCAL_PLAYER.PlayerGui.Aiming.Scoped_In
 	local main = Scoped_In.main
 
-	local currentSize = main.Size.X.Offset
-	local kickSize = currentSize + 40
+	local baseSize = self._crosshairBaseSize or main.Size
+	self._crosshairBaseSize = baseSize
+	if self._crosshairKickTween then self._crosshairKickTween:Cancel() end
+	if self._crosshairReturnTween then self._crosshairReturnTween:Cancel() end
+	self._crosshairBounceToken = (self._crosshairBounceToken or 0) + 1
+	local token = self._crosshairBounceToken
+	main.Size = baseSize
+	local kickSize = UDim2.new(
+		baseSize.X.Scale, baseSize.X.Offset + 40,
+		baseSize.Y.Scale, baseSize.Y.Offset + 40
+	)
 
-	TweenService:Create(main, TweenInfo.new(0.03, Enum.EasingStyle.Linear), {
-		Size = UDim2.new(0, kickSize, 0, kickSize)
-	}):Play()
+	self._crosshairKickTween = TweenService:Create(main, TweenInfo.new(0.03, Enum.EasingStyle.Linear), {Size = kickSize})
+	self._crosshairKickTween:Play()
 
 	task.delay(0.03, function()
-		TweenService:Create(main, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = UDim2.new(0, currentSize, 0, currentSize)
-		}):Play()
+		if token ~= self._crosshairBounceToken or not main.Parent then return end
+		self._crosshairReturnTween = TweenService:Create(main, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = baseSize})
+		self._crosshairReturnTween:Play()
 	end)
 end
 
@@ -983,6 +1012,10 @@ function BaseFirearm:_disable_aiming_ui()
 	local aiming_gui = LOCAL_PLAYER.PlayerGui.Aiming
 	aiming_gui.Regular_Crosshair.Visible = true
 	aiming_gui.Scoped_In.Visible = false
+	self._crosshairBounceToken = (self._crosshairBounceToken or 0) + 1
+	if self._crosshairKickTween then self._crosshairKickTween:Cancel(); self._crosshairKickTween = nil end
+	if self._crosshairReturnTween then self._crosshairReturnTween:Cancel(); self._crosshairReturnTween = nil end
+	if self._crosshairBaseSize then aiming_gui.Scoped_In.main.Size = self._crosshairBaseSize end
 	if self.character_connection then
 		self.character_connection:Disconnect()
 		self.character_connection = nil

@@ -171,12 +171,17 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 
 		Fire      = animation("fire"),
 		Fire_Left = animation("fire_left"),
+		Fire_Empty = animation("fire_empty"),
+		Fire_Empty_Left = animation("fire_empty_left"),
+		Fire_Last = animation("fire_last"),
+		Fire_Last_Left = animation("fire_last_left"),
 
 		Reload_Empty = animation("reload_empty"),
 		Reload_Start = animation("reload_start"),
 		Reload_Loop  = animation("reload_loop"),
 
 		Check = animation("check"),
+		Check_Empty = animation("check_empty"),
 
 		Hip_Hold = animation("locked"),
 		Hip_Aim = animation("alt_changeaim"),

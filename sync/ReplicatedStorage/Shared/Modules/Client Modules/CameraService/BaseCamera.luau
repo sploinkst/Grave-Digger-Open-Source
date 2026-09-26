@@ -20,8 +20,9 @@ BaseCamera.__index = BaseCamera
 local LocalPlayer = PlayerService.LocalPlayer
 local Camera      = Workspace.CurrentCamera
 
-local aiming_ui = LocalPlayer.PlayerGui:WaitForChild("Aiming"):WaitForChild("Scoped_In")
-local cursor_ui = LocalPlayer.PlayerGui.Aiming.Regular_Crosshair
+local mainGui = LocalPlayer.PlayerGui:WaitForChild("main")
+local coreGame = mainGui:WaitForChild("core_game")
+local cursor_ui = coreGame:WaitForChild("genericcrosshair")
 
 local Values = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Configuration"):WaitForChild("Character_Variables"):WaitForChild("Camera"):WaitForChild("BaseCamera")
 local CameraOffsets = {
@@ -724,81 +725,33 @@ end
 local function restore_local_helmet_transparency()
 	for part, modifier in pairs(original_local_transparencies) do
 		if part and part.Parent then
-			part.Transparency = modifier
+			part.LocalTransparencyModifier = modifier
 		end
 	end
 	original_local_transparencies = {}
 end
 
-local function should_hide(part)
-	print("[SHOULD_HIDE] Checking:", part:GetFullName())
-
-	if transparency_table[part.Name] then
-		print("[SHOULD_HIDE] Hidden because part name is in transparency_table:", part.Name)
-		return true
+-- Cache and update only the local head and helmet parts. This runs once when
+-- first-person state changes and once for each newly-added relevant BasePart;
+-- it never rescans the full character in response to an unrelated descendant.
+local function set_first_person_head_visibility(character: Instance, isFirstPerson: boolean)
+	if not isFirstPerson then
+		restore_local_helmet_transparency()
+		return
 	end
 
-	if part.Name == "Handle" then
-		print("[SHOULD_HIDE] Hidden because part is a Handle")
-		return true
-	end
-
-	local parent = part.Parent
-	local grandparent = parent and parent.Parent
-
-	if parent and transparency_table[parent.Name] then
-		print(
-			"[SHOULD_HIDE] Hidden because parent is in transparency_table:",
-			parent.Name
-		)
-		return true
-	end
-
-	if grandparent and transparency_table[grandparent.Name] then
-		print(
-			"[SHOULD_HIDE] Hidden because grandparent is in transparency_table:",
-			grandparent.Name
-		)
-		return true
-	end
-
-	local current = part
-
-	while current do
-		if string.find(current.Name, "Helmet", 1, true) then
-			print(
-				"[SHOULD_HIDE] Found Helmet ancestor:",
-				current:GetFullName()
-			)
-
-			local p = current.Parent
-			local gp = p and p.Parent
-
-			if p and p.Name == "Equipment" then
-				print(
-					"[SHOULD_HIDE] Hidden because Helmet parent is Equipment:",
-					p:GetFullName()
-				)
-
-				return true
-			end
-
-			if gp and gp.Name == "Equipment" then
-				print(
-					"[SHOULD_HIDE] Hidden because Helmet grandparent is Equipment:",
-					gp:GetFullName()
-				)
-
-				return true
-			end
+	local head = character:FindFirstChild("Head")
+	for _, descendant in character:GetDescendants() do
+		if not descendant:IsA("BasePart") then continue end
+		local isHeadPart = head ~= nil and (descendant == head or descendant:IsDescendantOf(head))
+		if not isHeadPart and not is_helmet_view_part(descendant) then
+			continue
 		end
-
-		current = current.Parent
+		if original_local_transparencies[descendant] == nil then
+			original_local_transparencies[descendant] = descendant.LocalTransparencyModifier
+		end
+		descendant.LocalTransparencyModifier = 1
 	end
-
-	print("[SHOULD_HIDE] Not hidden:", part:GetFullName())
-
-	return false
 end
 
 local function handle_object(part, isFirstPerson)
@@ -812,17 +765,20 @@ local function handle_object(part, isFirstPerson)
 
 	if is_helmet_view_part(part) then
 		if original_local_transparencies[part] == nil then
-			original_local_transparencies[part] = part.Transparency
+			original_local_transparencies[part] = part.LocalTransparencyModifier
 		end
 
-		part.Transparency = if isFirstPerson
+		part.LocalTransparencyModifier = if isFirstPerson
 			then 1
 			else original_local_transparencies[part]
 
 		return
 	end
 
-	local hide = should_hide(part)
+	-- The old should_hide scan walked every ancestor for every changed part and
+	-- emitted several debug messages per call. Keep it retired; the explicit
+	-- helmet, holster, and equipment rules below own first-person visibility.
+	local hide = false
 
 	-- // Explicitly hide class-applied helmet parts in first person.
 	local current = part
@@ -952,7 +908,7 @@ local function first_person_transparency(character: Instance, isFirstPerson: boo
 	-- When leaving first person, restore ONLY parts we personally hid,
 	-- then bail out without touching anything else or setting up watchers.
 	if not isFirstPerson then
-		restore_local_helmet_transparency()
+		set_first_person_head_visibility(character, false)
 		for part, originalTransparency in pairs(original_transparencies) do
 			if part and part.Parent then
 				TweenService:Create(part, first_person_transparency_tween, { Transparency = originalTransparency }):Play()
@@ -962,14 +918,18 @@ local function first_person_transparency(character: Instance, isFirstPerson: boo
 		return
 	end
 
-	for _, part in ipairs(character:GetDescendants()) do
-		handle_object(part, isFirstPerson)
-	end
+	set_first_person_head_visibility(character, true)
 
 	transparency_descendant_connection = character.DescendantAdded:Connect(function(descendant)
+		if not descendant:IsA("BasePart") then return end
 		task.defer(function()
-			for _, part in ipairs(character:GetDescendants()) do
-				handle_object(part, isFirstPerson)
+			local head = character:FindFirstChild("Head")
+			local isHeadPart = head ~= nil and (descendant == head or descendant:IsDescendantOf(head))
+			if isHeadPart or is_helmet_view_part(descendant) then
+				if original_local_transparencies[descendant] == nil then
+					original_local_transparencies[descendant] = descendant.LocalTransparencyModifier
+				end
+				descendant.LocalTransparencyModifier = 1
 			end
 		end)
 	end)

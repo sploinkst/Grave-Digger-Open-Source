@@ -8,7 +8,6 @@
 --!optimize 2
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Debris = game:GetService("Debris")
 
 local Types    = require(script.Parent.Parent.Parent.Types)
 local BasePistol = require(script.Parent.Parent.BasePistol)
@@ -206,9 +205,11 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 		Aim               = 1 / WEAPON_STATS.aim_speed,
 		Aim_Left          = 1 / WEAPON_STATS.aim_speed,
 		Reload_Start      = 1 / WEAPON_STATS.reload_start,
+		Reload_Start_Vet  = 1 / WEAPON_STATS.reload_start,
 		Reload_Loop       = 1 / WEAPON_STATS.reload_loop,
 		Reload_Loop_After = 1 / WEAPON_STATS.reload_loop_after,
 		Reload_End        = 1 / WEAPON_STATS.reload_end,
+		Reload_End_Vet    = 1 / WEAPON_STATS.reload_end,
 	}
 
 	self.damage                  = WEAPON_STATS.damage
@@ -337,14 +338,9 @@ function GraceRevolver:spin()
 	local now = os.clock()
 	self._spinCount = if now - self._lastSpinAt <= 2 then self._spinCount + 1 else 1
 	self._lastSpinAt = now
-	if self._spinCount >= 5 then
-		local character = game.Players.LocalPlayer.Character
-		if character then
-			local morale = Instance.new("StringValue")
-			morale.Name = "morale"
-			morale.Parent = character
-			Debris:AddItem(morale, 50)
-		end
+	local buffEvent = ReplicatedStorage.Shared.Library.Events:WaitForChild("BuffAbility")
+	buffEvent:FireServer("GraceSpin")
+	if self._spinCount >= 6 then
 		self._spinCount = 0
 	end
 
@@ -372,7 +368,9 @@ function GraceRevolver:reload()
 
 	if self.Spinning then self:_cancelSpin() end
 
-	self.RegisteredAnimations["Reload_Start"]:AdjustWeight(1)
+	local startName = self.IsVeteran and "Reload_Start_Vet" or "Reload_Start"
+	local endName = self.IsVeteran and "Reload_End_Vet" or "Reload_End"
+	self.RegisteredAnimations[startName]:AdjustWeight(1)
 	self.RegisteredAnimations["Reload_Loop"]:AdjustWeight(1)
 	self:_set_sprint_arms(true)
 	self:_stopLayer(2)
@@ -381,7 +379,7 @@ function GraceRevolver:reload()
 	self._reloadCancelled = false
 
 	game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
-	self:_playAnim("Reload_Start").Stopped:Wait()
+	self:_playAnim(startName).Stopped:Wait()
 	self.Capacity = 0
 
 	while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
@@ -393,7 +391,7 @@ function GraceRevolver:reload()
 	end
 
 	if not self._reloadCancelled then
-		self:_playAnim("Reload_End").Stopped:Wait()
+		self:_playAnim(endName).Stopped:Wait()
 
 		-- Reset cylinder rotation
 		local cylinder_motor: Motor6D =
@@ -406,7 +404,8 @@ function GraceRevolver:reload()
 	else
 		local anims = self.RegisteredAnimations
 		if anims.Reload_Loop  and anims.Reload_Loop.IsPlaying  then anims.Reload_Loop:Stop(0)  end
-		if anims.Reload_Start and anims.Reload_Start.IsPlaying then anims.Reload_Start:Stop(0) end
+		local start = anims[startName]
+		if start and start.IsPlaying then start:Stop(0) end
 	end
 
 	self.Reloading        = false

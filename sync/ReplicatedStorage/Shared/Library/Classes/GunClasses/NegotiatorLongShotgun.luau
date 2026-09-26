@@ -6,6 +6,7 @@ return require(script.Parent.LegacyGunFactory).create({
 	WeaponCategory = "Shotgun",
 	Designation = "Primary",
 	Weight = 2,
+	preferLongAnimations = true,
 	LegacyStats = {
 		name = "'Negotiator' Long Shotgun",
 		desc = "Modification of the 'Negotiator' Pocket Shotgun",

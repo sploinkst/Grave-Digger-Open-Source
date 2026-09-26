@@ -182,6 +182,8 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 
 		Reload_Empty = animation("reload_empty"),
 		Reload_Empty_Vet = animation("reload_empty_vet"),
+		Reload_Clip_Start_Empty = animation("reload_clip_start_empty"),
+		Reload_Clip = animation("reload_clip"),
 		Reload_Start = animation("reload_start"),
 		Reload_Start_Vet = animation("reload_start_vet"),
 		Reload_Loop  = animation("reload_loop"),
@@ -197,6 +199,8 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 		Cycle = 1 / WEAPON_STATS.cycle,
 		Reload_Start = 1 / WEAPON_STATS.reload_start,
 		Reload_Empty = 1 / WEAPON_STATS.reload_empty,
+		Reload_Clip_Start_Empty = 1 / WEAPON_STATS.reload_start,
+		Reload_Clip = 1 / WEAPON_STATS.reload_full,
 		Reload_Loop = 1 / WEAPON_STATS.reload_loop,
 		Reload_End = 1 / WEAPON_STATS.reload_end,
 	}
@@ -396,9 +400,22 @@ function VolkRifle:fire()
 end
 
 function VolkRifle:reload()
+	if self.IsVeteran and self.Capacity <= 0 then
+		self:_reloadByRound({
+			startAnim = "Reload_Clip_Start_Empty",
+			useEmptyAnim = false,
+			loopAnim = "Reload_Clip",
+			roundsPerLoop = self.Max_Capacity,
+			endAnim = "Reload_End",
+		})
+		return
+	end
+
 	self:_reloadByRound({
 		startAnim = "Reload_Start",
-		startLoadsRound = true,
+		-- The veteran opening does not insert a round. Every missing round must
+		-- play the hand-loading loop when a round is still chambered.
+		startLoadsRound = not self.IsVeteran,
 		loopAnim = "Reload_Loop",
 		endAnim = "Reload_End",
 	})

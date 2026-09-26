@@ -267,7 +267,11 @@ function Medkit:_play_heal_sequence(wound_value: StringValue, is_last_wound: boo
 			end
 		end)
 
-		track:Play(0.1, 1, self.Character:GetAttribute("SurgerySpeed") or 1)
+		local surgerySpeed = (self.Character:GetAttribute("SurgerySpeed") or 1)
+			* (self.Character:GetAttribute("OrderSurgeryMultiplier") or 1)
+			* (self.Character:GetAttribute("BulwarkSurgeryMultiplier") or 1)
+			* (self.Character:GetAttribute("RallySurgeryMultiplier") or 1)
+		track:Play(0.1, 1, surgerySpeed)
 
 		while track.IsPlaying do
 			if can_cancel() and (not self.HoldingM1 or not self.Equipped) then
@@ -292,6 +296,11 @@ end
 
 function Medkit:_perform_surgery(wound: StringValue, target: Model?)
 	if self.Healing then return false end
+	local surgeryCharacter = target or self.Character
+	if surgeryCharacter:GetAttribute("SurgeryBlocked") then
+		self:notify("They’re kind of burning right now.")
+		return false
+	end
 
 	self.Healing = true
 	self.Character:SetAttribute("SprintBlocked", true)

@@ -64,6 +64,7 @@ local WEAPON_STATS = {
 
 local ANIM_LAYERS: { [string]: number } = {
 	Hold = 0,
+	Pedersen_Hold = 0,
 	Aim = 0,
 	Aim_Left = 0,
 	Fire = 1,
@@ -80,6 +81,21 @@ local ANIM_LAYERS: { [string]: number } = {
 	Reload_Start = 2,
 	Reload_Loop = 2,
 	Reload_End = 2,
+	Reload_Clip = 2,
+	Reload_Clip_Start_Empty = 2,
+	Reload_Clip_Start_One = 2,
+	Reload_Empty = 2,
+	Reload_Heavyloop = 2,
+	Cycle_Pedersen = 1,
+	Pedersen_Bolt_Place = 2,
+	Pedersen_Bolt_Remove = 2,
+	Pedersen_Charge = 2,
+	Pedersen_Device_Off = 2,
+	Pedersen_Device_On = 2,
+	Pedersen_Jam = 2,
+	Pedersen_Mag_Eject = 2,
+	Pedersen_Mag_In = 2,
+	Pedersen_Mag_Out = 2,
 	Check = 2,
 	Melee1 = 2,
 	Melee2 = 2,
@@ -132,6 +148,7 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 	self.AnimationGunType = "WhisperRifle"
 	self.animations = {
 		Hold = whisperAnimations.held,
+		Pedersen_Hold = whisperAnimations.locked_alt,
 		Draw = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Draw,
 		Unequip = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Unequip,
 		Aim = whisperAnimations.aim,
@@ -143,6 +160,21 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 		Reload_Start_Vet = whisperAnimations.reload_start_vet,
 		Reload_Loop =whisperAnimations.reload_loop,
 		Reload_End = whisperAnimations.reload_end,
+		Reload_Empty = whisperAnimations.reload_empty,
+		Reload_Clip = whisperAnimations.reload_clip,
+		Reload_Clip_Start_Empty = whisperAnimations.reload_clip_start_empty,
+		Reload_Clip_Start_One = whisperAnimations.reload_clip_start_one,
+		Reload_Heavyloop = whisperAnimations.reload_heavyloop,
+		Cycle_Pedersen = whisperAnimations.cycle_pedersen,
+		Pedersen_Bolt_Place = whisperAnimations.pedersen_bolt_place,
+		Pedersen_Bolt_Remove = whisperAnimations.pedersen_bolt_remove,
+		Pedersen_Charge = whisperAnimations.pedersen_charge,
+		Pedersen_Device_Off = whisperAnimations.pedersen_device_off,
+		Pedersen_Device_On = whisperAnimations.pedersen_device_on,
+		Pedersen_Jam = whisperAnimations.pedersen_jam,
+		Pedersen_Mag_Eject = whisperAnimations.pedersen_mag_eject,
+		Pedersen_Mag_In = whisperAnimations.pedersen_mag_in,
+		Pedersen_Mag_Out = whisperAnimations.pedersen_mag_out,
 		Check = whisperAnimations.check,
 		Melee1 = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Melee1,
 		Melee2 = whisperAnimations.Parent.PrinceRifle.PrinceRifle_Melee2,
@@ -166,6 +198,7 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 	self.SoundFolder = whisperSounds
 	self.BulletSpeed = 1200
 	self.FireEmissions = nil
+	self.ShowBulletTrail = false
 
 	self.PedersenMode = false
 	self.PedersenCapacity = 0
@@ -189,16 +222,37 @@ function WhisperRifle:_damageAtDistance(distance: number): number
 	return self.far_damage
 end
 
+function WhisperRifle:_restoreBase()
+	VolkRifle._restoreBase(self)
+	local animations = self.RegisteredAnimations
+	if not animations or not self.Equipped or self.Aiming or self:_isBusy() then return end
+	local normalHold = animations.Hold
+	local pedersenHold = animations.Pedersen_Hold
+	if self.PedersenMode then
+		if normalHold and normalHold.IsPlaying then normalHold:Stop(0.06) end
+		if pedersenHold and not pedersenHold.IsPlaying then pedersenHold:Play(0.06) end
+	elseif pedersenHold and pedersenHold.IsPlaying then
+		pedersenHold:Stop(0.06)
+	end
+end
+
 function WhisperRifle:setAltMode()
 	if not self.Equipped or self:_isBusy() or self.Alting then return end
 	if self.Aiming then self:endAiming() end
 
 	self.Alting = true
 	self:_stopAllExcept()
-	local switchTrack = self:_playAnim(self.PedersenMode and "Alt_Mode_Off" or "Alt_Mode_On")
-	if not switchTrack then switchTrack = self:_playAnim("Short") end
-	if switchTrack then switchTrack:AdjustSpeed(math.max(switchTrack.Length / PEDERSEN_SWITCH_TIME, 0.01)) end
-	task.wait(PEDERSEN_SWITCH_TIME)
+	local switchSequence = if self.PedersenMode
+		then { "Pedersen_Mag_Out", "Pedersen_Device_Off", "Pedersen_Bolt_Place", "Cycle_Pedersen" }
+		else { "Pedersen_Bolt_Remove", "Pedersen_Device_On", "Pedersen_Mag_In", "Pedersen_Charge" }
+	for _, animationName in switchSequence do
+		local track = self:_playAnim(animationName)
+		if track then
+			track:AdjustSpeed(math.max(track.Length / (PEDERSEN_SWITCH_TIME / #switchSequence), 0.01))
+			track.Stopped:Wait()
+		end
+		if not self.Equipped then break end
+	end
 
 	if self.Equipped then
 		self.PedersenMode = not self.PedersenMode
@@ -229,7 +283,13 @@ function WhisperRifle:fire()
 		if self.Cycling then return end
 		self.Cycling = true
 		self:notify("Clearing jam...")
-		task.wait(PEDERSEN_JAM_CLEAR_TIME)
+		local jamTrack = self:_playAnim("Pedersen_Jam")
+		if jamTrack then
+			jamTrack:AdjustSpeed(math.max(jamTrack.Length / PEDERSEN_JAM_CLEAR_TIME, 0.01))
+			jamTrack.Stopped:Wait()
+		else
+			task.wait(PEDERSEN_JAM_CLEAR_TIME)
+		end
 		self.Jammed = false
 		self.ShotsUntilJam = math.random(7, 15)
 		self.Cycling = false
@@ -260,7 +320,8 @@ function WhisperRifle:fire()
 	if not fired then return end
 
 	if self.PedersenMode then
-		task.wait(PEDERSEN_FIRE_INTERVAL)
+		local cycleTrack = self:_playAnim("Cycle_Pedersen")
+		if cycleTrack then cycleTrack.Stopped:Wait() else task.wait(PEDERSEN_FIRE_INTERVAL) end
 	else
 		self.Cycling = true
 		task.wait(0.25)
@@ -287,12 +348,19 @@ function WhisperRifle:reload()
 
 	self.Reloading = true
 	self:_stopAllExcept()
-	self:_playAnim("Reload_Start")
-	task.wait(PEDERSEN_RELOAD_TIME)
+	local reloadOut = self:_playAnim(self.Capacity <= 0 and "Pedersen_Mag_Eject" or "Pedersen_Mag_Out")
+	if reloadOut then reloadOut.Stopped:Wait() end
+	local reloadIn = self:_playAnim("Pedersen_Mag_In")
+	if reloadIn then reloadIn.Stopped:Wait() end
+	if not reloadOut and not reloadIn then task.wait(PEDERSEN_RELOAD_TIME) end
 	if self.Equipped then
 		local loaded = math.min(self.Max_Capacity - self.Capacity, self.PedersenReserve)
 		self.Capacity += loaded
 		self.PedersenReserve -= loaded
+		if self.Capacity == loaded then
+			local chargeTrack = self:_playAnim("Pedersen_Charge")
+			if chargeTrack then chargeTrack.Stopped:Wait() end
+		end
 	end
 	self.Reloading = false
 	self:_restoreBaseDeferred()

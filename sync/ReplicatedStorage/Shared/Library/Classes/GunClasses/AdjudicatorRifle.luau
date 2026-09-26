@@ -285,6 +285,10 @@ end
 
 function AdjudicatorRifle:reload()
 	if self.Reloading or self.Equipping or self.Capacity >= self.Max_Capacity then return end
+	if self.Capacity > 0 then
+		self:notify("I need to empty the rifle before reloading...")
+		return
+	end
 	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
 	if not reserve or not reserve:IsA("NumberValue") or reserve.Value < CLIP_SIZE then
 		self:notify("I need a full clip to reload...")

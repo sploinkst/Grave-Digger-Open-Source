@@ -328891,7 +328891,7 @@
                         {
                           "name": "SpectateCamera",
                           "className": "ModuleScript",
-                          "guid": "77740",
+                          "guid": "2858006",
                           "filePaths": [
                             "sync/ReplicatedStorage/Shared/Modules/Client Modules/CameraService/SpectateCamera.luau"
                           ]
@@ -328979,14 +328979,6 @@
                           ]
                         },
                         {
-                          "name": "PresentationHandler",
-                          "className": "ModuleScript",
-                          "guid": "77759",
-                          "filePaths": [
-                            "sync/ReplicatedStorage/Shared/Modules/Client Modules/MenuService/PresentationHandler.luau"
-                          ]
-                        },
-                        {
                           "name": "Scope",
                           "className": "ModuleScript",
                           "guid": "77756",
@@ -329008,6 +329000,14 @@
                           "guid": "77755",
                           "filePaths": [
                             "sync/ReplicatedStorage/Shared/Modules/Client Modules/MenuService/UI.luau"
+                          ]
+                        },
+                        {
+                          "name": "PresentationHandler",
+                          "className": "ModuleScript",
+                          "guid": "2857974",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Modules/Client Modules/MenuService/PresentationHandler.luau"
                           ]
                         }
                       ]
@@ -356967,7 +356967,7 @@
     {
       "name": "SoundService",
       "className": "SoundService",
-      "guid": "8256"
+      "guid": "8103"
     },
     {
       "name": "StarterGui",
@@ -371708,6 +371708,11 @@
               ]
             }
           ]
+        },
+        {
+          "name": "main",
+          "className": "Folder",
+          "guid": "2857890"
         }
       ]
     },
@@ -372105,7 +372110,7 @@
         {
           "name": "Camera",
           "className": "Camera",
-          "guid": "511007"
+          "guid": "493823"
         },
         {
           "name": "Combat Knife",

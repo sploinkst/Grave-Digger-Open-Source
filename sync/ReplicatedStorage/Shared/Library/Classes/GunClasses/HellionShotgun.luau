@@ -345,7 +345,10 @@ function HellionShotgun:reload()
 
 	local shellsNeeded = math.min(self.Max_Capacity - self.Capacity, reserve.Value)
 	local animations = self.RegisteredAnimations
-	local start = animations and animations.Reload_Start
+	local startName = if self.Capacity <= 0
+		then (self.IsVeteran and "Reload_Empty_Vet" or "Reload_Empty")
+		else "Reload_Start"
+	local start = animations and animations[startName]
 	local loop = animations and animations.Reload_Loop
 	local finish = animations and animations.Reload_End
 	local authored = (start and start.Length or 0) + (loop and loop.Length or 0) * shellsNeeded
@@ -353,7 +356,7 @@ function HellionShotgun:reload()
 	local targetDuration = self.FullReloadTime * (shellsNeeded / self.Max_Capacity)
 	local speed = authored > 0 and authored / math.max(targetDuration, 0.1) or 1
 	if start then
-		local track = self:_playAnim("Reload_Start")
+		local track = self:_playAnim(startName)
 		if track then
 			track:AdjustSpeed(speed)
 			track.Stopped:Wait()

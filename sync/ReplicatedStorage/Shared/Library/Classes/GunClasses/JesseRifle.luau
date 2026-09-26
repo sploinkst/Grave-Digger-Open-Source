@@ -310,11 +310,14 @@ function JesseRifle:setAltMode()
 
 	if self.GrenadeLoaded then
 		playTimedAnimation(self, "Unload_Grenade", 3.5)
+		playTimedAnimation(self, "Cutoff_Off", 0.25)
 		self.GrenadeLoaded = false
 	else
+		playTimedAnimation(self, "Cutoff_On", 0.25)
 		if not self.IsVeteran and self.Capacity > 0 then self.Capacity -= 1 end
 		local blankAnimation = self.IsVeteran and "Load_Blank_Vet" or "Load_Blank"
 		if playTimedAnimation(self, blankAnimation, 2.25) then
+			playTimedAnimation(self, "Blank_End", 0.5)
 			playTimedAnimation(self, "Load_Grenade", 2.25)
 			self.GrenadeLoaded = true
 		end

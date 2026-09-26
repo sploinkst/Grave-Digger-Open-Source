@@ -42,6 +42,7 @@ local DEFAULT_LAYERS: { [string]: number } = {
 	Melee1 = 2,
 	Melee2 = 2,
 	Short = 2,
+	Tag_Look = 2,
 }
 
 local function firstChild(parent: Instance?, names: { string }): Instance?
@@ -106,7 +107,7 @@ local function canonicalAnimationName(name: string): string
 	return table.concat(pieces, "_")
 end
 
-local function buildAnimations(animationId: string, strict: boolean?): { [string]: Animation }?
+local function buildAnimations(animationId: string, strict: boolean?, preferLong: boolean?): { [string]: Animation }?
 	local guns = Assets:FindFirstChild("Animations")
 		and Assets.Animations:FindFirstChild("Tools")
 		and Assets.Animations.Tools:FindFirstChild("Guns")
@@ -116,13 +117,19 @@ local function buildAnimations(animationId: string, strict: boolean?): { [string
 		prince = nil
 	end
 	local result = {
-		Hold = animation(folder, { "held", "long_held", "locked", "Hold" }) or animation(prince, { "PrinceRifle_Held" }),
-		Draw = animation(folder, { "draw", "long_draw", "steyrdraw", "Draw" }) or animation(prince, { "PrinceRifle_Draw" }),
+		Hold = (preferLong and animation(folder, { "long_held" }))
+			or animation(folder, { "held", "long_held", "locked", "Hold" }) or animation(prince, { "PrinceRifle_Held" }),
+		Draw = (preferLong and animation(folder, { "long_draw" }))
+			or animation(folder, { "draw", "long_draw", "steyrdraw", "Draw" }) or animation(prince, { "PrinceRifle_Draw" }),
 		Unequip = animation(folder, { "unequip", "Unequip" }) or animation(prince, { "PrinceRifle_Unequip" }),
-		Aim = animation(folder, { "aim", "long_aim", "Aim" }) or animation(prince, { "PrinceRifle_Aim" }),
-		Aim_Left = animation(folder, { "aim_left", "long_aim_left", "Aim_Left" }) or animation(prince, { "PrinceRifle_Aim_Left" }),
-		Fire = animation(folder, { "fire", "long_fire", "firing", "Fire" }) or animation(prince, { "PrinceRifle_Fire" }),
-		Fire_Left = animation(folder, { "fire_left", "long_fire_left", "firing_left", "Fire_Left" }) or animation(prince, { "PrinceRifle_Fire_Left" }),
+		Aim = (preferLong and animation(folder, { "long_aim" }))
+			or animation(folder, { "aim", "long_aim", "Aim" }) or animation(prince, { "PrinceRifle_Aim" }),
+		Aim_Left = (preferLong and animation(folder, { "long_aim_left" }))
+			or animation(folder, { "aim_left", "long_aim_left", "Aim_Left" }) or animation(prince, { "PrinceRifle_Aim_Left" }),
+		Fire = (preferLong and animation(folder, { "long_fire" }))
+			or animation(folder, { "fire", "long_fire", "firing", "Fire" }) or animation(prince, { "PrinceRifle_Fire" }),
+		Fire_Left = (preferLong and animation(folder, { "long_fire_left" }))
+			or animation(folder, { "fire_left", "long_fire_left", "firing_left", "Fire_Left" }) or animation(prince, { "PrinceRifle_Fire_Left" }),
 		Fire_Last = animation(folder, { "fire_last", "Fire_Last" }),
 		Fire_Last_Left = animation(folder, { "fire_last_left", "Fire_Last_Left" }),
 		Cycle = animation(folder, { "cycle", "Cycle", "reload_bolt" }),
@@ -138,7 +145,7 @@ local function buildAnimations(animationId: string, strict: boolean?): { [string
 		Reload_End_Locked_Vet = animation(folder, { "reload_end_locked_vet", "Reload_End_Locked_Vet" }),
 		Reload_Full = animation(folder, { "reload_full", "Reload_Full", "reload_clip", "reload_empty" }),
 		Reload_Full_Vet = animation(folder, { "reload_full_vet", "reload_empty_vet", "Reload_Full_Vet" }),
-		Check = animation(folder, { "check", "Check" }),
+		Check = (preferLong and animation(folder, { "long_check" })) or animation(folder, { "check", "Check" }),
 		Check_Empty = animation(folder, { "check_empty", "Check_Empty" }),
 		Melee1 = animation(folder, { "melee1", "Melee1" }) or animation(prince, { "PrinceRifle_Melee1" }),
 		Melee2 = animation(folder, { "melee2", "Melee2" }) or animation(prince, { "PrinceRifle_Melee2" }),
@@ -283,7 +290,7 @@ function Factory.create(config)
 		self.ANIM_LAYERS = config.ANIM_LAYERS or DEFAULT_LAYERS
 		self.AnimationGunType = animationId
 		for _, candidate in animationNames do
-			self.animations = buildAnimations(candidate, config.StrictAnimations == true)
+			self.animations = buildAnimations(candidate, config.StrictAnimations == true, config.preferLongAnimations == true)
 			if self.animations then
 				self.AnimationGunType = candidate
 				break
@@ -563,9 +570,26 @@ function Factory.create(config)
 		if config.reloadStartIsFullReload or config.require_full_load then
 			return self:_reloadMagazine()
 		end
+		if config.doubleBarrelReload and self.IsVeteran and self.Capacity <= 0
+			and self.RegisteredAnimations and self.RegisteredAnimations.Reload_Loop_Vet then
+			local player = Players.LocalPlayer
+			local doomReload = self.RegisteredAnimations.Reload_Empty_Doom
+				and self.RegisteredAnimations.Reload_Dual_Doom
+				and (math.random(1, 100) == 1 or (player and player:FindFirstChild("doomer") ~= nil))
+			return self:_reloadByRound({
+				startAnim = doomReload and "Reload_Empty_Doom" or "Reload_Empty_Vet",
+				useEmptyAnim = false,
+				useVeteranAnimations = false,
+				loopAnim = doomReload and "Reload_Dual_Doom" or "Reload_Loop_Vet",
+				roundsPerLoop = 2,
+				endAnim = doomReload and "Reload_End_Doom" or "Reload_End",
+			})
+		end
 		self:_reloadByRound({
 			startAnim = "Reload_Start",
 			loopAnim = "Reload_Loop",
+			alternateLoopAnim = config.doubleBarrelReload and "Reload_Loop_Alt" or nil,
+			useVeteranAnimations = not config.doubleBarrelReload,
 			endAnim = "Reload_End",
 			loopWait = config.reload_loop,
 		})
