@@ -22,6 +22,15 @@ local CamerasStack = {}
 local hasSpawned = false
 local respawnTransitionToken = 0
 
+local function NormalizeGameplayCamera(character: Model)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local camera = WorkspaceService.CurrentCamera
+	PlayerService.LocalPlayer.CameraMode = Enum.CameraMode.Classic
+	PlayerService.LocalPlayer.CameraMaxZoomDistance = 10
+	camera.FieldOfView = 90
+	if humanoid then camera.CameraSubject = humanoid end
+end
+
 local function PlayRespawnTransition()
 	respawnTransitionToken += 1
 	local token = respawnTransitionToken
@@ -129,6 +138,7 @@ function Module.start_module()
 		hasSpawned = true
 		Module.EndCameraByName("DeathCamera", true)
 		Module.EndCameraByName("SpectateCamera", true)
+		NormalizeGameplayCamera(character)
 		if isRespawn then PlayRespawnTransition() end
 		Module.SwitchCamera("BaseCamera", true)
 		HandleDeath(character)
@@ -235,7 +245,7 @@ function Module.ApplyRecoil(vertical: number, horizontal: number, steps: number?
 end
 
 function Module.GetCurrentCamera()
-	return GetTopCamera().name
+	return GetTopCamera()
 end
 
 return Module

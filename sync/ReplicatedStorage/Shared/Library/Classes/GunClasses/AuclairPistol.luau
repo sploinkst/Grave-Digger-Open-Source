@@ -54,6 +54,13 @@ local AuclairPistol = require(script.Parent.LegacyGunFactory).create({
 	},
 	bulletSpeed = 800,
 	cycles = true,
+	sideCycleAnimations = {
+		Left = "Spin_Left",
+		Right = "Spin_Right",
+	},
+	sideCycleDelay = 0.25,
+	sideCycleSpeed = 2,
+	sideCycleRequiresAltMode = true,
 })
 
 function AuclairPistol:setAltMode()

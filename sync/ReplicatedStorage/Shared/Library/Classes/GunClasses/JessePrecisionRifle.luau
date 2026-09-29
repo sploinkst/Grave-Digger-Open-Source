@@ -5,6 +5,8 @@ return require(script.Parent.LegacyGunFactory).create({
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 2,
+	bipod = true,
+	bipodCycleMultiplier = 0.8,
 	LegacyStats = {
 		name = "'Jesse' Precision Rifle",
 		desc = "Modification of the 'Jesse' Combat Rifle",

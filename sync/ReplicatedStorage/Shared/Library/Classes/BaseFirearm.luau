@@ -155,13 +155,28 @@ function BaseFirearm:applyFirearmConfig(config)
 	self.Max_Reserve_Ammo = config.maxReserve or config.Max_Reserve_Ammo or capacity * maxReserveClips
 	self.animation_speeds = self.animation_speeds or {}
 	if config.draw_speed and self.animation_speeds.Draw == nil then self.animation_speeds.Draw = 1 / config.draw_speed end
-	if config.aim_speed and self.animation_speeds.Aim == nil then self.animation_speeds.Aim = 1 / config.aim_speed end
-	if config.aim_speed and self.animation_speeds.Aim_Left == nil then self.animation_speeds.Aim_Left = 1 / config.aim_speed end
-	if config.cycle and config.cycle > 0 and self.animation_speeds.Cycle == nil then self.animation_speeds.Cycle = 1 / config.cycle end
-	if config.reload_start and config.reload_start > 0 and self.animation_speeds.Reload_Start == nil then self.animation_speeds.Reload_Start = 1 / config.reload_start end
-	if config.reload_empty and config.reload_empty > 0 and self.animation_speeds.Reload_Empty == nil then self.animation_speeds.Reload_Empty = 1 / config.reload_empty end
-	if config.reload_loop and config.reload_loop > 0 and self.animation_speeds.Reload_Loop == nil then self.animation_speeds.Reload_Loop = 1 / config.reload_loop end
-	if config.reload_end and config.reload_end > 0 and self.animation_speeds.Reload_End == nil then self.animation_speeds.Reload_End = 1 / config.reload_end end
+	local function setAnimationSpeeds(names, duration)
+		if not duration or duration <= 0 then return end
+		for _, name in names do
+			if self.animation_speeds[name] == nil then self.animation_speeds[name] = 1 / duration end
+		end
+	end
+	setAnimationSpeeds({
+		"Aim", "Aim_Left", "Bipod_Aim", "Alt_Changeaim", "Alt_Changeaim_Left",
+		"Hip_Aim", "Hip_Aim_Left", "Shoulder_Aim", "Shoulder_Aim_Left",
+		"Stock_Aim", "Stock_Aim_Left", "Long_Aim", "Long_Aim_Left",
+	}, config.aim_speed)
+	setAnimationSpeeds({ "Cycle", "Cycle_Left", "Bipod_Cycle" }, config.cycle)
+	setAnimationSpeeds({
+		"Reload_Start", "Reload_Start_Vet", "Reload_Clip_Start_Empty",
+		"Reload_Clip_Start_Empty_Novet", "Reload_Clip_Start_One",
+	}, config.reload_start)
+	setAnimationSpeeds({ "Reload_Empty", "Reload_Empty_Vet" }, config.reload_empty)
+	setAnimationSpeeds({ "Reload_Loop", "Reload_Loop_Vet", "Reload_Loop_Alt" }, config.reload_loop)
+	setAnimationSpeeds({
+		"Reload_End", "Reload_End_Vet", "Reload_End_Locked", "Reload_End_Locked_Vet",
+	}, config.reload_end)
+	setAnimationSpeeds({ "Check", "Check_Empty" }, config.ammo_check_duration or 1.5)
 	if config.reload_alt and config.reload_alt > 0 and self.animation_speeds.Reload_Alt == nil then self.animation_speeds.Reload_Alt = 1 / config.reload_alt end
 	if config.reload_full and config.reload_full > 0 and self.animation_speeds.Reload_Full == nil then self.animation_speeds.Reload_Full = 1 / config.reload_full end
 	self.LegacyWeaponAttributes = {

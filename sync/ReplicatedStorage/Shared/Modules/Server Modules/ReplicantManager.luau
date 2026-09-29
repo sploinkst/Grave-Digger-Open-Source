@@ -296,11 +296,18 @@ function module.pop_helmet(character, helmet_model, knockable: boolean, shooter:
 		local head_part = helmet_model:FindFirstChild("Head")
 		-- Outfit helmets mount directly to the character Head through an
 		-- AccessoryWeld and do not contain a duplicate part named Head.
-		local classWeld = character:FindFirstChild("Head") and character.Head:FindFirstChild("AccessoryWeld")
-		local isMountedClassHelmet = classWeld and classWeld.Part1 and (
-			classWeld.Part1 == helmet_model or classWeld.Part1:IsDescendantOf(helmet_model)
-		)
-		if not head_part and isMountedClassHelmet then
+		local classWeld: JointInstance? = nil
+		local characterHead = character:FindFirstChild("Head")
+		if characterHead then
+			for _, joint in characterHead:GetChildren() do
+				if (joint:IsA("Weld") or joint:IsA("Motor6D")) and joint.Name == "AccessoryWeld"
+					and joint.Part1 and (joint.Part1 == helmet_model or joint.Part1:IsDescendantOf(helmet_model)) then
+					classWeld = joint
+					break
+				end
+			end
+		end
+		if not head_part and classWeld then
 			classWeld:Destroy()
 			helmet_model:PivotTo(CFrame.new(character.Head.Position))
 			helmet_model.Parent = workspace.Game_Details.Debris
@@ -716,7 +723,7 @@ function module.start_module()
 			and character:FindFirstChild("HellionShotgun") ~= nil
 
 		-- Prevent self-damage
-		if hitPlayer and player.Team == hitPlayer.Team then return end
+		if hitPlayer and player.Team ~= nil and hitPlayer.Team ~= nil and player.Team == hitPlayer.Team then return end
 		if hitPlayer and hitPlayer == player then return end
 
 		if hitPlayer then
@@ -741,12 +748,15 @@ function module.start_module()
 			applyKnockback(knockbackTarget, forceDirection, finalForce)
 		end
 
-		-- Headshot / helmet logic
-		local isHeadshot = (instance.Name == "Head") or
+		-- Headshot / helmet logic. Some legacy helmets have queryable shell parts,
+		-- while newer class helmets are non-queryable and expose the character Head.
+		-- Support both layouts so a shell impact cannot fall through to body damage.
+		local helmet, knockable = Util.check_for_helmet(hitCharacter)
+		local hitHelmet = helmet ~= nil and (instance == helmet or instance:IsDescendantOf(helmet))
+		local isHeadshot = hitHelmet or (instance.Name == "Head") or
 			(instance.Parent and instance.Parent.Name == "Hitboxes" and instance.Name == "Head")
 
 		if isHeadshot then
-			local helmet, knockable = Util.check_for_helmet(hitCharacter)
 			local shotKey = helmetShotKey(player, hitData)
 			if not helmet and shotKey and hitCharacter:GetAttribute("HelmetProtectedShotKey") == shotKey then
 				return
@@ -818,7 +828,7 @@ function module.start_module()
 				handleLethalHipfireHeadshot(player, character, hitPlayer, weaponName, hitData, position)
 				humanoid.Health = 0
 				awardKillMorale(player, hitCharacter, true)
-				player:SetAttribute("RoundKills", player:GetAttribute("RoundKills") + 1)
+				player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
 				return
 			end
 		end
@@ -828,6 +838,8 @@ function module.start_module()
 		module.play_damage_sound(hitCharacter, damage, player)
 		humanoid:TakeDamage(damage)
 		if hitPlayer then
+			status_service.GiveStatus(hitPlayer, "ClottingStatus", 5)
+			status_service.GiveStatus(hitPlayer, "HitstunStatus", 1)
 			if weaponName == "AntiMaterialRifle" then
 				status_service.GiveStatus(hitPlayer, "ConcussionStatus")
 				status_service.GiveStatus(hitPlayer, "KnockdownStatus", 2)
@@ -848,7 +860,7 @@ function module.start_module()
 		
 		if humanoid.Health <= 0 then
 			awardKillMorale(player, hitCharacter, false)
-			player:SetAttribute("RoundKills", player:GetAttribute("RoundKills") + 1)
+			player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
 		end
 	end)
 	
@@ -980,6 +992,10 @@ function module.start_module()
 			appliedDamage *= targetCharacter:GetAttribute("DamageTakenMultiplier") or 1
 		end
 		humanoid:TakeDamage(fromBehind and humanoid.MaxHealth or appliedDamage)
+		if targetPlayer and humanoid.Health > 0 then
+			status_service.GiveStatus(targetPlayer, "ClottingStatus", 5)
+			status_service.GiveStatus(targetPlayer, "HitstunStatus", 1)
+		end
 		if healthBefore > 0 and humanoid.Health <= 0 then
 			awardKillMorale(player, targetCharacter, false)
 			local lowerWeapon = string.lower(weaponName)

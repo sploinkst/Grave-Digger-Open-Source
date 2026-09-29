@@ -1,0 +1,5 @@
+local BaseStatus=require(script.Parent.Parent.BaseStatus); local C={}; C.__index=C; setmetatable(C,{__index=BaseStatus})
+function C.new() local self=BaseStatus.new({name="LethalBurning"}); setmetatable(self,C); self.className="LethalBurningStatus"; return self end
+function C:_apply(player) local c=player.Character; if c and c:GetAttribute("IsDreadnought") then player:SetAttribute(self.name,nil); return end; if not c then return end; c:SetAttribute("BurnMovementMultiplier",.65); c:SetAttribute("SurgeryBlocked",true); c:SetAttribute("DamageDealingBlocked",true); c:SetAttribute("Burning",true); task.spawn(function() local h=c:FindFirstChildOfClass("Humanoid"); while player:GetAttribute("LethalBurning") and c.Parent and h and h.Health>0 do h:TakeDamage(50); task.wait(.25) end end) end
+function C:_un_apply(player) local c=player.Character; if c then c:SetAttribute("BurnMovementMultiplier",nil); c:SetAttribute("SurgeryBlocked",nil); c:SetAttribute("DamageDealingBlocked",nil); c:SetAttribute("Burning",nil) end end
+return C

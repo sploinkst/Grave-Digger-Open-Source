@@ -205,6 +205,8 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 		Check = judgementAnimations.check,
 		Melee1 = judgementAnimations.melee1,
 		Melee2 = judgementAnimations.melee2,
+		Alt_Melee1 = judgementAnimations.meleealt1,
+		Alt_Melee2 = judgementAnimations.meleealt2,
 		Short = judgementAnimations.short,
 		Charge = judgementAnimations.charge,
 		Charge_Stop = judgementAnimations.charge_stop,
@@ -254,6 +256,7 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 	self.Alting = false
 	self._reloadCancelled = false
 	self.unequip_wait = false
+	self._nextMeleeAnimation = 1
 
 	self.FireEmissions = {
 		smoke_medium = function()
@@ -267,6 +270,12 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 	self:_initShoulderTracking()
 	self:applyFirearmConfig(WEAPON_STATS)
 	return self
+end
+
+function JudgementRifle:_getMeleeAnimationName(_randomIndex: number): string
+	local index = self._nextMeleeAnimation or 1
+	self._nextMeleeAnimation = if index == 1 then 2 else 1
+	return "Melee" .. index
 end
 
 function JudgementRifle:get_spread(muzzle: BasePart, shootDirection: Vector3): Vector3

@@ -15,8 +15,8 @@ local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
-local stormAnimations = Assets.Animations.Tools.Guns:FindFirstChild("mpgun")
-	or Assets.Animations.Tools.Guns:FindFirstChild("StormRifle")
+local stormAnimations = Assets.Animations.Tools.Guns:FindFirstChild("StormRifle")
+	or Assets.Animations.Tools.Guns:FindFirstChild("mpgun")
 local stormSounds = GunAssets.Sounds:FindFirstChild("mpgun") or GunAssets.Sounds:FindFirstChild("StormRifle")
 local SoundFolder = stormSounds or GunAssets.Sounds.mpgun
 
@@ -30,7 +30,7 @@ local WEAPON_STATS = {
 	lore = "",
 	size = 1,
 	icon = "79235124191407",
-	animations = "mpgun",
+	animations = "StormRifle",
 	ammo_give = "9mm Auto",
 	melee_sound = "rifle",
 	blacklist = true,
@@ -162,12 +162,19 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 
 		Fire      = animation("fire"),
 		Fire_Left = animation("fire_left"),
+		Cycle = animation("reload_bolt"),
 
 		Reload_Empty = animation("reload_empty"),
 		Reload_Start = animation("reload_start"),
+		Reload_Start_Soldat = animation("reload_start_soldat"),
 
 		Check = animation("check"),
 		Short = animation("short"),
+		Locked = animation("locked"),
+		Melee1 = animation("melee1"),
+		Melee2 = animation("melee2"),
+		Sprint = animation("sprint"),
+		Sprint_Greyhound = animation("sprint_greyhound"),
 	}
 
 	self.animation_speeds = {
@@ -175,7 +182,10 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 		Aim = 1 / WEAPON_STATS.aim_speed,
 		Aim_Left = 1 / WEAPON_STATS.aim_speed,
 		Reload_Start = 1 / WEAPON_STATS.reload_start,
+		Reload_Start_Soldat = 1 / (WEAPON_STATS.reload_start * 0.9),
 		Reload_Empty = 1 / WEAPON_STATS.reload_empty,
+		Cycle = 1 / WEAPON_STATS.reload_empty,
+		Check = 1 / 2.5,
 	}
 
 	self.damage = WEAPON_STATS.damage
@@ -296,7 +306,20 @@ function Crestfall:reload()
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
 
-	local reloadTrack = self:_playAnim("Reload_Start")
+	local character = LOCAL_PLAYER.Character
+	local eliteKit = character and character:FindFirstChild("elitekit")
+	local classValue = character and character:FindFirstChild("class")
+	local eliteSoldat = eliteKit and classValue
+		and eliteKit:IsA("StringValue") and classValue:IsA("StringValue")
+		and eliteKit.Value == classValue.Value
+	if self.Capacity <= 0 and self.RegisteredAnimations and self.RegisteredAnimations.Cycle then
+		local boltTrack = self:_playAnim("Cycle")
+		if boltTrack then boltTrack.Stopped:Wait() end
+	end
+	local reloadName = if eliteSoldat and self.RegisteredAnimations and self.RegisteredAnimations.Reload_Start_Soldat
+		then "Reload_Start_Soldat"
+		else "Reload_Start"
+	local reloadTrack = self:_playAnim(reloadName)
 	if reloadTrack then reloadTrack.Stopped:Wait() end
 
 	if self.Equipped and not self._reloadCancelled then

@@ -168,14 +168,14 @@ function HonourPistol.new(info: Types.BaseToolCreateInfo): HonourPistol
 	self.animations = {
 		Hold = animation("held"),
 		Stock_Hold = animation("akimbo_locked"),
-		-- This folder has no dedicated draw clip. Never reuse the looping idle
-		-- as Draw, since it can survive the equip transition indefinitely.
+		Draw = animation("draw"),
 		Aim = animation("aim"),
 		Aim_Left = animation("aim_left"),
-		Stock_Aim = animation("aim"),
-		Stock_Aim_Left = animation("aim_left"),
+		Stock_Aim = animation("alt_changeaim"),
+		Stock_Aim_Left = animation("alt_changeaim_left"),
 		Fire = animation("fire"),
 		Fire_Left = animation("fire_left"),
+		Akimbo_Fire = animation("akimbo_fire"),
 		Stock_Fire = animation("alt_changefire"),
 		Stock_Fire_Left = animation("alt_changefire_left"),
 		Stock_On = animation("alt_stockon"),
@@ -188,6 +188,9 @@ function HonourPistol.new(info: Types.BaseToolCreateInfo): HonourPistol
 		Reload_One_Vet = animation("reload_one_vet"),
 		Check = animation("check"),
 		Check_Empty = animation("check_empty"),
+		Melee1 = animation("melee1"),
+		Melee2 = animation("melee2"),
+		Short = animation("short"),
 	}
 
 	self.animation_speeds = {

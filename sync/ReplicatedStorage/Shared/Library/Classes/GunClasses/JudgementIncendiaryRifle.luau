@@ -1,7 +1,11 @@
-return require(script.Parent.LegacyGunFactory).create({
+local JudgementIncendiaryRifle = require(script.Parent.LegacyGunFactory).create({
 	className = "JudgementIncendiaryRifle",
 	assetName = "henry",
 	AnimationGunType = "JudgementRifle",
+	AnimationMap = {
+		Alt_Melee1 = "meleealt1",
+		Alt_Melee2 = "meleealt2",
+	},
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 2,
@@ -31,3 +35,11 @@ return require(script.Parent.LegacyGunFactory).create({
 	},
 	bulletSpeed = 950,
 })
+
+function JudgementIncendiaryRifle:_getMeleeAnimationName(_randomIndex: number): string
+	local index = self._nextMeleeAnimation or 1
+	self._nextMeleeAnimation = if index == 1 then 2 else 1
+	return "Alt_Melee" .. index
+end
+
+return JudgementIncendiaryRifle

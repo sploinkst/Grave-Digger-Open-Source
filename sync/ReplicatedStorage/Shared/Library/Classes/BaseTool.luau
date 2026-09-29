@@ -290,7 +290,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 				self.animations.Hold = princeHold
 			end
 		end
-		if self.IsFirearm and self.animations.Fire_Left ~= nil
+		if self.IsFirearm and self.WeaponCategory == "Rifle" and self.animations.Fire_Left ~= nil
 			and self.animations.Fire_Left == self.animations.Fire then
 			-- A right-side clip aliased into Fire_Left is not an authored left
 			-- animation. Remove it so the universal Prince fallback below owns the
@@ -387,10 +387,9 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 			end
 		end
 
-		-- Left-shoulder firing follows the same rule as left ADS: keep every
-		-- authored variant, but guarantee a playable Prince fire_left anywhere a
-		-- firearm or one of its alternate modes can request a left firing track.
-		if self.IsFirearm then
+		-- Rifles without an authored left-fire clip borrow Prince's fire_left.
+		-- Pistols, shotguns, launchers, and flamers keep their own resolution rules.
+		if self.IsFirearm and self.WeaponCategory == "Rifle" then
 			self.RegisteredAnimations = self.RegisteredAnimations or {}
 			local princeFireLeft = get_prince_animation("fire_left")
 			if princeFireLeft then
@@ -457,23 +456,43 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 					or animName == "Charge"
 				track.Looped = persistent
 
-				if animName == "Hold" then
-					-- Character animations stay below this pose while a gun is
-					-- equipped; weapon actions retain their higher priorities.
+				-- Persistent poses stay below transient actions so recoil, cycling,
+				-- melee, and reload clips can layer over an active aim stance.
+				if animName == "Draw" then
 					track.Priority = Enum.AnimationPriority.Action2
-				elseif animName == "Aim" or animName == "Aim_Left" or animName == "Sprint"
+				elseif animName == "Hold"
+					or animName == "Sprint" or animName == "Sprint_Greyhound"
+					or animName == "Sprint_Alt_Greyhound" or animName == "Sprint_Dual"
+					or animName == "Sprint_Normal" then
+					track.Priority = Enum.AnimationPriority.Action
+				elseif animName == "Short" or animName == "Short_Alt" then
+					track.Priority = Enum.AnimationPriority.Action3
+				elseif animName == "Locked" or animName == "Akimbo_Locked" or animName == "Locked_Alt" then
+					track.Priority = Enum.AnimationPriority.Action4
+				elseif animName == "Aim" or animName == "Aim_Left" or animName == "Bipod_Aim"
+					or animName == "Alt_Changeaim" or animName == "Alt_Changeaim_Left"
+					or animName == "Blocked1" or animName == "Blocked2"
 					or animName == "Aim_Dual" or animName == "Aim_Normal"
-					or animName == "Hip_Aim" or animName == "Hip_Aim_Left" then
+					or animName == "Hip_Aim" or animName == "Hip_Aim_Left"
+					or animName == "Shoulder_Aim" or animName == "Shoulder_Aim_Left"
+					or animName == "Stock_Aim" or animName == "Stock_Aim_Left"
+					or animName == "Long_Aim" or animName == "Long_Aim_Left" then
+					track.Priority = Enum.AnimationPriority.Action
+				elseif string.find(animName, "Fire", 1, true)
+					or animName == "Alt_Changefire" or animName == "Alt_Changefire_Left"
+					or animName == "Alt_Changefire_Last" or animName == "Alt_Changefire_Last_Left"
+					or animName == "Alt_Changefire_Empty" or animName == "Alt_Changefire_Empty_Left"
+					or animName == "Hipfire" or animName == "Firing" or animName == "Firing_Left"
+					or animName == "Shoot" or animName == "Shoot_Empty"
+					or animName == "Recoil" or animName == "Recoil_Left" then
 					track.Priority = Enum.AnimationPriority.Action2
-				elseif animName == "Fire" or animName == "Fire_Left"
-					or animName == "Recoil" or animName == "Recoil_Left"
-					or animName == "Cycle" or animName == "Short" then
+				elseif animName == "Draw_Dual" or animName == "Akimbo_Right" or animName == "Akimbo_Left"
+					or animName == "Akimbo_Right_Empty" or animName == "Akimbo_Left_Empty" then
 					track.Priority = Enum.AnimationPriority.Action3
 				else
-					-- Locomotion owns the leg joints at Action4. Weapon actions stay
-					-- below it so draws/reloads can animate the torso without ever
-					-- freezing or replacing the walking and sprinting legs.
-					track.Priority = Enum.AnimationPriority.Action3
+					-- Reloads, cycles, checks, melee, recoil helpers, and other
+					-- transient actions must be able to layer over the persistent aim.
+					track.Priority = Enum.AnimationPriority.Action2
 				end
 			end
 		end
@@ -1412,6 +1431,9 @@ end
 function BaseTool:_aimTrack(): AnimationTrack?
 	local anims = self.RegisteredAnimations
 	if not anims then return nil end
+	if self._isBipodActive and self:_isBipodActive() and anims.Bipod_Aim then
+		return anims.Bipod_Aim
+	end
 	return (self.current_shoulder == "Right") and anims.Aim or anims.Aim_Left
 end
 
@@ -1462,7 +1484,7 @@ function BaseTool:_killAimTracks()
 	local anims = self.RegisteredAnimations
 	if not anims then return end
 	for _, name in {
-		"Aim", "Aim_Left", "Aim_Dual", "Aim_Normal",
+		"Aim", "Aim_Left", "Bipod_Aim", "Aim_Dual", "Aim_Normal",
 		"Hip_Aim", "Hip_Aim_Left", "Shoulder_Aim", "Shoulder_Aim_Left",
 		"Stock_Aim", "Stock_Aim_Left", "Long_Aim", "Long_Aim_Left",
 	} do
@@ -1497,8 +1519,9 @@ function BaseTool:_restoreBase()
 
 	if not sprinting and self.Aiming then
 		local want = self:_aimTrack()
-		local kill = (want == anims.Aim) and anims.Aim_Left or anims.Aim
-		if kill and kill.IsPlaying then kill:Stop(CUT) end
+		for _, candidate in { anims.Aim, anims.Aim_Left, anims.Bipod_Aim } do
+			if candidate and candidate ~= want and candidate.IsPlaying then candidate:Stop(CUT) end
+		end
 		if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT) end
 		if want and not want.IsPlaying then want:Play(self:_aimDuration(), 1, 0.5) end
 

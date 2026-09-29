@@ -163,7 +163,8 @@ local function buildAnimations(animationId: string, strict: boolean?, preferLong
 		Fire = (preferLong and animation(folder, { "long_fire" }))
 			or animation(folder, { "fire", "firing", "Fire" }) or animation(prince, { "fire" }),
 		Fire_Left = (preferLong and animation(folder, { "long_fire_left" }))
-			or animation(folder, { "fire_left", "firing_left", "Fire_Left" }),
+			or animation(folder, { "fire_left", "firing_left", "Fire_Left" })
+			or (weaponCategory == "Rifle" and animation(prince, { "fire_left" }) or nil),
 		Fire_Last = animation(folder, { "fire_last", "Fire_Last" }),
 		Fire_Last_Left = animation(folder, { "fire_last_left", "Fire_Last_Left" }),
 		Cycle = animation(folder, { "cycle", "Cycle", "reload_bolt" }),
@@ -441,6 +442,22 @@ function Factory.create(config)
 		self:_playConfiguredSound(soundNames[math.random(1, #soundNames)])
 	end
 
+	function Class:_isBipodActive(): boolean
+		if not config.bipod then return false end
+		local character = Players.LocalPlayer.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local head = character and character:FindFirstChild("Head")
+		local camera = workspace.CurrentCamera
+		if not root or not head or not camera or not root:IsA("BasePart") or not head:IsA("BasePart") then return false end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { character, self.actual_model }
+		local origin = head.Position - Vector3.new(0, 0.5, 0)
+		local down = -root.CFrame.UpVector * 2.25
+		return workspace:Raycast(origin + camera.CFrame.LookVector * 4, down, params) ~= nil
+			or workspace:Raycast(origin + camera.CFrame.LookVector * 1.5, down, params) ~= nil
+	end
+
 	function Class:_isBusyForActivation(): boolean
 		if not config.ignoreDrawBusy then
 			return self:_isBusy()
@@ -454,27 +471,75 @@ function Factory.create(config)
 			self:_playRandomConfiguredSound(config.steamSounds)
 		end
 		local left = self.current_shoulder ~= "Right"
-		local fireAnimation = if self.Capacity <= 1
+		local bipodActive = self:_isBipodActive()
+		local fireAnimation = if bipodActive and self.RegisteredAnimations and self.RegisteredAnimations.Bipod_Fire
+			then "Bipod_Fire"
+			else if self.Capacity <= 1
 			then (left and "Fire_Last_Left" or "Fire_Last")
 			else (left and "Fire_Left" or "Fire")
+		local sideCycleAnimations = config.sideCycleAnimations
+		if config.sideCycleRequiresAltMode and self.Alt_Mode ~= true then
+			sideCycleAnimations = nil
+		end
 		local options = {
 			bulletSpeed = self.BulletSpeed,
 			fireAnimation = fireAnimation,
 			sound = self.FireSound,
-			fireDelay = fireDelay,
+			-- Side-cycle weapons begin their cycling animation during the normal
+			-- shot cooldown, rather than waiting for that cooldown to finish.
+			fireDelay = if sideCycleAnimations then 0 else fireDelay,
 			requireAiming = config.requireAiming,
 		}
 		local fired = if config.WeaponCategory == "Shotgun"
 			then self:_fireShotgunBlast(options)
 			else self:_fireSingleShot(options)
-		if not fired or not config.cycles then return end
+		-- In the master weapon script, any non-automatic weapon with a `cycle`
+		-- animation sets need_bolt after firing and cannot fire again until the
+		-- complete cycle + cycle_rest has elapsed. Most migrated definitions carry
+		-- the source cycle time but did not redundantly declare `cycles = true`.
+		local hasManualCycle = config.cycles == true
+			or (config.auto ~= true
+				and (config.cycle or self.cycle or 0) > 0
+				and self.RegisteredAnimations
+				and self.RegisteredAnimations.Cycle ~= nil)
+		if not fired or not hasManualCycle then return fired end
 
 		self.Cycling = true
-		local cycleTrack = self.Equipped and self:_playAnim("Cycle")
+		if sideCycleAnimations then
+			local cycleStarted = os.clock()
+			local cycleDelay = config.sideCycleDelay or 0.25
+			if cycleDelay > 0 then task.wait(cycleDelay) end
+
+			-- Firing the last round leaves the action open; there is nothing to
+			-- cycle into the chamber until the weapon is reloaded.
+			if self.Equipped and self.Capacity > 0 then
+				local cycleName = if left then sideCycleAnimations.Left else sideCycleAnimations.Right
+				local cycleTrack = cycleName and self:_playAnim(cycleName, false, {
+					fade = config.sideCycleFade or 0.1,
+					speed = config.sideCycleSpeed or 2,
+				})
+				if cycleTrack then cycleTrack.Stopped:Wait() end
+			end
+
+			local minimumCycleTime = self:_effectiveFireDelay(self.FireInterval or config.fire_rate or 0)
+			local remaining = minimumCycleTime - (os.clock() - cycleStarted)
+			if remaining > 0 then task.wait(remaining) end
+			self.Cycling = false
+			self:_restoreBaseDeferred()
+			return fired
+		end
+
+		local cycleName = if bipodActive and self.RegisteredAnimations and self.RegisteredAnimations.Bipod_Cycle
+			then "Bipod_Cycle"
+			else "Cycle"
+		local cycleDuration = config.cycle or self.cycle or self.FireInterval
+		if cycleName == "Bipod_Cycle" then cycleDuration *= config.bipodCycleMultiplier or 0.8 end
+		local cycleTrack = self.Equipped and self:_playAnim(cycleName, false,
+			cycleDuration and cycleDuration > 0 and { speed = 1 / cycleDuration } or nil)
 		if cycleTrack then
 			cycleTrack.Stopped:Wait()
 		else
-			task.wait(config.cycle or self.cycle or self.FireInterval)
+			task.wait(cycleDuration)
 		end
 		task.wait(config.cycle_rest or self.cycle_rest or 0)
 		self.Cycling = false
@@ -603,7 +668,12 @@ function Factory.create(config)
 			end
 			return first
 		end
-		return self:_fireConfiguredShot(config.cycles and nil or self.FireInterval)
+		local hasManualCycle = config.cycles == true
+			or (config.auto ~= true
+				and (config.cycle or self.cycle or 0) > 0
+				and self.RegisteredAnimations
+				and self.RegisteredAnimations.Cycle ~= nil)
+		return self:_fireConfiguredShot(hasManualCycle and nil or self.FireInterval)
 	end
 
 	function Class:setAltMode()

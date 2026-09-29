@@ -1,4 +1,4 @@
-return require(script.Parent.LegacyGunFactory).create({
+local VolkFrontlineRifle = require(script.Parent.LegacyGunFactory).create({
 	className = "VolkFrontlineRifle",
 	assetName = "mosin",
 	AnimationGunType = "VolkRifle",
@@ -31,3 +31,27 @@ return require(script.Parent.LegacyGunFactory).create({
 	},
 	bulletSpeed = 1100,
 })
+
+function VolkFrontlineRifle:reload()
+	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
+	local canClipLoad = not self.IsVeteran and self.Capacity <= 1
+		and reserve and reserve:IsA("NumberValue") and reserve.Value >= self.Max_Capacity
+	if canClipLoad then
+		return self:_reloadByRound({
+			startAnim = if self.Capacity <= 0
+				then "Reload_Clip_Start_Empty"
+				else "Reload_Clip_Start_Empty_Novet",
+			useEmptyAnim = false,
+			loopAnim = "Reload_Clip",
+			roundsPerLoop = self.Max_Capacity,
+			endAnim = "Reload_End",
+		})
+	end
+	return self:_reloadByRound({
+		startAnim = "Reload_Start",
+		loopAnim = "Reload_Loop",
+		endAnim = "Reload_End",
+	})
+end
+
+return VolkFrontlineRifle

@@ -318554,11 +318554,43 @@
                       "guid": "16064",
                       "children": [
                         {
+                          "name": "BloodlustStatus",
+                          "className": "ModuleScript",
+                          "guid": "844270",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/BloodlustStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "BulwarkHopeStatus",
+                          "className": "ModuleScript",
+                          "guid": "844264",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/BulwarkHopeStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "ClottingStatus",
+                          "className": "ModuleScript",
+                          "guid": "843990",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/ClottingStatus.luau"
+                          ]
+                        },
+                        {
                           "name": "ConcussionStatus",
                           "className": "ModuleScript",
                           "guid": "78274",
                           "filePaths": [
                             "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/ConcussionStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "CrippleStatus",
+                          "className": "ModuleScript",
+                          "guid": "844207",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/CrippleStatus.luau"
                           ]
                         },
                         {
@@ -318570,11 +318602,91 @@
                           ]
                         },
                         {
+                          "name": "HitstunStatus",
+                          "className": "ModuleScript",
+                          "guid": "844211",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/HitstunStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "HuntedStatus",
+                          "className": "ModuleScript",
+                          "guid": "844227",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/HuntedStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "KnockdownStatus",
+                          "className": "ModuleScript",
+                          "guid": "844213",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/KnockdownStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "LethalBurningStatus",
+                          "className": "ModuleScript",
+                          "guid": "844223",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/LethalBurningStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "MinorBurnStatus",
+                          "className": "ModuleScript",
+                          "guid": "844221",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/MinorBurnStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "MoraleStatus",
+                          "className": "ModuleScript",
+                          "guid": "844258",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/MoraleStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "RadioFocusStatus",
+                          "className": "ModuleScript",
+                          "guid": "844260",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/RadioFocusStatus.luau"
+                          ]
+                        },
+                        {
                           "name": "RagdollStatus",
                           "className": "ModuleScript",
                           "guid": "78273",
                           "filePaths": [
                             "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/RagdollStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "RallyStatus",
+                          "className": "ModuleScript",
+                          "guid": "844266",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/RallyStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "SicknessStatus",
+                          "className": "ModuleScript",
+                          "guid": "844217",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/SicknessStatus.luau"
+                          ]
+                        },
+                        {
+                          "name": "SpottedStatus",
+                          "className": "ModuleScript",
+                          "guid": "844225",
+                          "filePaths": [
+                            "sync/ReplicatedStorage/Shared/Library/Classes/StatusClasses/SpottedStatus.luau"
                           ]
                         },
                         {
@@ -328787,6 +328899,14 @@
                   "guid": "16047",
                   "children": [
                     {
+                      "name": "BuffVisualService",
+                      "className": "ModuleScript",
+                      "guid": "845500",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/Shared/Modules/Client Modules/BuffVisualService.luau"
+                      ]
+                    },
+                    {
                       "name": "CameraService",
                       "className": "ModuleScript",
                       "guid": "78095",
@@ -328850,6 +328970,14 @@
                       "guid": "78123",
                       "filePaths": [
                         "sync/ReplicatedStorage/Shared/Modules/Client Modules/CompassService.luau"
+                      ]
+                    },
+                    {
+                      "name": "DebuffService",
+                      "className": "ModuleScript",
+                      "guid": "845502",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/Shared/Modules/Client Modules/DebuffService.luau"
                       ]
                     },
                     {
@@ -329035,6 +329163,14 @@
                       "guid": "78221",
                       "filePaths": [
                         "sync/ReplicatedStorage/Shared/Modules/Server Modules/AccessoryService.luau"
+                      ]
+                    },
+                    {
+                      "name": "BuffService",
+                      "className": "ModuleScript",
+                      "guid": "845478",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/Shared/Modules/Server Modules/BuffService.luau"
                       ]
                     },
                     {
@@ -329863,6 +329999,14 @@
                       ]
                     },
                     {
+                      "name": "DebuffService",
+                      "className": "ModuleScript",
+                      "guid": "845482",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/Shared/Modules/Server Modules/DebuffService.luau"
+                      ]
+                    },
+                    {
                       "name": "GameManager",
                       "className": "ModuleScript",
                       "guid": "78127",
@@ -329878,6 +330022,14 @@
                             "sync/ReplicatedStorage/Shared/Modules/Server Modules/GameManager/TerrainService.luau"
                           ]
                         }
+                      ]
+                    },
+                    {
+                      "name": "HunterKitService",
+                      "className": "ModuleScript",
+                      "guid": "845484",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/Shared/Modules/Server Modules/HunterKitService.luau"
                       ]
                     },
                     {
@@ -371009,111 +371161,6 @@
       "guid": "14",
       "children": [
         {
-          "name": "'Grace' Service Revolver",
-          "className": "Tool",
-          "guid": "265068",
-          "children": [
-            {
-              "name": "empty_ammo",
-              "className": "BoolValue",
-              "guid": "14482"
-            },
-            {
-              "name": "event",
-              "className": "BindableEvent",
-              "guid": "14389"
-            },
-            {
-              "name": "left_aiming",
-              "className": "BoolValue",
-              "guid": "14483"
-            },
-            {
-              "name": "model",
-              "className": "ObjectValue",
-              "guid": "78949"
-            },
-            {
-              "name": "pistol",
-              "className": "BoolValue",
-              "guid": "14481"
-            },
-            {
-              "name": "slot",
-              "className": "IntValue",
-              "guid": "19227"
-            },
-            {
-              "name": "toolScript",
-              "className": "LocalScript",
-              "guid": "50549",
-              "filePaths": [
-                "sync/Workspace/'Grace' Service Revolver/toolScript.client.luau"
-              ]
-            },
-            {
-              "name": "weapon",
-              "className": "StringValue",
-              "guid": "259058"
-            }
-          ]
-        },
-        {
-          "name": "'Prince' Long Rifle",
-          "className": "Tool",
-          "guid": "265069",
-          "children": [
-            {
-              "name": "empty_ammo",
-              "className": "BoolValue",
-              "guid": "14486"
-            },
-            {
-              "name": "event",
-              "className": "BindableEvent",
-              "guid": "14390"
-            },
-            {
-              "name": "left_aiming",
-              "className": "BoolValue",
-              "guid": "14487"
-            },
-            {
-              "name": "lefthanded",
-              "className": "BoolValue",
-              "guid": "14484"
-            },
-            {
-              "name": "model",
-              "className": "ObjectValue",
-              "guid": "78950"
-            },
-            {
-              "name": "pistol",
-              "className": "BoolValue",
-              "guid": "14485"
-            },
-            {
-              "name": "slot",
-              "className": "IntValue",
-              "guid": "19228"
-            },
-            {
-              "name": "toolScript",
-              "className": "LocalScript",
-              "guid": "50550",
-              "filePaths": [
-                "sync/Workspace/'Prince' Long Rifle/toolScript.client.luau"
-              ]
-            },
-            {
-              "name": "weapon",
-              "className": "StringValue",
-              "guid": "259059"
-            }
-          ]
-        },
-        {
           "name": "A Folder For Studio Hats",
           "className": "Folder",
           "guid": "15936"
@@ -371302,41 +371349,6 @@
           "name": "Camera",
           "className": "Camera",
           "guid": "483434"
-        },
-        {
-          "name": "Combat Knife",
-          "className": "Tool",
-          "guid": "265070",
-          "children": [
-            {
-              "name": "event",
-              "className": "BindableEvent",
-              "guid": "14391"
-            },
-            {
-              "name": "model",
-              "className": "ObjectValue",
-              "guid": "78951"
-            },
-            {
-              "name": "slot",
-              "className": "IntValue",
-              "guid": "19229"
-            },
-            {
-              "name": "toolScript",
-              "className": "LocalScript",
-              "guid": "50551",
-              "filePaths": [
-                "sync/Workspace/Combat Knife/toolScript.client.luau"
-              ]
-            },
-            {
-              "name": "weapon",
-              "className": "StringValue",
-              "guid": "259060"
-            }
-          ]
         },
         {
           "name": "Development_Storage",
@@ -381052,46 +381064,6 @@
               "name": "WoodPanel",
               "className": "Part",
               "guid": "79849"
-            }
-          ]
-        },
-        {
-          "name": "First Aid Pouch",
-          "className": "Tool",
-          "guid": "265071",
-          "children": [
-            {
-              "name": "event",
-              "className": "BindableEvent",
-              "guid": "14392"
-            },
-            {
-              "name": "lefthanded",
-              "className": "BoolValue",
-              "guid": "14488"
-            },
-            {
-              "name": "model",
-              "className": "ObjectValue",
-              "guid": "78952"
-            },
-            {
-              "name": "slot",
-              "className": "IntValue",
-              "guid": "19230"
-            },
-            {
-              "name": "toolScript",
-              "className": "LocalScript",
-              "guid": "50552",
-              "filePaths": [
-                "sync/Workspace/First Aid Pouch/toolScript.client.luau"
-              ]
-            },
-            {
-              "name": "weapon",
-              "className": "StringValue",
-              "guid": "259061"
             }
           ]
         },
@@ -398718,41 +398690,6 @@
           ]
         },
         {
-          "name": "Mining Pick",
-          "className": "Tool",
-          "guid": "265072",
-          "children": [
-            {
-              "name": "event",
-              "className": "BindableEvent",
-              "guid": "14393"
-            },
-            {
-              "name": "model",
-              "className": "ObjectValue",
-              "guid": "78953"
-            },
-            {
-              "name": "slot",
-              "className": "IntValue",
-              "guid": "19231"
-            },
-            {
-              "name": "toolScript",
-              "className": "LocalScript",
-              "guid": "50553",
-              "filePaths": [
-                "sync/Workspace/Mining Pick/toolScript.client.luau"
-              ]
-            },
-            {
-              "name": "weapon",
-              "className": "StringValue",
-              "guid": "259062"
-            }
-          ]
-        },
-        {
           "name": "MusicPlayer",
           "className": "Part",
           "guid": "79874",
@@ -401220,6 +401157,14 @@
               "className": "Folder",
               "guid": "15935"
             }
+          ]
+        },
+        {
+          "name": "toolScript",
+          "className": "LocalScript",
+          "guid": "50551",
+          "filePaths": [
+            "sync/Workspace/toolScript.client.luau"
           ]
         }
       ]

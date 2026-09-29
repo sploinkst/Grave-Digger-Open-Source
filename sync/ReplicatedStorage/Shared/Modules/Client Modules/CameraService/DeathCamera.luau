@@ -2,6 +2,7 @@ local workspace_service = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local PlayerService = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local Camera = workspace_service.CurrentCamera
 
@@ -23,6 +24,15 @@ local ended = false
 local deathScreenTweens = {}
 local deathScreenToken = 0
 local deathFramePositions: {[Instance]: UDim2} = {}
+
+local function NormalizeDeadCamera()
+	LocalPlayer.CameraMode = Enum.CameraMode.Classic
+	LocalPlayer.CameraMaxZoomDistance = 10
+	Camera.FieldOfView = 90
+	UserInputService.MouseDeltaSensitivity = 1
+	UserInputService.MouseIconEnabled = true
+	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+end
 
 local function GetDeathScreen(): GuiObject?
 	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -259,6 +269,7 @@ function DeathCamera:Start()
 	CameraService = require(script.Parent)
 
 	ended = false
+	NormalizeDeadCamera()
 	PlayDeathScreen()
 
 	RunService:UnbindFromRenderStep("KillCamera")
@@ -324,7 +335,7 @@ function DeathCamera:End()
 
 	Camera.CameraSubject = nil
 	Camera.CameraType = Enum.CameraType.Custom
-	Camera.FieldOfView = 70
+	NormalizeDeadCamera()
 end
 
 
@@ -340,7 +351,7 @@ function DeathCamera:Cut()
 	DisconnectCharacterConnections()
 	Camera.CameraSubject = nil
 	Camera.CameraType = Enum.CameraType.Custom
-	Camera.FieldOfView = 70
+	NormalizeDeadCamera()
 end
 
 

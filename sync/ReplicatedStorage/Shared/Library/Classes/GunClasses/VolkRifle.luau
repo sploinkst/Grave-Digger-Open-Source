@@ -183,6 +183,8 @@ function VolkRifle.new(info: Types.BaseToolCreateInfo): VolkRifle
 		Reload_Empty = animation("reload_empty"),
 		Reload_Empty_Vet = animation("reload_empty_vet"),
 		Reload_Clip_Start_Empty = animation("reload_clip_start_empty"),
+		Reload_Clip_Start_Empty_Novet = animation("reload_clip_start_empty_novet"),
+		Reload_Clip_Start_One = animation("reload_clip_start_one"),
 		Reload_Clip = animation("reload_clip"),
 		Reload_Start = animation("reload_start"),
 		Reload_Start_Vet = animation("reload_start_vet"),
@@ -376,12 +378,11 @@ function VolkRifle:fire()
 		bulletSpeed = self.BulletSpeed,
 		fireAnimation = fireAnimation,
 		sound = fireSound,
-		fireDelay = 0,
+		fireDelay = self.fire_rate or FIRE_INTERVAL,
 	})
 	if not fired then return end
 
 	self.Cycling = true
-	task.wait(math.min(0.25, self.fire_rate or FIRE_INTERVAL))
 	if self.Equipped then
 		self:_stopAllExcept()
 		local cycleTrack = self:_playAnim("Cycle")

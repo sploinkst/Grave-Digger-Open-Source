@@ -133,7 +133,15 @@ function StatusService.HasStatus(player, status)
 end
 
 function StatusService.start_module()
-	game:GetService("Players").PlayerRemoving:Connect(function(player)
+	local Players = game:GetService("Players")
+	local function bind(player)
+		player.CharacterAdded:Connect(function()
+			if StatusTable[player] then StatusService.RemoveAllStatuses(player) end
+		end)
+	end
+	for _, player in Players:GetPlayers() do bind(player) end
+	Players.PlayerAdded:Connect(bind)
+	Players.PlayerRemoving:Connect(function(player)
 		StatusService.RemoveAllStatuses(player)
 	end)
 end

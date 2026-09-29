@@ -28,7 +28,7 @@ local whisperSounds = GunAssets.Sounds:FindFirstChild("springfield")
 		or GunAssets.Sounds.PrinceRifle
 
 local PEDERSEN_FIRE_INTERVAL = 60 / 186
-local BOLT_FIRE_INTERVAL = 60 / 60
+local BOLT_FIRE_INTERVAL = 0.3
 local PEDERSEN_SWITCH_TIME = 7
 local PEDERSEN_RELOAD_TIME = 5
 local PEDERSEN_JAM_CLEAR_TIME = 1
@@ -382,7 +382,6 @@ function WhisperRifle:fire()
 		return
 	end
 
-	local shotStartedAt = os.clock()
 	self.damage = self.PedersenMode and 55 or 130
 	local fireAnimation = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 	local fireSound = if self.PedersenMode
@@ -392,7 +391,7 @@ function WhisperRifle:fire()
 		bulletSpeed = 1200,
 		fireAnimation = fireAnimation,
 		sound = fireSound,
-		fireDelay = self.PedersenMode and PEDERSEN_FIRE_INTERVAL or 0,
+		fireDelay = self.PedersenMode and PEDERSEN_FIRE_INTERVAL or BOLT_FIRE_INTERVAL,
 	})
 	if fired then
 		if self.PedersenMode then self.ShotsUntilJam -= 1 end
@@ -402,7 +401,6 @@ function WhisperRifle:fire()
 
 	if not self.PedersenMode then
 		self.Cycling = true
-		task.wait(0.25)
 		if self.Equipped then
 			self:_stopAllExcept()
 			local cycleTrack = self:_playAnim("Cycle")
@@ -411,7 +409,7 @@ function WhisperRifle:fire()
 			if cycleSound and cycleSound:IsA("Sound") and muzzle then self:_play_sfx(cycleSound, muzzle) end
 			if cycleTrack then cycleTrack.Stopped:Wait() end
 		end
-		task.wait(math.max(0, BOLT_FIRE_INTERVAL - (os.clock() - shotStartedAt)))
+		task.wait(self.cycle_rest or 0)
 		self.Cycling = false
 	end
 	self:_restoreBaseDeferred()

@@ -20,6 +20,13 @@ if not eventsFolder:FindFirstChild("Presentation") then
 	presentation.Name = "Presentation"
 	presentation.Parent = eventsFolder
 end
+for _, name in {"BuffAbility", "HunterKitAbility"} do
+	if not eventsFolder:FindFirstChild(name) then
+		local event = Instance.new("RemoteEvent")
+		event.Name = name
+		event.Parent = eventsFolder
+	end
+end
 if not eventsFolder:FindFirstChild("MountedWeapon") then
 	local mountedWeapon = Instance.new("RemoteEvent")
 	mountedWeapon.Name = "MountedWeapon"

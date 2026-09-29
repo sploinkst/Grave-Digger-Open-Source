@@ -177,6 +177,9 @@ function JesseRifle.new(info: Types.BaseToolCreateInfo): JesseRifle
 		-- stance/fire instead of mirroring the right-side clips.
 		Fire = getAnimation("fire"),
 		Cycle = getAnimation("cycle"),
+		Bipod_Aim = getAnimation("bipod_aim"),
+		Bipod_Cycle = getAnimation("bipod_cycle"),
+		Bipod_Fire = getAnimation("bipod_fire"),
 		Reload_Start = getAnimation("reload_start"),
 		Reload_Start_Vet = getAnimation("reload_start_vet"),
 		Reload_Empty = getAnimation("reload_empty"),
@@ -265,10 +268,9 @@ function JesseRifle:fire()
 	if not fired then return end
 
 	self.Cycling = true
-	task.wait(0.15)
 	local cycleTrack = self.Equipped and self:_playAnim("Cycle")
 	if cycleTrack then cycleTrack.Stopped:Wait() end
-	task.wait(math.max(0, self.FireInterval - 0.15))
+	task.wait(self.cycle_rest or 0)
 	self.Cycling = false
 	self:_restoreBaseDeferred()
 end

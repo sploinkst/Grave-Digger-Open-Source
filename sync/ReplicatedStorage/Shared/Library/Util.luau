@@ -612,6 +612,27 @@ function Util.check_for_helmet(character)
 	local character_head = character:FindFirstChild("Head")
 	if not character_head then return nil, false end
 
+	local function resolveHelmet(part: BasePart): Instance?
+		local current: Instance? = part
+		while current and current ~= character do
+			if current:GetAttribute("HelmetSpent") or current:GetAttribute("Knocked") then
+				return nil
+			end
+			if current:GetAttribute("ClassHelmet")
+				or current:GetAttribute("SoldatHelmet")
+				or current:GetAttribute("LancerHelmet")
+				or current:GetAttribute("OfficerHelmet")
+				or string.find(string.lower(current.Name), "helmet", 1, true) then
+				return current
+			end
+			if current:IsA("Model") and current:FindFirstChild("Helmet") then
+				return current
+			end
+			current = current.Parent
+		end
+		return nil
+	end
+
 	-- Search head children for AccessoryWeld
 	for _, weld in character_head:GetChildren() do
 		if (not weld:IsA("Weld") and not weld:IsA("Motor6D")) then continue end
@@ -620,19 +641,18 @@ function Util.check_for_helmet(character)
 		local part1 = weld.Part1
 		if not part1 then continue end
 
-		local accessoryModel = part1.Parent
-		if not accessoryModel then continue end
-
-		if accessoryModel:FindFirstChild("Helmet") or part1:GetAttribute("ClassHelmet") then
-			local unknockable = accessoryModel:GetAttribute("Unknockable") or part1:GetAttribute("Unknockable")
-			return if part1:GetAttribute("ClassHelmet") then part1 else accessoryModel, not unknockable
+		local helmet = resolveHelmet(part1)
+		if helmet then
+			local unknockable = helmet:GetAttribute("Unknockable") or part1:GetAttribute("Unknockable")
+			return helmet, not unknockable
 		end
 	end
 
 	-- Also search via character accessories in case weld is parented differently
-	for _, child in character:GetChildren() do
+	for _, child in character:GetDescendants() do
 		if not child:IsA("Accessory") and not child:IsA("Model") then continue end
 		if not child:FindFirstChild("Helmet") then continue end
+		if child:GetAttribute("HelmetSpent") or child:GetAttribute("Knocked") then continue end
 
 		-- Verify it's on the head via attachment or weld
 		local handle = child:FindFirstChildWhichIsA("BasePart")

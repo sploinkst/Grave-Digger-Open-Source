@@ -1,8 +1,15 @@
-return require(script.Parent.LegacyGunFactory).create({
+local EquineSawedShotgun = require(script.Parent.LegacyGunFactory).create({
 	className = "EquineSawedShotgun",
 	assetName = "dbgun",
 	AnimationGunType = "EquineSawedShotgun",
 	StrictAnimations = true,
+	AnimationMap = {
+		Hold = "held", Aim = "aim", Aim_Left = "aim_left", Draw = "draw", Fire = "fire", Fire_Left = "fire_left",
+		Check = "check", Melee1 = "melee1", Melee2 = "melee2", Alt_Melee1 = "meleealt1", Short = "short", Sprint = "sprint",
+		Reload_Start = "reload_start", Reload_Loop = "reload_loop", Reload_Loop_Alt = "reload_loop_alt",
+		Reload_Loop_Vet = "reload_dual_vet", Reload_End = "reload_end", Reload_Empty_Vet = "reload_empty_vet",
+		Reload_Dual_Doom = "reload_dual_doom", Reload_Empty_Doom = "reload_empty_doom", Reload_End_Doom = "reload_end_doom",
+	},
 	WeaponCategory = "Shotgun",
 	Designation = "Primary",
 	Weight = 2,
@@ -46,3 +53,11 @@ return require(script.Parent.LegacyGunFactory).create({
 	bulletSpeed = 750,
 	doubleBarrelReload = true,
 })
+
+function EquineSawedShotgun:_getMeleeAnimationName(index: number): string
+	return if index == 1 and self.RegisteredAnimations and self.RegisteredAnimations.Alt_Melee1
+		then "Alt_Melee1"
+		else "Melee" .. index
+end
+
+return EquineSawedShotgun

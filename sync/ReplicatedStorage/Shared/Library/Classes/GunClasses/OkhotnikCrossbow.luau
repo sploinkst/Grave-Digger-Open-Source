@@ -6,12 +6,18 @@ local OkhotnikCrossbow = require(script.Parent.LegacyGunFactory).create({
 	AnimationMap = {
 		Hold = "held", Locked = "locked", Aim = "aim", Aim_Left = "aim_left", Draw = "draw",
 		Fire = "fire", Fire_Left = "fire_left", Check = "check", Reload_Start = "reload_start",
-		Melee1 = "melee1", Melee2 = "melee2", Altmelee1 = "altmelee1", Altmelee2 = "altmelee2",
+		Melee1 = "melee1", Melee2 = "melee2", Alt_Melee1 = "altmelee1", Alt_Melee2 = "altmelee2",
 		Short = "short", Speen = "speen", Sprint = "sprint",
 	},
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 2,
+	ammo_check_duration = 1,
+	AnimationPlayback = {
+		Fire = { fade = 0.01, speed = 3 },
+		Fire_Left = { fade = 0.01, speed = 3 },
+		Speen = { fade = 0.1, speed = 1 },
+	},
 	LegacyStats = {
 		name = "'Okhotnik' Hunting Crossbow",
 		icon = "85866554467590",
@@ -59,9 +65,14 @@ end
 
 function OkhotnikCrossbow:fire()
 	if self.Capacity <= 0 or self.CrossbowCocked == false then return false end
+	self:_playAnim("Speen")
 	local fired = self:_fireConfiguredShot(self.FireInterval)
 	if fired then self.CrossbowCocked = false end
 	return fired
+end
+
+function OkhotnikCrossbow:_getMeleeAnimationName(index: number): string
+	return (self.Capacity > 0 and "Alt_Melee" or "Melee") .. index
 end
 
 return OkhotnikCrossbow
