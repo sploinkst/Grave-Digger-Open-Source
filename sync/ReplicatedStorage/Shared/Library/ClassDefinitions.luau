@@ -35,8 +35,8 @@ Classes.Definitions = {
 		FixedPrimary = "lance", NoFirearms = true, MeleeDamageMultiplier = 0.7,
 	},
 	Vanguard = {
-		Passive = "Bulwark's Hope", MaxWeight = 2, Equipment = "lebel",
-		EquipmentName = "Rally Banner", Tools = {"Pickaxe", "RallyBanner"},
+		Passive = "Bulwark's Hope", MaxWeight = 2, Equipment = "RallyBanner",
+		EquipmentName = "Rally Banner", Tools = {"Pickaxe"},
 		FixedPrimary = "shield", NoFirearms = true, SuppressionImmune = true,
 	}
 }

@@ -164,7 +164,7 @@ local function buildAnimations(animationId: string, strict: boolean?, preferLong
 			or animation(folder, { "fire", "firing", "Fire" }) or animation(prince, { "fire" }),
 		Fire_Left = (preferLong and animation(folder, { "long_fire_left" }))
 			or animation(folder, { "fire_left", "firing_left", "Fire_Left" })
-			or (weaponCategory == "Rifle" and animation(prince, { "fire_left" }) or nil),
+			or animation(prince, { "fire_left" }),
 		Fire_Last = animation(folder, { "fire_last", "Fire_Last" }),
 		Fire_Last_Left = animation(folder, { "fire_last_left", "Fire_Last_Left" }),
 		Cycle = animation(folder, { "cycle", "Cycle", "reload_bolt" }),

@@ -447,6 +447,11 @@ local function HandleCharacter(player: Player, character: Model, ragdollObject)
 	humanoid.Health = maxHealth
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 	humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+	local function updateInjuredState(health: number)
+		character:SetAttribute("Injured", if health > 0 and health < 100 then true else nil)
+	end
+	updateInjuredState(humanoid.Health)
+	humanoid.HealthChanged:Connect(updateInjuredState)
 
 	SetupHitboxes(character)
 	task.defer(function()

@@ -773,9 +773,6 @@ function module.start_module()
 
 				if hitPlayer then
 					status_service.GiveStatus(hitPlayer, "ConcussionStatus")
-					if weaponName == "JudgementRifle" or weaponName == "AntiMaterialRifle" then
-						status_service.GiveStatus(hitPlayer, "KnockdownStatus", 2)
-					end
 				end
 				markHelmetProtectedShot(hitCharacter, player, hitData)
 
@@ -805,11 +802,7 @@ function module.start_module()
 				elseif action == HelmetRules.Action.KnockOff then
 					if knockable and not helmet:GetAttribute("Knocked") then
 						module.pop_helmet(hitCharacter, helmet, true, player)
-					else
-						module.stumble_player(hitCharacter)
 					end
-				else
-					module.stumble_player(hitCharacter)
 				end
 				return
 			elseif isHellion then
@@ -837,12 +830,12 @@ function module.start_module()
 		damage = (damage or 0) * (hitCharacter:GetAttribute("DamageTakenMultiplier") or 1)
 		module.play_damage_sound(hitCharacter, damage, player)
 		humanoid:TakeDamage(damage)
+		hitCharacter:SetAttribute("Injured", if humanoid.Health > 0 and humanoid.Health < 100 then true else nil)
 		if hitPlayer then
 			status_service.GiveStatus(hitPlayer, "ClottingStatus", 5)
 			status_service.GiveStatus(hitPlayer, "HitstunStatus", 1)
 			if weaponName == "AntiMaterialRifle" then
 				status_service.GiveStatus(hitPlayer, "ConcussionStatus")
-				status_service.GiveStatus(hitPlayer, "KnockdownStatus", 2)
 			elseif weaponName == "JudgementIncendiaryRifle" then
 				status_service.GiveStatus(hitPlayer, "MinorBurnStatus", 5)
 			elseif weaponName == "WexFlamethrower" or weaponName == "Flamethrower" then
@@ -854,8 +847,8 @@ function module.start_module()
 			end
 		end
 		
-		if humanoid.Health < 100 and hitPlayer then
-			status_service.GiveStatus(hitPlayer, "WoundStatus", nil, instance.Name)
+		if humanoid.Health > 0 and humanoid.Health < 100 and hitPlayer then
+			status_service.GiveStatus(hitPlayer, "WoundStatus", "Bullet", instance.Name)
 		end
 		
 		if humanoid.Health <= 0 then

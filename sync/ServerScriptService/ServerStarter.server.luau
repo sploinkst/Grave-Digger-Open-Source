@@ -59,7 +59,8 @@ local sharedSource = authoredAnimations and authoredAnimations:FindFirstChild("s
 local movementAnimations = Instance.new("Folder")
 movementAnimations.Name = "MovementAnimations"
 for _, name in {"walk_forward", "walk_injured", "walk_left", "walk_right",
-	"sprinting_arms", "sprinting_full", "sprinting_lean", "leg_aiming"} do
+	"sprinting_arms", "sprinting_full", "sprinting_lean", "leg_aiming",
+	"injured_left", "injured_right"} do
 	local clip = sharedSource and sharedSource:FindFirstChild(name)
 	if clip then clip:Clone().Parent = movementAnimations
 	else warn("[ServerStarter] Missing shared animation: " .. name) end

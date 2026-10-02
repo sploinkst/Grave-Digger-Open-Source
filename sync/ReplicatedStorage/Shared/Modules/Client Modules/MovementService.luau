@@ -18,6 +18,8 @@ local Character = nil
 local Humanoid: Humanoid = nil
 local RootPart = nil
 local Animator = nil
+local InjuredLeftTrack: AnimationTrack? = nil
+local InjuredRightTrack: AnimationTrack? = nil
 
 -- // Config
 local BaseSpeed = 10
@@ -101,6 +103,22 @@ local characterConnections = {}
 
 -- // Forward declaration
 local tryStartSprint
+
+local function updateInjuredPose()
+	if not Humanoid then return end
+	local injured = Humanoid.Health > 0 and Humanoid.Health < 100
+		and Character ~= nil and Character:GetAttribute("Aiming") ~= true
+	local leftTrack = if LocalPlayer:GetAttribute("Current_Shoulder") == "Left"
+		then InjuredRightTrack else InjuredLeftTrack
+	local otherTrack = if leftTrack == InjuredLeftTrack then InjuredRightTrack else InjuredLeftTrack
+	if injured and leftTrack then
+		if otherTrack and otherTrack.IsPlaying then otherTrack:Stop(0.15) end
+		if not leftTrack.IsPlaying then leftTrack:Play(0.15, 1, 0.5) end
+	else
+		if InjuredLeftTrack and InjuredLeftTrack.IsPlaying then InjuredLeftTrack:Stop(0.15) end
+		if InjuredRightTrack and InjuredRightTrack.IsPlaying then InjuredRightTrack:Stop(0.15) end
+	end
+end
 
 -- // Helpers
 
@@ -1293,6 +1311,7 @@ local function bindCharacterConnections()
 	track(
 		Humanoid.HealthChanged:Connect(
 			function()
+				updateInjuredPose()
 
 				Humanoid:SetStateEnabled(
 					Enum.HumanoidStateType.Jumping,
@@ -1322,6 +1341,7 @@ local function bindCharacterConnections()
 			"Aiming"
 		):Connect(
 			function()
+				updateInjuredPose()
 
 				local aiming =
 					Character:GetAttribute(
@@ -1481,6 +1501,10 @@ end
 -- // Character binding
 
 local function bindCharacter(char)
+	if InjuredLeftTrack then InjuredLeftTrack:Stop(0); InjuredLeftTrack:Destroy() end
+	if InjuredRightTrack then InjuredRightTrack:Stop(0); InjuredRightTrack:Destroy() end
+	InjuredLeftTrack = nil
+	InjuredRightTrack = nil
 
 	Character = char
 
@@ -1498,6 +1522,18 @@ local function bindCharacter(char)
 		Humanoid:WaitForChild(
 			"Animator"
 		)
+
+	local movementAnimations = ReplicatedStorage:FindFirstChild("MovementAnimations")
+	local injuredLeft = movementAnimations and movementAnimations:FindFirstChild("injured_left")
+	local injuredRight = movementAnimations and movementAnimations:FindFirstChild("injured_right")
+	InjuredLeftTrack = injuredLeft and Animator:LoadAnimation(injuredLeft) or nil
+	InjuredRightTrack = injuredRight and Animator:LoadAnimation(injuredRight) or nil
+	for _, track in { InjuredLeftTrack, InjuredRightTrack } do
+		if track then
+			track.Priority = Enum.AnimationPriority.Action2
+			track.Looped = true
+		end
+	end
 
 	-- Reset volatile state.
 	IsJumping = false
@@ -1524,6 +1560,7 @@ local function bindCharacter(char)
 		* getOrderSpeedMultiplier()
 
 	bindCharacterConnections()
+	updateInjuredPose()
 end
 
 -- // Vault input loop
@@ -1567,6 +1604,7 @@ function module.start_module()
 	LocalPlayer.CharacterAdded:Connect(
 		bindCharacter
 	)
+	LocalPlayer:GetAttributeChangedSignal("Current_Shoulder"):Connect(updateInjuredPose)
 
 	setupVaultInput()
 

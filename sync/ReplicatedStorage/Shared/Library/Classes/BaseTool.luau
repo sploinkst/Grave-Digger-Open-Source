@@ -290,7 +290,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 				self.animations.Hold = princeHold
 			end
 		end
-		if self.IsFirearm and self.WeaponCategory == "Rifle" and self.animations.Fire_Left ~= nil
+		if self.IsFirearm and self.animations.Fire_Left ~= nil
 			and self.animations.Fire_Left == self.animations.Fire then
 			-- A right-side clip aliased into Fire_Left is not an authored left
 			-- animation. Remove it so the universal Prince fallback below owns the
@@ -387,9 +387,10 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 			end
 		end
 
-		-- Rifles without an authored left-fire clip borrow Prince's fire_left.
-		-- Pistols, shotguns, launchers, and flamers keep their own resolution rules.
-		if self.IsFirearm and self.WeaponCategory == "Rifle" then
+		-- Every firearm without an authored left-fire clip borrows Prince's
+		-- fire_left. This must be registered after the weapon's own tracks so an
+		-- authored pistol/shotgun/rifle clip always wins.
+		if self.IsFirearm then
 			self.RegisteredAnimations = self.RegisteredAnimations or {}
 			local princeFireLeft = get_prince_animation("fire_left")
 			if princeFireLeft then
@@ -1459,6 +1460,12 @@ function BaseTool:_playFireAnimation(animationName: string, playRecoil: boolean?
 	-- current shoulder when falling back; never substitute a right-side track
 	-- while the weapon is on the left shoulder (or vice versa).
 	local resolvedName = animationName
+	-- Some migrated weapon actions explicitly pass the base `Fire` name. The
+	-- camera shoulder is authoritative for the base pair, regardless of what
+	-- that individual caller supplied.
+	if resolvedName == "Fire" or resolvedName == "Fire_Left" then
+		resolvedName = (self.current_shoulder == "Left") and "Fire_Left" or "Fire"
+	end
 	if not anims[resolvedName] then
 		resolvedName = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 	end
