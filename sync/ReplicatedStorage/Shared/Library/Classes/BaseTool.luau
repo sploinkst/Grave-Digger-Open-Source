@@ -30,7 +30,48 @@ local gun_communication  = events_replication_folder
 local drop_connection    = gun_communication.DropWeapon
 local melee_communication = events_replication_folder.Melee
 
-local general_sfx        = ReplicatedStorage.Shared.Assets.Guns.Sounds.Shared
+local GunloadingSounds = require(script.Parent.Parent.GunloadingSounds)
+local MasterAnimationRules = require(script.Parent.Parent.MasterAnimationRules)
+-- Gun animation priority rules
+local GUN_ANIMATION_PRIORITIES = {
+	draw = "Action2", drawdual = "Action3", unequip = "Action",
+	longdraw = "Action2", stockdraw = "Action2", steyrdraw = "Action2",
+	fireweak = "Action3", firebreak = "Action3", hipfire = "Action3",
+	firing = "Action3", firingleft = "Action3",
+	held = "Action", hold = "Action", akimboheld = "Action", akimbohold = "Action",
+	heldnormal = "Action", holdnormal = "Action", hiphold = "Action", shoulderhold = "Action",
+	longheld = "Action", longhold = "Action", longsprint = "Action",
+	short = "Action3", shortalt = "Action3",
+	locked = "Action4", akimbolocked = "Action4", lockedalt = "Action4", altlocked = "Action4",
+	aim = "Action2", aimleft = "Action2", bipodaim = "Action2",
+	aimdual = "Action2", aimnormal = "Action2",
+	altchangeaim = "Action2", altchangeaimleft = "Action2",
+	blocked1 = "Action2", blocked2 = "Action2",
+	hipaim = "Action2", hipaimleft = "Action2",
+	shoulderaim = "Action2", shoulderaimleft = "Action2",
+	stockaim = "Action2", stockaimleft = "Action2", longaim = "Action2", longaimleft = "Action2",
+	akimboright = "Action3", akimboleft = "Action3",
+	akimborightempty = "Action3", akimboleftempty = "Action3",
+}
+
+local function gunAnimationPriorityName(name: string, equipped: boolean?, dualWieldActive: boolean?): string
+	local key = name:lower():gsub("_", "")
+	if GUN_ANIMATION_PRIORITIES[key] then return GUN_ANIMATION_PRIORITIES[key] end
+	if key:find("sprint", 1, true) == 1 then return "Action" end
+	if key:find("fire", 1, true) == 1 or key:find("akimbofire", 1, true) == 1
+		or key:find("altchangefire", 1, true) == 1 or key:find("hipfire", 1, true) == 1
+		or key:find("stockfire", 1, true) == 1 or key:find("shoulderfire", 1, true) == 1
+		or key:find("longfire", 1, true) == 1
+		or key == "firing" or key == "firingleft"
+		or key == "shoot" or key == "shootempty" then
+		return equipped and not dualWieldActive and "Action3" or "Action"
+	end
+	-- Every remaining loaded animation starts at Action3 in the master,
+	-- including reloads, cycles, checks, melee and weapon-specific actions.
+	return "Action3"
+end
+
+-- End gun animation priority rules
 local bullet_warning_part = ReplicatedStorage.Shared.Assets.UI.Warning_Barrel
 
 -- // Tuning
@@ -247,7 +288,30 @@ end
 
 -- // on_give
 
+function BaseTool:_applyWeaponWelds()
+	local welds = self.EquipWelds or self.AuthoredWelds
+	if not welds or (not self.IsFirearm and not self.EquipWelds) then return end
+	for name, value in pairs(welds) do self[name] = value end
+	-- Native rigs with a different root keep their matching constructor mount.
+	-- Their legacy holster data remains available independently of that mount.
+	if self.UseNativeEquipMount then return end
+	local mount = self.motor_6d_data or {}
+	local arm = welds.lefthand and "Left Arm" or "Right Arm"
+	mount.Parent = arm
+	mount.Part0 = arm
+	mount.Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true) or mount.Part1
+	mount.C0 = welds.equipc0
+	mount.C1 = welds.equipc1
+	mount.UseRightGripAttachment = false
+	mount.ReloadGripC0 = nil
+	mount.ReloadGripC1 = nil
+	self.motor_6d_data = mount
+	self.AnimationDrivenGrip = false
+	self.UseAuthoredGrip = true
+end
+
 function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
+	self:_applyWeaponWelds()
 	if self._prepareAnimations then self:_prepareAnimations() end
 	self.tool = tool
 
@@ -278,11 +342,10 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 			-- stance outside ADS without ever reusing their hip-fire action.
 			self.animations.Hold = get_grace_animation("held")
 		end
-		if self.IsFirearm and not self.animations.Draw then
-			local princeDraw = get_prince_animation("draw")
-			if princeDraw then
-				self.animations.Draw = princeDraw
-			end
+		if self.IsFirearm and self.WeaponCategory == "Pistol" then
+			self.animations.Draw = get_grace_animation("draw") or self.animations.Draw
+		elseif self.IsFirearm and not self.animations.Draw then
+			self.animations.Draw = self.animations.draw or get_prince_animation("draw")
 		end
 		if should_use_prince_hold(self, self.animations.Hold) then
 			local princeHold = get_prince_animation("held")
@@ -306,8 +369,51 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 			warn("[" .. self.className .. "] Failed to register animations")
 		end
 
+		-- Rifles borrow missing actions from Prince, including clips whose own
+		-- asset exists but could not be resolved or loaded. Register with Prince's
+		-- resolver so its legacy animation IDs are used for these tracks.
+		if self.WeaponCategory == "Rifle" then
+			self.RegisteredAnimations = self.RegisteredAnimations or {}
+			local princeActions = {
+				Draw = "draw", Hold = "held", Unequip = "unequip",
+				Aim = "aim", Aim_Left = "aim_left",
+				Fire = "fire", Fire_Left = "fire_left", Cycle = "cycle",
+				Melee1 = "melee1", Melee2 = "melee2",
+				Alt_Melee1 = "altmelee1", Alt_Melee2 = "altmelee2",
+				Short = "short", Sprint = "sprint",
+			}
+			for action in pairs(self.animations) do
+				if not princeActions[action] then princeActions[action] = string.lower(action) end
+			end
+			local missing = {}
+			for action, clipName in pairs(princeActions) do
+				if not self.RegisteredAnimations[action] then
+					local clip = get_prince_animation(clipName)
+					if clip then missing[action] = clip end
+				end
+			end
+			if not self.RegisteredAnimations.Drop then
+				local misc = Assets.Animations.Tools:FindFirstChild("Misc")
+				local drop = misc and misc:FindFirstChild("Drop_Rifle")
+				if drop then missing.Drop = drop end
+			end
+			if next(missing) then
+				local tracks = utilities_module.register_animations(LOCAL_PLAYER, missing, "PrinceRifle")
+				for action, track in pairs(tracks or {}) do
+					self.RegisteredAnimations[action] = track
+				end
+			end
+		end
+
 		if self.WeaponCategory == "Pistol" then
 			self.RegisteredAnimations = self.RegisteredAnimations or {}
+			-- Resolve borrowed draw clips against Grace's animation IDs, rather
+			-- than the receiving pistol's legacy animation table.
+			local graceDraw = get_grace_animation("draw")
+			if graceDraw and (not self.PreferOwnDraw or not self.RegisteredAnimations.Draw) then
+				local drawTracks = utilities_module.register_animations(LOCAL_PLAYER, { Draw = graceDraw }, "GraceRevolver")
+				if drawTracks and drawTracks.Draw then self.RegisteredAnimations.Draw = drawTracks.Draw end
+			end
 			local missingAimAnimations = {}
 			for _, aimName in { "Aim" } do
 				if not self.RegisteredAnimations[aimName] then
@@ -459,12 +565,15 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 
 				-- Persistent poses stay below transient actions so recoil, cycling,
 				-- melee, and reload clips can layer over an active aim stance.
-				if animName == "Draw" then
+				if not self.IsFirearm and self.AnimationPriorities and self.AnimationPriorities[animName] then
+					track.Priority = self.AnimationPriorities[animName]
+				elseif self.IsFirearm then
+					track.Priority = Enum.AnimationPriority[gunAnimationPriorityName(animName, self.Equipped, self.DualWieldActive)]
+				elseif string.find(animName, "Sprint", 1, true) then
+					track.Priority = Enum.AnimationPriority.Core
+				elseif animName == "Draw" then
 					track.Priority = Enum.AnimationPriority.Action2
-				elseif animName == "Hold"
-					or animName == "Sprint" or animName == "Sprint_Greyhound"
-					or animName == "Sprint_Alt_Greyhound" or animName == "Sprint_Dual"
-					or animName == "Sprint_Normal" then
+				elseif animName == "Hold" then
 					track.Priority = Enum.AnimationPriority.Action
 				elseif animName == "Short" or animName == "Short_Alt" then
 					track.Priority = Enum.AnimationPriority.Action3
@@ -565,7 +674,7 @@ local function raycastIgnoringCharactersAndInvisible(origin, direction, params)
 			continue
 		end
 
-		if hit.Transparency >= 1 and not hit:GetAttribute("Unpiercable") then
+		if hit:IsA("BasePart") and hit.Transparency >= 1 then
 			table.insert(ignoreList, hit)
 			continue
 		end
@@ -583,11 +692,11 @@ function BaseTool:clearMuzzleFX()
 		self.billboard_ui.Enabled = false
 	end
 
-	if self.barrelWarning.Parent then
+	if self.barrelWarning and self.barrelWarning.Parent then
 		self.barrelWarning.Parent = nil
 	end
 
-	self.muzzleAttach.Parent = nil
+	if self.muzzleAttach then self.muzzleAttach.Parent = nil end
 end
 
 -- Resolve only physical parts. Some models contain Welds or attachments with
@@ -612,14 +721,125 @@ function BaseTool:_findModelPart(partName: string?): BasePart?
 	return nil
 end
 
+function BaseTool:_usesCombatAim(): boolean
+	return UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+		and LOCAL_PLAYER:GetAttribute("FreeLook") ~= true
+end
+
+function BaseTool:_clearCombatPose()
+	if self.Aiming then self:endAiming() end
+	self.IsShorted = false
+	self.ForceBlockFire = false
+	self._obstructionClearSince = nil
+	self._obstructionWeight = nil
+	self._obstructionTargetWeight = nil
+	if self._shortTrack then self._shortTrack:Stop(0); self._shortTrack = nil end
+	-- A track can survive after its cached reference is cleared. Stop the
+	-- registered combat poses as well, including alternate weapon stances.
+	for _, name in {
+		"Short", "Short_Alt", "Aim", "Aim_Left", "Bipod_Aim", "Aim_Dual", "Aim_Normal",
+		"Hip_Aim", "Hip_Aim_Left", "Shoulder_Aim", "Shoulder_Aim_Left",
+		"Stock_Aim", "Stock_Aim_Left", "Long_Aim", "Long_Aim_Left",
+	} do
+		local track = self.RegisteredAnimations and self.RegisteredAnimations[name]
+		if track and track.IsPlaying then track:Stop(0) end
+	end
+	local character = LOCAL_PLAYER.Character
+	local torso = character and character:FindFirstChild("Torso")
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local left = torso and torso:FindFirstChild("Left Shoulder")
+	local right = torso and torso:FindFirstChild("Right Shoulder")
+	local joint = root and root:FindFirstChild("RootJoint")
+	if left and self._restLeftC0 then left.C0 = self._restLeftC0 end
+	if right and self._restRightC0 then right.C0 = self._restRightC0 end
+	if joint and self._restRootJointC0 then joint.C0 = self._restRootJointC0 end
+	self._fpLeftRot = nil
+	self._fpRightRot = nil
+	self._smoothedYaw = nil
+	self._lastYaw = nil
+	self._combatAimActive = false
+	self:clearMuzzleFX()
+	self:_restoreBase()
+end
+
+function BaseTool:_isGroundObstruction(result, lookDirection: Vector3, character: Model): boolean
+	if not result or lookDirection.Y >= -0.1 or result.Normal.Y < 0.65 then return false end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not root or not humanoid then return false end
+	local leg = character:FindFirstChild("Left Leg")
+	local legHeight = leg and leg.Size.Y or 0
+	local footHeight = root.Position.Y - root.Size.Y / 2 - humanoid.HipHeight - legHeight
+	-- Ground below the feet is a valid shot target. Raised cover and walls
+	-- still participate in the barrel obstruction checks.
+	return result.Position.Y <= footHeight + 0.5
+end
+
+function BaseTool:_updateObstructionState(hasObstruction: boolean, now: number): boolean
+	if hasObstruction then
+		self._obstructionClearSince = nil
+		self.IsShorted = true
+	elseif self.IsShorted then
+		self._obstructionClearSince = self._obstructionClearSince or now
+		if now - self._obstructionClearSince >= 0.2 then
+			self.IsShorted = false
+			self._obstructionClearSince = nil
+		end
+	else
+		self._obstructionClearSince = nil
+	end
+	return self.IsShorted == true
+end
+
+function BaseTool:_stopObstructionPose()
+	if self._shortTrack then self._shortTrack:Stop(0); self._shortTrack = nil end
+	for _, name in { "Short", "Short_Alt" } do
+		local track = self.RegisteredAnimations and self.RegisteredAnimations[name]
+		if track and track.IsPlaying then track:Stop(0) end
+	end
+	self._obstructionWeight = nil
+	self._obstructionTargetWeight = nil
+end
+
+function BaseTool:_reloadOwnsPose(): boolean
+	if self.Reloading then return true end
+	for name, track in pairs(self.RegisteredAnimations or {}) do
+		if name:find("Reload", 1, true) == 1 and track.IsPlaying then return true end
+	end
+	return false
+end
+
+function BaseTool:_gunContact(character): boolean
+	local model = self.actual_model
+	if not model then return false end
+	local params = OverlapParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local excluded = {character, model}
+	if self.barrelWarning then table.insert(excluded, self.barrelWarning) end
+	params.FilterDescendantsInstances = excluded
+	-- Test rendered gun geometry, never hidden hitboxes or attachment markers.
+	for _, part in model:GetDescendants() do
+		if not part:IsA("BasePart") or part.Transparency >= 1 then continue end
+		for _, hit in workspace:GetPartsInPart(part, params) do
+			if hit.Transparency >= 1 or not hit.CanCollide then continue end
+			local ancestor = hit:FindFirstAncestorOfClass("Model")
+			if ancestor and ancestor:FindFirstChildOfClass("Humanoid") then continue end
+			return true
+		end
+	end
+	return false
+end
+
 function BaseTool:init_short_mechanic()
-	-- Melee/class tools often have no animation table at all. The obstruction
-	-- mechanic belongs to firearms and must not run for those tools.
-	if not self.RegisteredAnimations or not self.RegisteredAnimations.Short then
+	-- Contact detection belongs to firearms, including guns without a Short clip.
+	if not self.IsFirearm or not self.barrelWarning or not self.muzzleAttach then
 		return
 	end
 
-	local short_distance = self.Short_Distance or 4
+	local short_distance = math.max(self.Short_Distance or 4, self.length or 0)
+	self._obstructionClearSince = nil
+	self._obstructionWeight = nil
+	self._obstructionTargetWeight = nil
 
 
 	if not self.hitAttach then
@@ -632,16 +852,17 @@ function BaseTool:init_short_mechanic()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 	rayParams.IgnoreWater = true
 
-	local mouse = LOCAL_PLAYER:GetMouse()
-
 	if self.short_connection then
 		self.short_connection:Disconnect()
 	end
 
-	self.short_connection = RunService.RenderStepped:Connect(function()
-		if not self.Aiming then
+	self.short_connection = RunService.RenderStepped:Connect(function(dt)
+		if not self.Equipped then
 			self.IsShorted = false
 			self.ForceBlockFire = false
+			self._obstructionClearSince = nil
+			self._obstructionWeight = nil
+			self._obstructionTargetWeight = nil
 
 			if self._shortTrack and self._shortTrack.IsPlaying then
 				self._shortTrack:Stop()
@@ -653,6 +874,10 @@ function BaseTool:init_short_mechanic()
 		end
 
 		local character = LOCAL_PLAYER.Character
+		if not self:_usesCombatAim() then
+			self:_clearCombatPose()
+			return
+		end
 
 		if not character or not self.Equipped then
 			self:clearMuzzleFX()
@@ -666,7 +891,7 @@ function BaseTool:init_short_mechanic()
 			return
 		end
 
-		local muzzle = self:_findModelPart(self.MuzzlePartName)
+		local muzzle = if self._getMuzzlePart then self:_getMuzzlePart() else self:_findModelPart(self.MuzzlePartName or "Muzzle")
 
 		if not muzzle then
 			self:clearMuzzleFX()
@@ -679,67 +904,30 @@ function BaseTool:init_short_mechanic()
 			self.barrelWarning
 		}
 
-		local lookDir = head.CFrame.LookVector
+		local camera = workspace.CurrentCamera
+		local lookDir = camera and camera.CFrame.LookVector or head.CFrame.LookVector
+		local probeDistance = short_distance
 
-		local shortResult = raycastIgnoringCharactersAndInvisible(
-			head.Position,
-			lookDir * short_distance,
-			rayParams
-		)
-
-		local targetPosition = mouse.Hit.Position
-		local aimDirection = (targetPosition - muzzle.Position).Unit
-
+		local barrelOrigin = muzzle.Position
+		local aimDirection = lookDir
 		local muzzleResult = raycastIgnoringCharactersAndInvisible(
-			muzzle.Position,
-			aimDirection * short_distance,
+			barrelOrigin,
+			aimDirection * probeDistance,
 			rayParams
 		)
-
 		local muzzleBlocked = muzzleResult ~= nil
-
-		if shortResult then
-
-			local alpha = math.clamp(
-				1 - (shortResult.Distance / short_distance) + 0.4,
-				0,
-				1
-			)
-
-			self.IsShorted = true
-
-
-			if not self._shortTrack or not self._shortTrack.IsPlaying then
-				self._shortTrack = self.RegisteredAnimations.Short
-				self._shortTrack:Play(0.1, alpha, 0.001)
-			end
-
-			self._shortTrack:AdjustWeight(alpha)
-			self._shortTrack:AdjustSpeed(0.001)
-		else
-			self.IsShorted = false
-
-			if self._shortTrack and self._shortTrack.IsPlaying then
-				local w = self._shortTrack.WeightCurrent - 0.8
-
-				if w <= 0 then
-					self._shortTrack:Stop(0.1)
-					self._shortTrack = nil
-					self:_restoreBase()
-				else
-					self._shortTrack:AdjustWeight(w)
-				end
-			end
-		end
+		self:_updateObstructionState(self:_gunContact(character), os.clock())
+		-- Upright/Short playback is deferred; contact cannot take over reloads
+		-- or change the gun pose and feed back into its own collision detection.
+		self:_stopObstructionPose()
 
 		self.ForceBlockFire = self.IsShorted
 
-		if self.muzzleAttach.Parent ~= muzzle then
-			self.muzzleAttach.Parent = muzzle
-		end
+		self.muzzleAttach.Parent = muzzle
+		self.muzzleAttach.Position = Vector3.zero
 
 		self.barrelWarning.CFrame = CFrame.new(
-			muzzleBlocked and muzzleResult.Position or (muzzle.Position + aimDirection * short_distance)
+			muzzleResult and muzzleResult.Position or (barrelOrigin + aimDirection * short_distance)
 		)
 
 		if muzzleBlocked then
@@ -764,6 +952,9 @@ function BaseTool:init_short_mechanic()
 end
 
 function BaseTool:clean_up_short()
+	self._obstructionClearSince = nil
+	self._obstructionWeight = nil
+	self._obstructionTargetWeight = nil
 	if self.short_connection then
 		self.short_connection:Disconnect()
 		self.short_connection = nil
@@ -814,6 +1005,7 @@ function BaseTool:equip()
 	if not self.tool then return end
 
 	self.Equipped  = true
+	self:_refreshAnimationPriorities()
 	self.Equipping = true
 
 	local character = LOCAL_PLAYER.Character
@@ -830,9 +1022,7 @@ function BaseTool:equip()
 
 	character:SetAttribute("GunEquipped", self.IsFirearm == true)
 	character:SetAttribute("Sprint_Animation", self.className)
-	if self.RegisteredAnimations and self.RegisteredAnimations.Sprint then
-		character:SetAttribute("No_Sprint_Animation", true)
-	end
+	character:SetAttribute("No_Sprint_Animation", nil)
 	local baseline = WeaponHandling.Baseline[self.className]
 	if self.IsFirearm and baseline then
 		self.draw_speed = baseline.draw
@@ -933,13 +1123,30 @@ function BaseTool:equip()
 				local round = self.Round and target and target:FindFirstChild(self.Round.Name)
 				if round and round:IsA("BasePart") then round.Transparency = 1 end
 			elseif keyframe == "vfx_eject_casing" then
+				if self.HandlesCasingKeyframes then return end
 				if not self.actual_model then return end
-				local casing = self.actual_model:FindFirstChild(self.className .. "_Ejection")
-					or self.actual_model:FindFirstChild("ejector", true)
-					or self.actual_model:FindFirstChild("casing", true)
+				local casing = self:_findModelPart(self.CasingPartName or (self.className .. "_Ejection"))
+					or self:_findModelPart("ejector") or self:_findModelPart("casing")
 				if not casing then warn("[BASETOOL] vfx_eject_casing: no casing for " .. self.className) return end
-				self:emit_casing(casing, casing.CFrame)
+				local ejection = self.EjectionPartName and self:_findModelPart(self.EjectionPartName)
+				self:emit_casing(casing, ejection and ejection.CFrame or casing.CFrame)
 				print("Ejecting casing")
+
+			elseif keyframe == "vfx_eject_clip" or keyframe == "vfx_clip_eject"
+				or keyframe == "vfx_eject_magazine" or keyframe == "vfx_magazine_drop"
+				or keyframe == "vfx_drop_magazine" or keyframe == "vfx_mag_drop" then
+				if not self.actual_model then return end
+				local isClip = keyframe:find("clip", 1, true) ~= nil
+				local parts = self.actual_model:FindFirstChild("parts") or self.actual_model
+				local dropped = parts:FindFirstChild(isClip and "clip" or "magazine", true)
+				if not dropped then
+					for _, descendant in parts:GetDescendants() do
+						if descendant:IsA("BasePart") and string.lower(descendant.Name):find(isClip and "clip" or "mag", 1, true) then
+							dropped = descendant; break
+						end
+					end
+				end
+				if dropped and dropped:IsA("BasePart") then self:emit_casing(dropped, dropped.CFrame, Vector3.new(0, -1, 0)) end
 
 			elseif keyframe == "vfx_cylinder_rotate_other" then
 				if not self.actual_model then return end
@@ -1033,33 +1240,22 @@ function BaseTool:equip()
 				end
 				self.cylinder_rotation = 1
 
-			elseif keyframe:sub(1, 4) == "sfx_" then
-				if not self.SoundFolder then return end
-				local sound = self.SoundFolder:FindFirstChild(keyframe:sub(5), true)
+			elseif keyframe:sub(1, 4) == "sfx_" or keyframe:sub(1, 5) == "gsfx_" then
+				local general = keyframe:sub(1, 5) == "gsfx_"
+				local soundName = keyframe:sub(general and 6 or 5)
+				if not general and self._shouldPlayAnimationSound and not self:_shouldPlayAnimationSound(soundName) then return end
+				local sound = if general then GunloadingSounds.Find(soundName)
+					else (self._findAnimationSound and self:_findAnimationSound(soundName))
+						or (self.SoundFolder and self.SoundFolder:FindFirstChild(soundName, true))
+				if not sound or not sound:IsA("Sound") then sound = GunloadingSounds.Find(soundName) end
 				if sound then
-					local muzzle = self:_findModelPart(self.MuzzlePartName)
-					if muzzle then self:_play_sfx(sound, muzzle, nil, 0.1) end
-					print("Playing sound: " .. keyframe:sub(5))
+					local origin = (general and LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:FindFirstChild("HumanoidRootPart"))
+						or self:_findModelPart(self.MuzzlePartName)
+						or (self.actual_model and self.actual_model:FindFirstChildWhichIsA("BasePart", true))
+						or (LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:FindFirstChild("HumanoidRootPart"))
+					if origin then self:_play_sfx(sound, origin, nil, 0.1) end
 				else
 					warn("Sound not found for keyframe: " .. keyframe)
-				end
-
-			elseif keyframe:sub(1, 5) == "gsfx_" then
-				local baseName = keyframe:sub(6)
-				local matches = {}
-				for _, child in ipairs(general_sfx:GetChildren()) do
-					if child.Name:sub(1, #baseName) == baseName then
-						table.insert(matches, child)
-					end
-				end
-				if #matches > 0 then
-					if not self.actual_model then return end
-					local muzzle = self:_findModelPart(self.MuzzlePartName)
-					if not muzzle then return end
-					self:_play_sfx(matches[math.random(1, #matches)], muzzle, nil, 0.1)
-					print("Playing GSFX: " .. matches[math.random(1, #matches)].Name)
-				else
-					warn("No GSFX matches for: " .. baseName)
 				end
 
 			elseif keyframe == "lock_start" then
@@ -1110,10 +1306,12 @@ function BaseTool:equip()
 end
 
 function BaseTool:unequip()
+	self.Check_Delayed = false
 	self._equipGeneration = (self._equipGeneration or 0) + 1
 	if not self.tool then return end
 
 	self.Equipped = false
+	self:_refreshAnimationPriorities()
 	self.Equipping = false
 	self.Aiming = false
 	self.holding_aim_button = false
@@ -1127,17 +1325,6 @@ function BaseTool:unequip()
 	self._reloadCancelled = true
 	self._aimVersion += 1
 	self:_stopItemAnimations()
-	local unequipTrack = self.RegisteredAnimations and self.RegisteredAnimations.Unequip
-	if unequipTrack then
-		self:_playAnim("Unequip", true)
-		unequipTrack.Stopped:Once(function()
-			-- Do not let a completed put-away clip or any action from this item
-			-- survive in the Animator after the tool has left the character.
-			if not self.Equipped then self:_stopItemAnimations() end
-		end)
-	else
-		self:_stopItemAnimations()
-	end
 
 	local character = LOCAL_PLAYER.Character
 	if not character then return end
@@ -1162,7 +1349,7 @@ function BaseTool:unequip()
 	self:_stopAimTracking()
 	self:_stopTransparencyTracking()
 	self:_resetBodyTransparency()
-	self:_stopItemAnimations(unequipTrack)
+	self:_stopItemAnimations()
 
 	self:_disable_aiming_ui()
 	humanoid:UnequipTools()
@@ -1191,7 +1378,7 @@ function BaseTool:unequip()
 
 	character:SetAttribute("CompassRight", nil)
 	LOCAL_PLAYER.Character:SetAttribute("CompassDenied", nil)
-	self:_stopItemAnimations(unequipTrack)
+	self:_stopItemAnimations()
 	if self.Moving_Connection then
 		self.Moving_Connection:Disconnect()
 		self.Moving_Connection = nil
@@ -1215,6 +1402,9 @@ function BaseTool:get_spread(muzzle, shootDir)
 
 	local spread = isMoving and self.Moving_Accuracy or self.Accuracy
 	spread = spread or self.ShotgunSpread or self.Accuracy or self.Moving_Accuracy or 0
+	if isMoving and character and character:GetAttribute("ChemicalMovementPenaltyMultiplier") and self.Accuracy then
+		spread = self.Accuracy + math.max(0, spread - self.Accuracy) * character:GetAttribute("ChemicalMovementPenaltyMultiplier")
+	end
 
 	local spreadMultiplier = if self.IsFirearm and character then character:GetAttribute("SpreadMultiplier") or 1 else 1
 	-- Focus is an Officer aura.  It improves normal aim and compounds with
@@ -1240,7 +1430,7 @@ function BaseTool:_isBusy(): boolean
 	local animations = self.RegisteredAnimations
 	local drawTrack = animations and animations.Draw
 	return self.Firing or self.Reloading or self.Cycling or self.Alting or self.Spinning
-		or self.Checking or self.Meleeing or self.Mining
+		or self.Checking or self.Meleeing or self.Mining or self.Inspiring
 		or (drawTrack ~= nil and drawTrack.IsPlaying) or false
 end
 
@@ -1307,15 +1497,54 @@ function BaseTool:_stopAllExcept(exception: AnimationTrack?)
 	end
 end
 
+-- The master waits its phase timer, not Length / Speed. Authored clips are not
+-- all one second long; Stopped:Wait() changes gameplay timing with the asset.
+function BaseTool:_waitActionPhase(track, seconds: number): boolean
+	local generation = self._equipGeneration
+	local deadline = os.clock() + seconds
+	while os.clock() < deadline do
+		if not self.Equipped or self._equipGeneration ~= generation then return false end
+		task.wait(math.min(0.03, deadline - os.clock()))
+	end
+	if not self.Equipped or self._equipGeneration ~= generation then return false end
+	if track and track.IsPlaying then track:Stop(0) end
+	return true
+end
+function BaseTool:_waitReloadPhase(track, duration: number?): boolean
+	local speed = track and track.Speed
+	local seconds = speed and speed > 0 and 1 / speed or (duration or 0) / self:_reloadSpeedMultiplier()
+	return self:_waitActionPhase(track,seconds)
+end
+
+function BaseTool:_cycleDuration(duration: number?): number
+	return WeaponHandling.CycleDuration(LOCAL_PLAYER,duration or self.cycle or 0,self.MasterAssetName)
+end
+
+function BaseTool:_reloadSpeedMultiplier(): number
+	local character = LOCAL_PLAYER.Character
+	if not character then return 1 end
+	local multiplier = character:GetAttribute("OrderReloadMultiplier") or 1
+	if self.MasterAssetName ~= "rooklauncher" then multiplier *= character:GetAttribute("MoraleReloadMultiplier") or 1 end
+	local elite = character:FindFirstChild("elitekit")
+	local class = character:FindFirstChild("class")
+	if elite and class and elite.Value == class.Value then multiplier /= 0.8 end
+	return multiplier
+end
+
+function BaseTool:_refreshAnimationPriorities()
+	if not self.IsFirearm then return end
+	for name, track in pairs(self.RegisteredAnimations or {}) do
+		track.Priority = Enum.AnimationPriority[gunAnimationPriorityName(name, self.Equipped, self.DualWieldActive)]
+	end
+end
+
 function BaseTool:_playAnim(name: string, bypass_equiped: boolean, playbackOptions): AnimationTrack?
 	local anims = self.RegisteredAnimations
 	assert(anims, self.className .. ":_playAnim called before animations registered")
+	if name:find("Reload", 1, true) == 1 then self:_stopObstructionPose() end
 
 	local requestedName = name
-	if self.IsFirearm and self.IsVeteran and name:find("Reload") and not name:match("_Vet$") then
-		local veteranName = name .. "_Vet"
-		if anims[veteranName] then name = veteranName end
-	end
+	if not playbackOptions or playbackOptions.veteran~=false then name = MasterAnimationRules.SelectName(self, name, anims) end
 	local track = anims[name]
 	if not track then
 		-- Authored sets intentionally omit many state variants. Resolve to the
@@ -1338,6 +1567,9 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean, playbackOptio
 	if not track then
 		warn(string.format("[WeaponAnimation][%s] missing animation for action %s", tostring(self.className), tostring(name)))
 		return nil
+	end
+	if self.IsFirearm then
+		track.Priority = Enum.AnimationPriority[gunAnimationPriorityName(name, self.Equipped, self.DualWieldActive)]
 	end
 
 
@@ -1363,9 +1595,10 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean, playbackOptio
 		end
 	end
 
-	local playback = playbackOptions
-		or (self.AnimationPlayback and (self.AnimationPlayback[name] or self.AnimationPlayback[requestedName]))
-		or {}
+	local playback = MasterAnimationRules.Playback(self, name)
+	local configured = self.AnimationPlayback and (self.AnimationPlayback[name] or self.AnimationPlayback[requestedName])
+	for key, value in pairs(configured or {}) do playback[key] = value end
+	for key, value in pairs(playbackOptions or {}) do playback[key] = value end
 	local speed = playback.speed or 1
 
 	if playback.speed == nil and self.animation_speeds then
@@ -1376,14 +1609,17 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean, playbackOptio
 		-- Master playback cap; readiness is the independent draw timer above.
 		speed = math.clamp(1 / self:_drawDuration(), 0, 1.5)
 	end
+	if self.IsFirearm and (name=="Cycle" or name=="Cycle_Left" or name=="Bipod_Cycle")
+		and (self.cycle or 0)>0 and not (configured and configured.speed) and not (playbackOptions and playbackOptions.speed) then
+		speed=1/self:_cycleDuration()
+	end
 	if self.IsFirearm and name:find("Reload") and LOCAL_PLAYER.Character then
-		speed *= LOCAL_PLAYER.Character:GetAttribute("OrderReloadMultiplier") or 1
-		speed *= LOCAL_PLAYER.Character:GetAttribute("MoraleReloadMultiplier") or 1
-		if self.IsVeteran then
-			speed *= self.VeteranReloadSpeed or 1.2
-		end
+		speed *= self:_reloadSpeedMultiplier()
 	end
 	local restart = playback.restart
+	if (name:find("Melee") == 1 or name:find("Stab") == 1 or name == "Mine") and LOCAL_PLAYER.Character then
+		speed *= LOCAL_PLAYER.Character:GetAttribute("ChemicalSwingMultiplier") or 1
+	end
 	if restart == nil then restart = not NON_RESTARTING_ANIMATIONS[name] end
 	if restart and track.IsPlaying then
 		-- Action clips in weapon master were explicitly cut before replay. Roblox
@@ -1477,11 +1713,11 @@ function BaseTool:_playFireAnimation(animationName: string, playRecoil: boolean?
 			if not self.Equipped or not self.Aiming then return end
 			local aimTrack = self:_aimTrack()
 			if not aimTrack then return end
-			if not aimTrack.IsPlaying then aimTrack:Play(0) end
+			if not aimTrack.IsPlaying then aimTrack:Play(0, 1, 0.5) end
 		end)
 	elseif self.Equipped and self.Aiming then
 		local aimTrack = self:_aimTrack()
-		if aimTrack and not aimTrack.IsPlaying then aimTrack:Play(0) end
+		if aimTrack and not aimTrack.IsPlaying then aimTrack:Play(0, 1, 0.5) end
 	end
 
 	return fireTrack
@@ -1509,7 +1745,7 @@ function BaseTool:_restoreBase()
 	local sprintTrack = anims.Sprint
 	if sprintTrack then
 		if sprinting and not sprintTrack.IsPlaying then
-			sprintTrack:Play(CUT)
+			self:_playAnim("Sprint")
 		elseif not sprinting and sprintTrack.IsPlaying then
 			sprintTrack:Stop(CUT)
 		end
@@ -1522,6 +1758,15 @@ function BaseTool:_restoreBase()
 				if t and t.IsPlaying then t:Stop(CUT) end
 			end
 		end
+	end
+
+	local character = LOCAL_PLAYER.Character
+	if character then character:SetAttribute("No_Sprint_Animation", sprinting and sprintTrack ~= nil or nil) end
+	if sprinting and sprintTrack then
+		self:_killAimTracks()
+		if anims.Hold and anims.Hold.IsPlaying then anims.Hold:Stop(CUT) end
+		if not sprintTrack.IsPlaying then self:_playAnim("Sprint") end
+		return
 	end
 
 	if not sprinting and self.Aiming then
@@ -1538,7 +1783,7 @@ function BaseTool:_restoreBase()
 		if anims.Hold and not anims.Hold.IsPlaying then
 			print(string.format("[WeaponAnimation][%s] restore base play Hold track=%s", tostring(self.className), tostring(anims.Hold.Name)))
 			anims.Hold:Play(CUT)
-			anims.Hold:AdjustSpeed(0.2)
+			anims.Hold:AdjustSpeed(0.25)
 		end
 	end
 end
@@ -1552,7 +1797,8 @@ function BaseTool:_restoreBaseDeferred()
 end
 
 function BaseTool:_set_sprint_arms(enabled: boolean)
-	if enabled or (self.RegisteredAnimations and self.RegisteredAnimations.Sprint) then
+	if enabled or (self.RegisteredAnimations and self.RegisteredAnimations.Sprint
+		and self.RegisteredAnimations.Sprint.IsPlaying) then
 		LOCAL_PLAYER.Character:SetAttribute("No_Sprint_Animation", true)
 	else
 		LOCAL_PLAYER.Character:SetAttribute("No_Sprint_Animation", nil)
@@ -1722,6 +1968,7 @@ end
 
 function BaseTool:aim()
 	if not self.Equipped then return end 
+	if not self:_usesCombatAim() then return end
 	if self.Aiming or self:_isBusy() then return end
 	if not self.RegisteredAnimations then return end
 	if not self.RegisteredAnimations.Aim and self.AllowAnimationlessAim ~= true then
@@ -1830,7 +2077,7 @@ function BaseTool:endAiming()
 		if anims and anims.Hold and not anims.Hold.IsPlaying then
 			print(string.format("[WeaponAnimation][%s] leave ADS play Hold track=%s", tostring(self.className), tostring(anims.Hold.Name)))
 			anims.Hold:Play(CUT)
-			anims.Hold:AdjustSpeed(0.2)
+			anims.Hold:AdjustSpeed(0.25)
 		end
 	end
 
@@ -1865,7 +2112,7 @@ function BaseTool:init_lean_mechanic()
 		local character = LOCAL_PLAYER.Character
 		local leanTarget = 0
 
-		if character and self.Aiming and self.Equipped then
+		if character and self.Aiming and self.Equipped and self:_usesCombatAim() then
 			local root = character:FindFirstChild("HumanoidRootPart")
 
 			if root then
@@ -2130,6 +2377,18 @@ end
 
 
 function BaseTool:_startAimTracking()
+	-- Observe camera mode even for animation-driven grips, which do not run
+	-- the shoulder-tracking render loop below.
+	local function updateCombatMode()
+		if self.Equipped and not self:_usesCombatAim() then self:_clearCombatPose() end
+	end
+	if not self._combatModeConnection then
+		self._combatModeConnection = UserInputService:GetPropertyChangedSignal("MouseBehavior"):Connect(updateCombatMode)
+	end
+	if not self._combatFreeLookConnection then
+		self._combatFreeLookConnection = LOCAL_PLAYER:GetAttributeChangedSignal("FreeLook"):Connect(updateCombatMode)
+	end
+	updateCombatMode()
 	if self.AnimationDrivenGrip then
 		return
 	end
@@ -2187,6 +2446,11 @@ function BaseTool:_startAimTracking()
 		if not (ls and rs) then
 			return
 		end
+		if not self:_usesCombatAim() then
+			self:_clearCombatPose()
+			return
+		end
+		self._combatAimActive = true
 
 		local leftArmCF
 		local rightArmCF
@@ -2318,6 +2582,8 @@ end
 
 
 function BaseTool:_stopAimTracking()
+	if self._combatModeConnection then self._combatModeConnection:Disconnect(); self._combatModeConnection = nil end
+	if self._combatFreeLookConnection then self._combatFreeLookConnection:Disconnect(); self._combatFreeLookConnection = nil end
 	if self._aimConnection then
 		self._aimConnection:Disconnect()
 		self._aimConnection = nil
@@ -2439,8 +2705,13 @@ function BaseTool:_resetMotor6D()
 	if self.AnimationDrivenGrip then return end
 	if not self.motor_6d or not self._motorOriginal then return end
 	local motor    = self.motor_6d
-	local targetC0 = CFrame.new(-1, 0.5, 0) * CFrame.Angles(-math.rad(90), 0, 0)
-	local targetC1 = CFrame.new(0.5, 0.5, 0) * CFrame.Angles(-math.rad(90), 0, 0)
+	local welds = self.EquipWelds or self.AuthoredWelds
+	local targetC0 = self.UseNativeEquipMount and self._motorOriginal.C0
+		or welds and welds.equipc0
+		or CFrame.new(-1, 0.5, 0) * CFrame.Angles(-math.rad(90), 0, 0)
+	local targetC1 = self.UseNativeEquipMount and self._motorOriginal.C1
+		or welds and welds.equipc1
+		or CFrame.new(0.5, 0.5, 0) * CFrame.Angles(-math.rad(90), 0, 0)
 	local snapDist = (self :: any).MOTOR_SNAP_DIST or MOTOR_SNAP_DIST
 	local alpha    = (self :: any).MOTOR_LERP_ALPHA or MOTOR_LERP_ALPHA
 	local conn
@@ -2479,6 +2750,7 @@ function BaseTool:drop()
 	if not self.Equipped then return end
 
 	self.Equipped = false
+	self:_refreshAnimationPriorities()
 	self._reloadCancelled = true
 	self.Emergency_Drop = true
 
@@ -2509,6 +2781,9 @@ function BaseTool:reload() end
 -- // Cleanup
 
 function BaseTool:destroy()
+	self._autoFireHeld = false
+	self.Equipped = false
+	self:_refreshAnimationPriorities()
 	-- Disconnect everything created by this tool before removing it.
 	if self._activationConnection then
 		self._activationConnection:Disconnect()

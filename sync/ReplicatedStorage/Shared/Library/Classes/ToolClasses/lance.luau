@@ -96,8 +96,10 @@ function Lance:_on_give()
 		elseif kind == "Inspire" then
 			self.Inspiring = true
 			self:_stopAllExcept()
-			local track = self:_playAnim("RaiseFlag")
-			task.delay(track and math.max(track.Length, 1) or 1, function()
+			self:_playAnim("RaiseFlag")
+			local generation = self._equipGeneration
+			task.delay(2.5, function()
+				if self._equipGeneration ~= generation then return end
 				self.Inspiring = false
 				if self.Equipped then self:_restoreBase() end
 			end)
@@ -111,6 +113,7 @@ end
 
 function Lance:_on_unequip()
 	self.Charging = false
+	self.Inspiring = false
 	self.ForceBlockFire = false
 	self:_disconnectInput()
 	self:_stopAimTracking()
@@ -123,7 +126,7 @@ end
 
 -- T is the existing Check Ammo binding; on the lance it waves the flag.
 function Lance:ammo_check()
-	if self.Equipped and not self.Meleeing and not self.Charging then Combat.Remote():FireServer("Inspire") end
+	if self.Equipped and not self.Meleeing and not self.Charging and not self.Inspiring then Combat.Remote():FireServer("Inspire") end
 end
 
 function Lance:destroy()

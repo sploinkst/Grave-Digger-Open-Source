@@ -54,104 +54,38 @@ local function getEliteTorso(className: string?): Instance?
 	return childIgnoreCase(elites, key)
 end
 
-local function attachModel(character: Model, clone: Model, helmet: boolean)
-	local primary = if helmet then (childIgnoreCase(clone, "helmet") :: BasePart?) else nil
-	if primary and not primary:IsA("BasePart") then primary = nil end
-	primary = primary or clone.PrimaryPart or clone:FindFirstChildWhichIsA("BasePart", true)
-	if not primary then
-		helmetDebug("FAILED: no BasePart to mount", clone:GetFullName())
-		clone:Destroy()
-		return false
+-- Mount the entire assembly, including descendants of a Part root. Preserve
+-- articulated joints and only weld components which have no connection to it.
+local function mountAssembly(character: Model, clone: Instance, anchor: BasePart, root: BasePart): boolean
+	local parts, offsets, adjacency = {}, {}, {}
+	if clone:IsA("BasePart") then table.insert(parts, clone) end
+	for _, item in clone:GetDescendants() do
+		if item:IsA("BasePart") then table.insert(parts, item) end
 	end
-	clone.PrimaryPart = primary
-	local anchor = if helmet then character:FindFirstChild("Head") else character:FindFirstChild(primary.Name)
-		or character:FindFirstChild("Torso")
-		or character:FindFirstChild("HumanoidRootPart")
-	if not anchor or not anchor:IsA("BasePart") then
-		helmetDebug("FAILED: no character anchor", clone.Name, "helmet=", helmet)
-		clone:Destroy()
-		return false
+	for _, part in parts do
+		offsets[part] = root.CFrame:ToObjectSpace(part.CFrame)
+		adjacency[part] = {}
 	end
-	local data = character:FindFirstChild("CharacterData")
-	clone.Parent = data and data:FindFirstChild("Equipment") or character
-	if helmet then helmetDebug("mounting", clone.Name, "primary=", primary.Name, "anchor=", anchor.Name, "parent=", clone.Parent and clone.Parent:GetFullName()) end
-	local offset = primary.CFrame:ToObjectSpace(clone:GetPivot())
-	clone:PivotTo(anchor.CFrame * offset)
-	for _, part in clone:GetDescendants() do
-		if part:IsA("BasePart") then
-			part.Anchored = false
-			part.CanCollide = false
-			part.CanQuery = false
-			part.Massless = true
-		end
-	end
-	local weld = Instance.new("Weld")
-	weld.Name = "AccessoryWeld"
-	weld.Part0 = anchor
-	weld.Part1 = primary
-	weld.Parent = anchor
-	weld:SetAttribute("ClassAppearance", true)
-	if helmet and not clone:FindFirstChild("Helmet") then
-		-- Existing helmet gameplay identifies a helmet by this marker.  Keep the
-		-- source model untouched and add the compatibility marker to its clone.
-		local marker = Instance.new("Folder")
-		marker.Name = "Helmet"
-		marker:SetAttribute("ClassAppearance", true)
-		marker.Parent = clone
-	end
-	if helmet then
-		task.defer(function()
-			helmetDebug("mounted", clone.Name, "stillParented=", clone.Parent ~= nil, "weldPart1=", weld.Part1 and weld.Part1:GetFullName())
-		end)
-	end
-	return true
-end
-
-local function attachPart(character: Model, clone: BasePart, helmet: boolean): boolean
-	local headAttachment = helmet or string.lower(clone.Name) == "extralift"
-	local anchor = if headAttachment then character:FindFirstChild("Head") else character:FindFirstChild("Torso")
-	if not anchor or not anchor:IsA("BasePart") then
-		helmetDebug("FAILED: no anchor for part", clone.Name)
-		clone:Destroy()
-		return false
-	end
-	local data = character:FindFirstChild("CharacterData")
-	clone.Parent = data and data:FindFirstChild("Equipment") or character
-	local childOffsets = {}
-	for _, child in clone:GetDescendants() do
-		if child:IsA("BasePart") then
-			childOffsets[child] = clone.CFrame:ToObjectSpace(child.CFrame)
-		end
-	end
-	clone.Anchored = false
-	clone.CanCollide = false
-	clone.CanQuery = false
-	clone.Massless = true
-	clone:SetAttribute("ClassAppearance", true)
-	if helmet then clone:SetAttribute("ClassHelmet", true) end
-	clone.CFrame = anchor.CFrame
-	local adjacency = {[clone] = {}}
-	for child, offset in childOffsets do
-		child.Anchored = false
-		child.CanCollide = false
-		child.CanQuery = false
-		child.CanTouch = false
-		child.Massless = true
-		child.CFrame = anchor.CFrame * offset
-		adjacency[child] = {}
-	end
-	-- Keep helmetfly/extrajoint and internal mesh welds. Welding every mesh
-	-- directly to the root overconstrains those articulated assemblies.
 	for _, joint in clone:GetDescendants() do
 		if joint:IsA("JointInstance") or joint:IsA("WeldConstraint") then
-			local part0, part1 = joint.Part0, joint.Part1
-			if adjacency[part1] and not adjacency[part0] then
-				joint.Part0 = clone
-				part0 = clone
+			local p0, p1 = joint.Part0, joint.Part1
+			-- Exported rigs can retain a reference to their original dummy body.
+			-- Rebase that endpoint without changing the assembled rest pose.
+			if adjacency[p1] and not adjacency[p0] then
+				if joint:IsA("JointInstance") and p0 then
+					joint.C0 = root.CFrame:ToObjectSpace(p0.CFrame) * joint.C0
+				end
+				joint.Part0 = root
+				p0 = root
+			elseif adjacency[p0] and not adjacency[p1] then
+				-- An external mounting weld is replaced by our character weld.
+				joint:Destroy()
 			end
-			if adjacency[part0] and adjacency[part1] then
-				table.insert(adjacency[part0], part1)
-				table.insert(adjacency[part1], part0)
+			if adjacency[p0] and adjacency[p1] and p0 ~= p1 then
+				table.insert(adjacency[p0], {Part = p1, Joint = joint, Forward = true})
+				table.insert(adjacency[p1], {Part = p0, Joint = joint, Forward = false})
+			elseif p0 == p1 then
+				joint:Destroy()
 			end
 		end
 	end
@@ -159,31 +93,74 @@ local function attachPart(character: Model, clone: BasePart, helmet: boolean): b
 	local function visit(part)
 		if connected[part] then return end
 		connected[part] = true
-		for _, neighbor in adjacency[part] do visit(neighbor) end
-	end
-	visit(clone)
-	for child, offset in childOffsets do
-		if not connected[child] then
-			local childWeld = Instance.new("Weld")
-			childWeld.Name = "HelmetAccessoryWeld"
-			childWeld.Part0 = clone
-			childWeld.Part1 = child
-			childWeld.C0 = offset
-			childWeld.Parent = clone
-			childWeld:SetAttribute("ClassAppearance", true)
-			visit(child)
+		for _, edge in adjacency[part] do
+			if not connected[edge.Part] then
+				local joint = edge.Joint
+				if joint:IsA("JointInstance") then
+					local transform = if joint:IsA("Motor6D") then joint.Transform else CFrame.identity
+					local relative = joint.C0 * transform * joint.C1:Inverse()
+					offsets[edge.Part] = offsets[part] * (if edge.Forward then relative else relative:Inverse())
+				end
+				visit(edge.Part)
+			end
 		end
+	end
+	visit(root)
+	for _, part in parts do
+		if not connected[part] then
+			local weld = Instance.new("Weld")
+			weld.Name = "EquipmentInternalWeld"
+			weld.Part0, weld.Part1 = root, part
+			weld.C0 = offsets[part]
+			weld.Parent = root
+			visit(part)
+		end
+	end
+	for _, part in parts do
+		part.CFrame = anchor.CFrame * offsets[part]
+		part.Anchored = false
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+		part.Massless = true
 	end
 	local weld = Instance.new("Weld")
 	weld.Name = "AccessoryWeld"
-	weld.Part0 = anchor
-	weld.Part1 = clone
-	weld.Parent = anchor
+	weld.Part0, weld.Part1 = anchor, root
 	weld:SetAttribute("ClassAppearance", true)
-	if helmet then
-		helmetDebug("mounted part helmet", clone.Name, "anchor=", anchor.Name, "parent=", clone.Parent:GetFullName())
-	end
+	weld.Parent = anchor
+	clone:SetAttribute("ClassAppearance", true)
+	local data = character:FindFirstChild("CharacterData")
+	clone.Parent = data and data:FindFirstChild("Equipment") or character
 	return true
+end
+
+local function attachModel(character: Model, clone: Model, helmet: boolean)
+	local primary = clone.PrimaryPart
+		or childIgnoreCase(clone, if helmet then "Head" else "Torso")
+		or childIgnoreCase(clone, "helmet")
+	if not primary or not primary:IsA("BasePart") then primary = clone:FindFirstChildWhichIsA("BasePart", true) end
+	local anchor = if helmet then character:FindFirstChild("Head") else
+		(primary and character:FindFirstChild(primary.Name)) or character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+	if not primary or not anchor or not anchor:IsA("BasePart") then clone:Destroy(); return false end
+	clone.PrimaryPart = primary
+	if helmet then
+		clone:SetAttribute("ClassHelmet", true)
+		if not clone:FindFirstChild("Helmet") then
+			local marker = Instance.new("Folder")
+			marker.Name = "Helmet"
+			marker.Parent = clone
+		end
+	end
+	return mountAssembly(character, clone, anchor, primary)
+end
+
+local function attachPart(character: Model, clone: BasePart, helmet: boolean): boolean
+	local headAttachment = helmet or string.lower(clone.Name) == "extralift" or string.lower(clone.Name):find("headset", 1, true)
+	local anchor = if headAttachment then character:FindFirstChild("Head") else character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+	if not anchor or not anchor:IsA("BasePart") then clone:Destroy(); return false end
+	if helmet then clone:SetAttribute("ClassHelmet", true) end
+	return mountAssembly(character, clone, anchor, clone)
 end
 
 local function attachRigGroup(character: Model, source: Instance): boolean
@@ -192,6 +169,7 @@ local function attachRigGroup(character: Model, source: Instance): boolean
 
 	local clone = source:Clone()
 	clone:SetAttribute("ClassAppearance", true)
+	clone:SetAttribute("ClassClothingRig", true)
 	clone.Parent = character:FindFirstChild("CharacterData")
 		and character.CharacterData:FindFirstChild("Equipment")
 		or character
@@ -248,81 +226,44 @@ end
 local function attachEliteTorso(character: Model, className: string?): boolean
 	local source = getEliteTorso(className)
 	if not source then return false end
-
-	local torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
-	if not torso or not torso:IsA("BasePart") then return false end
-
 	local clone = source:Clone()
-	clone:SetAttribute("ClassAppearance", true)
 	clone.Name = "EliteTorso"
-	clone.Parent = character:FindFirstChild("CharacterData")
-		and character.CharacterData:FindFirstChild("Equipment")
-		or character
-
-	local parts = {}
-	local rootPart: BasePart?
-	if clone:IsA("BasePart") then
-		rootPart = clone
-		table.insert(parts, clone)
-	else
-		rootPart = (clone :: Instance):FindFirstChild("Torso", true) :: BasePart?
-			or (clone :: Instance):FindFirstChildWhichIsA("BasePart", true)
-		if not rootPart and clone:IsA("Model") then
-			rootPart = clone.PrimaryPart
-		end
-		for _, descendant in clone:GetDescendants() do
-			if descendant:IsA("BasePart") then
-				table.insert(parts, descendant)
-			elseif descendant:IsA("JointInstance") or descendant:IsA("Constraint") then
-				descendant:SetAttribute("ClassAppearance", true)
+	-- Radio equipment is authored separately, with a wire connecting both rigs.
+	local headsetSource = childIgnoreCase(source.Parent, string.lower(className or "") .. "_headset")
+	if headsetSource then
+		local headset = headsetSource:Clone()
+		local copies = {[source] = clone, [headsetSource] = headset}
+		local function mapTree(original, copy)
+			for index, child in original:GetChildren() do
+				local copiedChild = copy:GetChildren()[index]
+				if copiedChild then
+					copies[child] = copiedChild
+					mapTree(child, copiedChild)
+				end
 			end
 		end
-	end
-
-	if not rootPart or #parts == 0 then
-		clone:Destroy()
-		return false
-	end
-
-	local rootCFrame = rootPart.CFrame
-	local offsets = {}
-	for _, part in parts do
-		offsets[part] = rootCFrame:ToObjectSpace(part.CFrame)
-	end
-
-	if clone:IsA("Model") then
-		clone.PrimaryPart = rootPart
-		clone:PivotTo(torso.CFrame * rootCFrame:ToObjectSpace(clone:GetPivot()))
-	else
-		rootPart.CFrame = torso.CFrame
-	end
-
-	for _, part in parts do
-		part.Anchored = false
-		part.CanCollide = false
-		part.CanQuery = false
-		part.CanTouch = false
-		part.Massless = true
-		part:SetAttribute("ClassAppearance", true)
-		if part ~= rootPart then
-			part.CFrame = rootPart.CFrame * offsets[part]
-			local weld = Instance.new("Weld")
-			weld.Name = "EliteTorsoInternalWeld"
-			weld.Part0 = rootPart
-			weld.Part1 = part
-			weld.C0 = offsets[part]
-			weld.Parent = rootPart
-			weld:SetAttribute("ClassAppearance", true)
+		mapTree(source, clone)
+		mapTree(headsetSource, headset)
+	local mounted = if clone:IsA("BasePart") then attachPart(character, clone, false)
+		elseif clone:IsA("Model") then attachModel(character, clone, false) else false
+	if not mounted then clone:Destroy(); return false end
+		if headset:IsA("BasePart") then attachPart(character, headset, false)
+		elseif headset:IsA("Model") then
+			local head = character:FindFirstChild("Head")
+			local root = headset.PrimaryPart or headset:FindFirstChildWhichIsA("BasePart", true)
+			if head and root then mountAssembly(character, headset, head, root) else headset:Destroy() end
+		else headset:Destroy() end
+		for original, copy in copies do
+			if original:IsA("Beam") then
+				copy.Attachment0 = copies[original.Attachment0]
+				copy.Attachment1 = copies[original.Attachment1]
+			end
 		end
+	else
+	local mounted = if clone:IsA("BasePart") then attachPart(character, clone, false)
+		elseif clone:IsA("Model") then attachModel(character, clone, false) else false
+	if not mounted then clone:Destroy(); return false end
 	end
-
-	local weld = Instance.new("Weld")
-	weld.Name = "EliteTorsoWeld"
-	weld.Part0 = torso
-	weld.Part1 = rootPart
-	weld.Parent = torso
-	weld:SetAttribute("ClassAppearance", true)
-
 	return true
 end
 
@@ -409,13 +350,32 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 	local helmetClassName = className or "Soldat"
 
 	for _, child in character:GetDescendants() do
+		local preservedRig = child.Parent
+		while preservedRig and preservedRig ~= character and not preservedRig:GetAttribute("ClassClothingRig") do
+			preservedRig = preservedRig.Parent
+		end
 		local clothing = child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic")
-		if child:GetAttribute("ClassAppearance") and not (equipmentOnly and clothing) then
+		if child:GetAttribute("ClassAppearance") and not (equipmentOnly and (clothing or child:GetAttribute("ClassClothingRig") or (preservedRig and preservedRig:GetAttribute("ClassClothingRig")))) then
 			child:Destroy()
 		end
 	end
 	restoreHair(character)
 
+	if elite and not equipmentOnly then
+		local baseOutfit = Appearance.GetOutfit(teamName, helmetClassName, false)
+		if baseOutfit then
+			for _, source in baseOutfit:GetDescendants() do
+				if source:IsA("Shirt") or source:IsA("Pants") or source:IsA("ShirtGraphic") then
+					for _, existing in character:GetChildren() do
+						if existing.ClassName == source.ClassName then existing:Destroy() end
+					end
+					local clothing = source:Clone()
+					clothing:SetAttribute("ClassAppearance", true)
+					clothing.Parent = character
+				end
+			end
+		end
+	end
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local flatHelmet = attachFlatHelmet(character, outfit, helmetClassName)
 	local helmetEquipped = flatHelmet
@@ -423,8 +383,9 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 	if nestedOutfit and not equipmentOnly then
 		attachRigOutfit(character, nestedOutfit)
 	end
-	for _, source in outfit:GetChildren() do
-		if source == nestedOutfit then continue end
+	local outfitCopy = outfit:Clone()
+	for _, source in outfitCopy:GetChildren() do
+		if string.lower(source.Name) == "outfit" then continue end
 		if flatHelmet and (source:IsA("BasePart") or source:IsA("JointInstance") or source:IsA("Constraint")) then continue end
 		if Appearance.DebugHelmets then helmetDebug("outfit child", source.Name, source.ClassName, "isHelmet=", isHelmet(source)) end
 		if source:IsA("Shirt") or source:IsA("Pants") or source:IsA("ShirtGraphic") then
@@ -449,10 +410,10 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 			end
 			humanoid:AddAccessory(clone)
 		elseif source:IsA("Model") then
-			local clone = source:Clone()
+			local clone = source
 			clone:SetAttribute("ClassAppearance", true)
 			local helmet = isHelmet(clone)
-			if equipmentOnly and not helmet then
+			if equipmentOnly and not helmet and string.lower(clone.Name) ~= "extralift" then
 				clone:Destroy()
 				continue
 			end
@@ -463,9 +424,9 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 			end
 			if attachModel(character, clone, helmet) and helmet then helmetEquipped = true end
 		elseif source:IsA("BasePart") then
-			local clone = source:Clone()
+			local clone = source
 			local helmet = isHelmet(clone)
-			if equipmentOnly and not helmet then
+			if equipmentOnly and not helmet and string.lower(clone.Name) ~= "extralift" then
 				clone:Destroy()
 				continue
 			end
@@ -477,12 +438,16 @@ function Appearance.Apply(character: Model, teamName: string?, className: string
 			if attachPart(character, clone, helmet) and helmet then helmetEquipped = true end
 		end
 	end
+	outfitCopy:Destroy()
 	if elite and character:GetAttribute("EliteClass") ~= "OcelotTrooper" then
 		attachEliteTorso(character, helmetClassName)
 	end
 	-- Base Officers intentionally have no helmet, but their Shock variants use
 	-- the helmet authored in elites/<team>/officer like every other class.
 	if helmetEquipped and (elite or className ~= "Officer") then hideHair(character) end
+	local cosmetics = require(ReplicatedStorage.Shared.Library.CosmeticAppearance)
+	local player = game:GetService("Players"):GetPlayerFromCharacter(character)
+	if player then cosmetics.Apply(character, cosmetics.Data(player)) end
 end
 
 return Appearance

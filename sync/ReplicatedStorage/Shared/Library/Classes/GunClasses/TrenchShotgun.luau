@@ -1,6 +1,16 @@
 -- The Trench Trooper's Winchester M1897, migrated from weapon_modules/trench.
 return require(script.Parent.LegacyGunFactory).create({
 	className = "TrenchShotgun",
+	AuthoredWelds = {
+		equipc0 = CFrame.new(0.367686272, -3.14173198, -0.561454773, 0, 0, -0.999995708, 0.99999994, 0, 0, 0, -0.999995708, 0),
+		equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		lefthand = true,
+		holster_point = "Torso",
+		holsterc0 = CFrame.new(-0.932582855, 2.12966585, 0.536758423, 0, 0.999995708, 0, -1, 0, 0, 0, 0, 0.999995708),
+		holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		alt_holsterc0 = CFrame.new(-0.43554306, 2.12966585, 0.570640564, -0.0355006903, 0.999369681, 0, -0.99936974, -0.0355006866, 0, -0, 0, 1),
+		alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	},
 	assetName = "trench",
 	AnimationGunType = "TrenchShotgun",
 	StrictAnimations = true,
@@ -42,5 +52,15 @@ return require(script.Parent.LegacyGunFactory).create({
 		reload_empty = 2,
 		reload_loop = 1.25,
 		reload_end = 0,
+		size = 2,
+		wallpen_distance = 60,
+		wallpen_studs = 3,
+		wound = 1,
+		length = 6,
+		movement = 2,
+		firing_movement = 2,
+		firing_movement_last = 0.75,
+		chamber = false,
+		reload_alt = 0,
 	},
 })

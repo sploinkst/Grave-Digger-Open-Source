@@ -223,6 +223,12 @@ end
 
 local function Restock(Player: Player, Character: Model)
 	RestockItems(Player, Character)
+	require(script.Parent.StimulantService).Restock(Player)
+	require(script.Parent.BulwarkService).Restock(Player)
+	require(script.Parent.ConstructionService).Restock(Player)
+	require(script.Parent.OrdnanceService).Restock(Player)
+	require(script.Parent.UtilityActionService).Restock(Player)
+	require(script.Parent.DeployedShieldService).Restock(Player)
 
 	Util.setammo(Player)
 

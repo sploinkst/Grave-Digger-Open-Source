@@ -16,6 +16,7 @@ export type Options = {
 	PitchShift: number?,
 	PitchVariation: number?,
 	TimePosition: number?,
+	RollOffMaxDistance: number?,
 }
 
 local function soundWorldCFrame(parent: Instance?): CFrame?
@@ -71,6 +72,10 @@ function SoundPlayback.Play(source: Sound, parent: Instance?, options: Options?)
 	clone.Volume = settings.Volume or source.Volume
 	clone.TimePosition = settings.TimePosition or 0
 	clone.Looped = false
+	if settings.RollOffMaxDistance then
+		clone.RollOffMinDistance = math.min(clone.RollOffMinDistance, settings.RollOffMaxDistance)
+		clone.RollOffMaxDistance = settings.RollOffMaxDistance
+	end
 
 	local pitchShift = settings.PitchShift or 0
 	if pitchShift ~= 0 then

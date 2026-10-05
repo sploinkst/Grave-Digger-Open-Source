@@ -215,7 +215,8 @@ function CavalrySword:melee()
 		warn("[CavalrySword] Swing blocked because cavsword_rig has no melee animation")
 		return
 	end
-	self._nextSwingAt = now + SWING_INTERVAL
+	local character = LOCAL_PLAYER.Character
+	self._nextSwingAt = now + SWING_INTERVAL / (character and character:GetAttribute("ChemicalSwingMultiplier") or 1)
 	BaseTool.melee(self)
 end
 
@@ -258,14 +259,8 @@ function CavalrySword:_fireDualWeapon()
 	local muzzle = weapon:_findModelPart(weapon.MuzzlePartName)
 	local camera = workspace.CurrentCamera
 	if not muzzle or not muzzle:IsA("BasePart") or not camera then return end
-	local mouse = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
-	local result = Util.raycastSkipTransparent(ray.Origin, ray.Direction * 1000, params)
-	local target = result and result.Position or ray.Origin + ray.Direction * 1000
-	local direction = weapon:get_spread(muzzle, (target - muzzle.Position).Unit)
+	local direction = weapon:_getAimedShot(muzzle, 1000)
+	if not direction then return end
 	local cast = weapon.Caster:Fire(muzzle.Position, direction, BULLET_SPEED, weapon.CasterBehavior)
 	cast.UserData = {
 		Direction = direction, Penetrated = false, Origin = muzzle.Position, Shooter = LOCAL_PLAYER,
@@ -281,9 +276,7 @@ function CavalrySword:_fireDualWeapon()
 	weapon.Capacity -= 1
 	if animations and animations.Shoot then self:_playAnim("Shoot") end
 	local sound = weapon.SoundFolder and weapon.SoundFolder:FindFirstChild("fire")
-	if sound then weapon:_play_sfx(sound, muzzle) end
-	weapon:_fireMuzzleFlash()
-	Util.applyRecoil(weapon.recoil, weapon.recoil_count, 10, false, 1)
+	weapon:_playShotFeedback(muzzle, sound)
 end
 
 function CavalrySword:activate()

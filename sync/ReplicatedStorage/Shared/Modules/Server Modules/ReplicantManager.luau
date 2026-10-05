@@ -28,8 +28,6 @@ local vfx_replicant = replicant_folder.VFX
 local sfx_replicant = replicant_folder.Sounds
 local texture_replicant = replicant_folder.Texture
 local hit_connection = replicant_folder.Hit
-local heal_connection = replicant_folder.Heal
-local healnotify_connection = replicant_folder.HealNotify
 
 local status_connection = replicant_folder.Status
 
@@ -50,8 +48,8 @@ local stumble_animation = ReplicatedStorage:WaitForChild("Shared").Assets.Animat
 
 local AmmoPackEvent = replicant_folder:WaitForChild("AmmoPack")
 local AmmoPack = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Equipment"):WaitForChild("AmmoPack")
-local AmmoPouchSounds = ReplicatedStorage.Shared.Assets.Equipment.Sounds:FindFirstChild("ammopouch")
-local WhistleSounds = ReplicatedStorage.Shared.Assets.Equipment.Sounds:FindFirstChild("whistle")
+local AmmoPouchSounds = ReplicatedStorage.Shared.Assets.Sounds.Equipment:FindFirstChild("ammopouch")
+local WhistleSounds = ReplicatedStorage.Shared.Assets.Sounds.Equipment:FindFirstChild("whistle")
 local EquipmentAssets = ReplicatedStorage.Shared.Assets:FindFirstChild("Equipment")
 local WhistleOrderEvent = replicant_folder:FindFirstChild("WhistleOrder") :: RemoteEvent?
 if not WhistleOrderEvent then
@@ -161,7 +159,7 @@ end
 local function applyKnockback(part: BasePart, forceDir: Vector3, force: number)
 	if part.Anchored then return end
 	local character = part:FindFirstAncestorOfClass("Model")
-	if character and character:GetAttribute("KnockbackImmune") then return end
+	if character and (character:GetAttribute("KnockbackImmune") or character:GetAttribute("BulwarkMounted")) then return end
 
 	local bodyVelocity = Instance.new("BodyVelocity")
 	bodyVelocity.Velocity = Vector3.new(forceDir.X * force, 2, forceDir.Z * force)
@@ -200,24 +198,6 @@ local function soundParent(character: Model?): BasePart?
 	return nil
 end
 
-local function voicePrefix(player: Player?, character: Model?): string
-	local selected = player and (
-		player:GetAttribute("VoiceGender")
-		or player:GetAttribute("Gender")
-		or player:GetAttribute("BodyType")
-	)
-	if selected == nil and character then
-		selected = character:GetAttribute("VoiceGender")
-			or character:GetAttribute("Gender")
-			or character:GetAttribute("BodyType")
-	end
-	if type(selected) == "string" then
-		local lowered = string.lower(selected)
-		if string.sub(lowered, 1, 1) == "f" then return "f" end
-	end
-	return "m"
-end
-
 local function playCharacterSound(character: Model?, soundName: string, playerHint: Player?)
 	local parent = soundParent(character)
 	local soundsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Sounds")
@@ -233,9 +213,12 @@ end
 
 function module.play_damage_sound(character: Model?, amount: number?, playerHint: Player?)
 	local targetPlayer = character and player_service:GetPlayerFromCharacter(character)
-	local prefix = voicePrefix(targetPlayer, character)
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not amount or amount <= 0 or not humanoid then return end
+	if amount <= 100 and humanoid.Health < 100 then return end
 	local weight = ((amount or 0) > 100) and "heavy" or "hurt"
-	playCharacterSound(character, prefix .. "_" .. weight, playerHint or targetPlayer)
+	local sound = require(ReplicatedStorage.Shared.Library.CharacterVoice).Choose(character, weight)
+	if sound then playCharacterSound(character, sound.Name, targetPlayer or playerHint) end
 end
 
 function module.play_headshot_sound(character: Model?, playerHint: Player?)
@@ -682,16 +665,30 @@ function module.start_module()
 	end)
 
 	hit_connection.OnServerEvent:Connect(function(player, hitData, damage: number, knockback_force: number)
-		if not hitData then return end
+		if type(hitData)~="table" then return end
 		if player.Character and player.Character:GetAttribute("DamageDealingBlocked") then return end
 
 		local instance: BasePart = hitData.Instance
 		local position: Vector3  = hitData.Position
 		local direction: Vector3 = hitData.Direction
 
-		if not instance or not instance:IsDescendantOf(workspace) then return end
+		if typeof(instance)~="Instance" or not instance:IsDescendantOf(workspace) then return end
+		if instance:GetAttribute("IndestructibleShield") then return end
 		if not direction then return end
-		if require(script.Parent.HunterKitService).TriggerHit(instance) then return end
+		local validation=require(script.Parent.MasterActions.Validation)
+		local equipped=player.Character and player.Character:FindFirstChildOfClass("Tool")
+		local validCharacter=type(hitData.WeaponName)=="string" and validation.Tool(player,equipped,{hitData.WeaponName})
+		local head=validCharacter and validCharacter:FindFirstChild("Head")
+		if head and validation.Vector(position) and type(damage)=="number" and damage==damage and damage>0 and damage<math.huge then
+			local delta=position-head.Position
+			if delta.Magnitude>0 and delta.Magnitude<=1500 then
+				local obstruction=validation.Ray(validCharacter,delta.Unit,delta.Magnitude+1)
+				if obstruction and obstruction.Instance==instance then
+					if require(script.Parent.DeployedShieldService).Damage(player,instance,math.min(damage,250)) then return end
+					if require(script.Parent.ConstructionService).Damage(player,instance,math.min(damage,250)) then return end
+				end
+			end
+		end
 
 		local character = player.Character
 		if not character then return end
@@ -727,7 +724,7 @@ function module.start_module()
 		if hitPlayer and hitPlayer == player then return end
 
 		if hitPlayer then
-			hitPlayer:SetAttribute("LastTagged", player.Name)
+			hitPlayer:SetAttribute("LastTagged", if weaponName == "MondragonRifle" or weaponName == "GeistRifle" then nil else player.Name)
 			require(script.Parent.ClassService).RecordHit(player, hitPlayer, weaponName)
 		end
 		
@@ -808,7 +805,6 @@ function module.start_module()
 			elseif isHellion then
 				local finalDamage = (damage or 0) * 1.2
 					* (hitCharacter:GetAttribute("DamageTakenMultiplier") or 1)
-				module.play_damage_sound(hitCharacter, finalDamage, player)
 				humanoid:TakeDamage(finalDamage)
 				if humanoid.Health <= 0 then
 					awardKillMorale(player, hitCharacter, true)
@@ -817,7 +813,6 @@ function module.start_module()
 				end
 				return
 			else
-				module.play_damage_sound(hitCharacter, humanoid.Health, player)
 				handleLethalHipfireHeadshot(player, character, hitPlayer, weaponName, hitData, position)
 				humanoid.Health = 0
 				awardKillMorale(player, hitCharacter, true)
@@ -828,7 +823,6 @@ function module.start_module()
 
 		-- Normal damage
 		damage = (damage or 0) * (hitCharacter:GetAttribute("DamageTakenMultiplier") or 1)
-		module.play_damage_sound(hitCharacter, damage, player)
 		humanoid:TakeDamage(damage)
 		hitCharacter:SetAttribute("Injured", if humanoid.Health > 0 and humanoid.Health < 100 then true else nil)
 		if hitPlayer then
@@ -857,36 +851,7 @@ function module.start_module()
 		end
 	end)
 	
-	heal_connection.OnServerEvent:Connect(function(sender, healed, wound)
-		if typeof(healed) ~= "Instance" then return end
-		if not healed:IsA("Player") then healed = player_service:GetPlayerFromCharacter(healed) end
-		if not healed or not sender.Team or sender.Team ~= healed.Team then return end
-		local character, target = sender.Character, healed.Character
-		local medic = character and character:FindFirstChildOfClass("Humanoid")
-		local humanoid = target and target:FindFirstChildOfClass("Humanoid")
-		local root = character and character:FindFirstChild("HumanoidRootPart")
-		local targetRoot = target and target:FindFirstChild("HumanoidRootPart")
-		if not medic or medic.Health <= 0 or not humanoid or humanoid.Health <= 0
-			or not root or not targetRoot or not character:FindFirstChild("Medkit")
-			or (root.Position - targetRoot.Position).Magnitude > 12 then return end
-		status_service.RemoveStatus(healed, "WoundStatus")
-		status_service.RemoveStatus(healed, "ConcussionStatus")
-		if status_service.HasStatus(healed, "ClottingStatus") then
-			status_service.RemoveStatus(healed, "ClottingStatus")
-		end
-		if character:GetAttribute("Hippocratic") then
-			status_service.GiveStatus(healed, "MoraleStatus", 40)
-		end
-		local health = if sender ~= healed then character:GetAttribute("AllyHealHealth") or 100 else 100
-		humanoid.Health = math.max(humanoid.Health, math.min(humanoid.MaxHealth, health))
-	end)
-
-	healnotify_connection.OnServerEvent:Connect(function(healer, healee:Player)
-		print("Received healnotify_connection from", healer.Name, "for healee:", healee.Name)
-		local notify_ui = require(healee.PlayerGui.Notifications.Utils)
-		
-		notify_ui.send_notification(healee, healer.Name .. ": Stand still while I heal you.")
-	end)
+	-- Surgery and patient messages are handled by SurgeryService.
 	
 	status_connection.OnServerEvent:Connect(function(player, status, enabled: boolean)
 		-- The client only needs this remote to finish its own concussion treatment.
@@ -1174,7 +1139,7 @@ function module.start_module()
 		if #choices > 0 then
 			SoundPlayback.Play(choices[math.random(1, #choices)], clone)
 		else
-			warn("[AmmoPack] Missing Assets.Equipment.Sounds.ammopouch ammo1/ammo2/ammo3")
+			warn("[AmmoPack] Missing Assets.Sounds.Equipment.ammopouch ammo1/ammo2/ammo3")
 		end
 		local consumed = false
 		local team = player.Team

@@ -144,15 +144,18 @@ local function CarveEntrances()
 end
 
 local Debris = game:GetService("Debris")
-local ServerStorage = game:GetService("ServerStorage")
 local miningCooldowns = setmetatable({}, {__mode = "k"})
 local MINING_REACH = 5
 local TUNNEL_SIZE = Vector3.new(16, 14, 14)
-local ROCK_MINED_SOUND_ID = "rbxassetid://0" -- Replace when the mining sound is available.
+local DEBRIS_DELAY = 0.08
 
 local function playRockImpact(position, normal)
 	local assets = ReplicatedStorageService.Shared.Assets
-	local template = assets.Guns.Effects:FindFirstChild("rockbreak")
+	local effects = assets:FindFirstChild("Effects")
+	local mining = effects and effects:FindFirstChild("Mining")
+	local template = (mining and mining:FindFirstChild("rockbreak"))
+		or assets.Guns.Effects:FindFirstChild("rockbreak")
+		or (mining and mining:FindFirstChild("smallrock"))
 		or assets.Guns.Effects:FindFirstChild("smallrock")
 	local anchor = Instance.new("Part")
 	anchor.Name = "RockMiningImpact"
@@ -175,6 +178,7 @@ local function playRockImpact(position, normal)
 		for _, item in descendants do
 			if item:IsA("BasePart") then
 				item.Anchored = true
+				item.Transparency = 1
 				item.CanCollide = false
 				item.CanQuery = false
 				item.CanTouch = false
@@ -182,22 +186,28 @@ local function playRockImpact(position, normal)
 				item.Enabled = false
 				lifetime = math.max(lifetime, item.Lifetime.Max + 1)
 				task.delay(0.05, function()
-					if item.Parent then item:Emit(item:GetAttribute("EmitCount") or 20) end
+					if item.Parent and item.Name ~= "coalbreak" then
+						item:Emit(item:GetAttribute("EmitCount") or 20)
+					end
 				end)
 			end
 		end
 	end
-	local sound = effect and effect:FindFirstChildWhichIsA("Sound", true)
-	if not sound then
-		local soundTemplate = assets:FindFirstChild("rock_mined", true)
-			or ServerStorage:FindFirstChild("rock_mined", true)
-		sound = soundTemplate and soundTemplate:IsA("Sound") and soundTemplate:Clone() or Instance.new("Sound")
-		if sound.SoundId == "" then sound.SoundId = ROCK_MINED_SOUND_ID end
-		sound.Parent = anchor
+	local atmosphere = assets.Sounds:FindFirstChild("Atmosphere")
+	local rocks = atmosphere and atmosphere:FindFirstChild("Rocks")
+	local breakSound = rocks and rocks:FindFirstChild("break")
+	local options = {RollOffMaxDistance = 70, PitchVariation = 0.1}
+	if breakSound and breakSound:IsA("Sound") then SoundPlayback.Play(breakSound, anchor, options) end
+	local debrisSounds = {}
+	for index = 1, 5 do
+		local sound = rocks and rocks:FindFirstChild("debris" .. index)
+		if sound and sound:IsA("Sound") then table.insert(debrisSounds, sound) end
 	end
-	sound.RollOffMaxDistance = 70
-	if sound.SoundId ~= "" and sound.SoundId ~= "rbxassetid://0" then
-		SoundPlayback.Play(sound, anchor)
+	if #debrisSounds > 0 then
+		local debrisSound = debrisSounds[math.random(#debrisSounds)]
+		task.delay(DEBRIS_DELAY, function()
+			if anchor.Parent then SoundPlayback.Play(debrisSound, anchor, options) end
+		end)
 	end
 	Debris:AddItem(anchor, lifetime)
 end
@@ -223,6 +233,7 @@ local function HandleDeleteTerrain(player, direction)
 	local center = hit.Position + unit * (TUNNEL_SIZE.Z / 2 - 2)
 	TerrainService:FillBlock(CFrame.lookAt(center, center + unit), TUNNEL_SIZE, Enum.Material.Air)
 	playRockImpact(hit.Position, hit.Normal)
+	DeleteTerrainEvent:FireClient(player)
 	require(script.Parent.Parent.ClassService).RecordMining(player)
 end
 
@@ -254,6 +265,27 @@ function Module.RandomizeSpawnRooms()
 	BasaltSpawns()
 	CarveSpawnRooms()
 	CarveEntrances()
+end
+
+-- Explosive mining follows the same Rock-only, region-bounded rule as picks.
+function Module.MineImpact(player, position, direction, radius)
+ if typeof(position) ~= "Vector3" or typeof(direction) ~= "Vector3" then return false end
+ local localPosition = MineableRegion.CFrame:PointToObjectSpace(position)
+ local half = MineableRegion.Size / 2
+ if math.abs(localPosition.X) > half.X or math.abs(localPosition.Y) > half.Y or math.abs(localPosition.Z) > half.Z then return false end
+ local size = math.clamp(radius, 1, 6)
+ local region = Region3.new(position - Vector3.one * size, position + Vector3.one * size):ExpandToGrid(4)
+ local materials, occupancy = TerrainService:ReadVoxels(region, 4)
+ for x, plane in ipairs(materials) do
+  for y, row in ipairs(plane) do
+   for z, material in ipairs(row) do
+    if material == Enum.Material.Rock then materials[x][y][z] = Enum.Material.Air; occupancy[x][y][z] = 0 end
+   end
+  end
+ end
+ TerrainService:WriteVoxels(region, 4, materials, occupancy)
+ require(script.Parent.Parent.ClassService).RecordMining(player)
+ return true
 end
 
 return Module

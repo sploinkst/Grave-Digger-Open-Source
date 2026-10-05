@@ -1,5 +1,15 @@
 local OkhotnikCrossbow = require(script.Parent.LegacyGunFactory).create({
 	className = "OkhotnikCrossbow",
+	AuthoredWelds = {
+		equipc0 = CFrame.new(0.308517456, -0.725009203, -0.434566498, 2.32707805e-7, 3.87429793e-7, -1, 0.99999994, -3.5017797e-7, 2.32707649e-7, -3.50177913e-7, -1, -3.87427576e-7),
+		equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		lefthand = true,
+		holster_point = "Torso",
+		holsterc0 = CFrame.new(-0.763778687, -0.128093004, 0.546070099, 8.74221513e-8, 2.30215846e-12, -1, -0.999999762, -8.41540921e-14, -8.74220518e-8, 8.96023165e-14, 1, -2.30215846e-12),
+		holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		alt_holsterc0 = CFrame.new(-0.447631836, -0.487032413, 0.708259583, 8.60940688e-8, 0.173648119, -0.984807611, -0.999999523, -1.74320248e-13, -8.7421995e-8, -1.51805271e-8, 0.984807611, 0.173648119),
+		alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	},
 	assetName = "crossbow",
 	AnimationGunType = "OkhotnikCrossbow",
 	StrictAnimations = true,
@@ -53,6 +63,13 @@ local OkhotnikCrossbow = require(script.Parent.LegacyGunFactory).create({
 		capacity = 1,
 		chamber = false,
 		reload_start = 2.5,
+		size = 2,
+		wound = 1,
+		length = 4,
+		reload_empty = 0,
+		reload_loop = 0,
+		reload_end = 0,
+		reload_alt = 0,
 	},
 	bulletSpeed = 650,
 })
@@ -75,4 +92,24 @@ function OkhotnikCrossbow:_getMeleeAnimationName(index: number): string
 	return (self.Capacity > 0 and "Alt_Melee" or "Melee") .. index
 end
 
+function OkhotnikCrossbow:_updateQuiver()
+ local character=game:GetService("Players").LocalPlayer.Character
+ local reserve=self:_getReserveAmmo()
+ if not character or not reserve then return end
+ local quiver=character:FindFirstChild("quiver",true)
+ if not quiver then return end
+ for index=1,6 do
+  local bolt=quiver:FindFirstChild("bolt"..index)
+  if bolt and bolt:IsA("BasePart") then bolt.Transparency=reserve.Value>=index and 0 or 1 end
+ end
+end
+function OkhotnikCrossbow:_on_give()
+ local reserve=self:_getReserveAmmo()
+ if reserve then self.QuiverConnection=reserve.Changed:Connect(function() self:_updateQuiver() end) end
+ self:_updateQuiver()
+end
+function OkhotnikCrossbow:destroy()
+ if self.QuiverConnection then self.QuiverConnection:Disconnect() end
+ getmetatable(OkhotnikCrossbow).__index.destroy(self)
+end
 return OkhotnikCrossbow

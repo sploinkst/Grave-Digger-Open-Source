@@ -12,15 +12,20 @@ local function get_floor()
 end
 
 local function get_sound()
-	local sound = sound_folder:FindFirstChild(get_floor())
-	
-	if sound then
-		-- // select random sound
-		
-		local sound = sound:FindFirstChild("step" .. math.random(1,3))
-		return sound
+	local character = script.Parent.Parent
+	local folder = if character:GetAttribute("charging") == true
+		then sound_folder:FindFirstChild("Charge")
+		else sound_folder:FindFirstChild(get_floor())
+	if not folder then return nil end
+
+	local steps = {}
+	for _, child in ipairs(folder:GetChildren()) do
+		if child:IsA("Sound") and child.Name:match("^step%d+$") then
+			table.insert(steps, child)
+		end
 	end
-	
+	if #steps == 0 then return nil end
+	return steps[math.random(1, #steps)]
 end
 module.Play_WalkSFX = function()
 	local sound = get_sound()

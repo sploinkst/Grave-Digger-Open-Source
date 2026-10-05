@@ -50,7 +50,7 @@ local function playPopup(main: Instance, key: string, message: string, duration:
 	local core = main:FindFirstChild("core_game")
 	local holder = core and core:FindFirstChild("textpopups")
 	local template = holder and holder:FindFirstChild("ex")
-	if not holder or not template or not template:IsA("TextLabel") or holder:FindFirstChild(key) then return end
+	if not holder or not template or not template:IsA("TextLabel") or holder:FindFirstChild(key) then return false end
 	popupSerial += 1
 	local row = template:Clone()
 	row.Name = key ~= "" and key or ("popup_" .. popupSerial)
@@ -62,6 +62,7 @@ local function playPopup(main: Instance, key: string, message: string, duration:
 		local out = tween(row, 0.35, {TextTransparency = 1, TextStrokeTransparency = 1})
 		out.Completed:Once(function() if row.Parent then row:Destroy() end end)
 	end)
+	return true
 end
 
 local function configureAlertTeam(alert: Instance)
@@ -167,7 +168,7 @@ local function bindMain(main: Instance)
 	scope:Connect(Players.PlayerAdded, function() if showing then refreshPlayerList() end end)
 	scope:Connect(Players.PlayerRemoving, function() if showing then task.defer(refreshPlayerList) end end)
 
-	_G.popupmsg = function(key, message, duration) playPopup(main, tostring(key or "message"), tostring(message or ""), duration) end
+	_G.popupmsg = function(key, message, duration) return playPopup(main, tostring(key or "message"), tostring(message or ""), duration) end
 	_G.gamealert = function(message, category, duration) showAlert(main, tostring(message or ""), category, duration) end
 	_G.globalalert = function(message, privateServer, duration) showGlobal(main, tostring(message or ""), privateServer, duration) end
 	_G.flash_hitmarker = function()

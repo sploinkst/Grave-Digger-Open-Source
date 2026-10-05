@@ -1867,6 +1867,9 @@ else
     l_core_game_0.voicewheel.officerorder.Visible = false
 end;
 local function v_u_278(p264) --[[ Line: 2364 ]]
+    if p264 == "thanks" then
+        game:GetService("ReplicatedStorage").Shared.Library.Events.VoiceComms:FireServer("thanks")
+    end
     --[[ Upvalues: (copy 1): l_Character_0, (copy 2): v_u_1, (copy 3): v_u_6, (ref 4): v_u_236, (copy 5): v_u_176, (copy 6): l_LocalPlayer_0, (ref 7): v_u_145, (copy 8): v_u_2, (copy 9): l_CurrentCamera_0, (copy 10): v_u_47, (copy 11): l_remotes_0, (copy 12): v_u_68, (copy 13): l_BoolValue_0, (copy 14): v_u_71 ]]
     local v265 = p264 == "healing" and v_u_1.Health < 100 and true or (p264 == "ammo" and (l_Character_0:FindFirstChild("full_ammo") and l_Character_0.full_ammo.Value == false) and true or false)
     if p264 == "thanks" and (l_Character_0:FindFirstChild("thankyou") and (l_Character_0.thankyou.Value ~= l_Character_0 and (l_Character_0.thankyou.Value:FindFirstChild("HumanoidRootPart") and (l_Character_0.thankyou.Value.HumanoidRootPart.Position - v_u_6.Position).magnitude <= 60))) then
@@ -3125,7 +3128,7 @@ game:GetService("RunService"):BindToRenderStep("MainLoop", v102, function() --[[
         l_core_game_0.barrelobstruction.Visible = false
         l_core_game_0.crosshair.Size = UDim2.new(0, 0, 0, 0)
         l_core_game_0.crosshair.Visible = false
-        l_core_game_0.genericcrosshair.Visible = true
+        l_core_game_0.genericcrosshair.Visible = false
     end;
     l_core_game_0.crosshair.main.left.BackgroundTransparency = v343
     l_core_game_0.crosshair.main.right.BackgroundTransparency = v343
@@ -3829,7 +3832,7 @@ game:GetService("RunService"):BindToRenderStep("MainLoop", v102, function() --[[
                 end;
             else
                 l_core_game_0.crosshair.main.Visible = false
-                l_core_game_0.genericcrosshair.Visible = true
+                l_core_game_0.genericcrosshair.Visible = false
             end;
         else
             s_UserInputService_0.MouseDeltaSensitivity = 1
@@ -3841,7 +3844,7 @@ game:GetService("RunService"):BindToRenderStep("MainLoop", v102, function() --[[
                 })
             end;
             l_core_game_0.crosshair.Visible = false
-            l_core_game_0.genericcrosshair.Visible = true
+            l_core_game_0.genericcrosshair.Visible = false
             v_u_81.aim_sound = false
             v_u_81.aim_time = tick()
             if v_u_71.leg_aiming.IsPlaying == true then

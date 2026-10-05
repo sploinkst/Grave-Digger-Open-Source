@@ -1,5 +1,15 @@
 local HopePistol = require(script.Parent.LegacyGunFactory).create({
 	className = "HopePistol",
+	AuthoredWelds = {
+		equipc0 = CFrame.new(-0.32220459, -1.17378056, -0.236167908, 0, 0, -1, 0.99999994, 0, 0, 0, -1, 0),
+		equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		lefthand = false,
+		holster_point = "Torso",
+		holsterc0 = CFrame.new(-1.07449341, -0.18704772, -0.313476562, 0.338645965, -0.604027152, 0.721437454, 0.828506589, 0.554849684, 0.0756458044, -0.445981085, 0.572097838, 0.688336194),
+		holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1) * CFrame.new(0.25, 0, 0),
+		alt_holsterc0 = CFrame.new(0.0736999512, -0.684338331, -0.582336426, 0.342020154, -0.939692616, 0, 0.939692616, 0.342020154, 0, 0, 0, 1),
+		alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1) * CFrame.new(0.25, 0, 0),
+	},
 	assetName = "mpistol",
 	AnimationGunType = "HopePistol",
 	StrictAnimations = true,
@@ -48,6 +58,9 @@ local HopePistol = require(script.Parent.LegacyGunFactory).create({
 		reload_end = 1.15,
 		chamber = true,
 		require_full_load = true,
+		size = 1,
+		wound = 1,
+		length = 4,
 	},
 	bulletSpeed = 850,
 })

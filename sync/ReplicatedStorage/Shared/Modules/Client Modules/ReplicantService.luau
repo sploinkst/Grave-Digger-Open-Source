@@ -37,7 +37,7 @@ local lastHeartbeatTime = 0
 -- Prevent remote listeners from being connected more than once.
 local moduleStarted = false
 
-local NationStart = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Sounds"):WaitForChild("Game"):WaitForChild("NationStart")
+local NationStart = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("Sounds"):WaitForChild("Game"):WaitForChild("Gamestart"):WaitForChild("NationStart")
 local EmpireStart = NationStart.Parent.EmpireStart
 
 -- // Adjust this path to wherever your actual capture-point loop sound lives
@@ -359,21 +359,22 @@ local function UpdateEnemyFlash(
 end
 
 local function SetupHolster(player: Player, child: BoolValue)
-	local reference =
-		HolstersRoot:FindFirstChild(child.Name)
+	local fromToolModel = child:GetAttribute("FromToolModel") == true
+	local reference = if fromToolModel then ReplicatedStorage.Shared.Assets.Guns.ToolModels:FindFirstChild(child.Name)
+		else HolstersRoot:FindFirstChild(child.Name)
 
 	if not reference then
 		warn("[ScoringClient] No holster reference found for:", child.Name)
 		return
 	end
 
-	local primary = reference.PrimaryPart
+	local primary = reference:FindFirstChild("hitbox", true) or reference.PrimaryPart
 	if not primary then
 		warn("[ScoringClient] No PrimaryPart on holster:", child.Name)
 		return
 	end
 
-	local bodyPartName = string.split(primary.Name, "_")[2]
+	local bodyPartName = child:GetAttribute("HolsterPoint") or string.split(primary.Name, "_")[2]
 	local char = player.Character
 	if not char or not char:FindFirstChild(bodyPartName) then
 		warn("[ScoringClient] Missing body part:", bodyPartName)
@@ -381,20 +382,54 @@ local function SetupHolster(player: Player, child: BoolValue)
 	end
 
 	local clone = reference:Clone()
-	local weld = Utilities.quick_weld(clone.PrimaryPart, char[bodyPartName], clone, child.Name .. "_Weld")
-	local holsterC0 = reference:GetAttribute("HolsterC0")
-	if typeof(holsterC0) == "CFrame" then
+	local mount = clone:FindFirstChild("hitbox", true) or clone.PrimaryPart
+	if not mount or not mount:IsA("BasePart") then clone:Destroy(); return end
+	clone.PrimaryPart = mount
+	local holsterC0 = child:GetAttribute("HolsterC0")
+	local holsterC1 = child:GetAttribute("HolsterC1")
+	local weld
+	local bodyMarker = not fromToolModel and string.split(mount.Name, "_")[2] == bodyPartName
+	if not bodyMarker and typeof(holsterC0) == "CFrame" and typeof(holsterC1) == "CFrame" then
+		-- Weapon-module offsets use the body as Part0 and the gun as Part1.
+		if child:GetAttribute("UseAltHolster") == true then
+			holsterC0 = child:GetAttribute("AltHolsterC0") or holsterC0
+			holsterC1 = child:GetAttribute("AltHolsterC1") or holsterC1
+		end
+		weld = Utilities.quick_weld(char[bodyPartName], clone.PrimaryPart, clone, child.Name .. "_Weld")
 		weld.C0 = holsterC0
+		weld.C1 = holsterC1
+	else
+		weld = Utilities.quick_weld(clone.PrimaryPart, char[bodyPartName], clone, child.Name .. "_Weld")
+		local authoredC0 = reference:GetAttribute("HolsterC0")
+		if typeof(authoredC0) == "CFrame" then weld.C0 = authoredC0 end
 	end
-	clone.Parent = char.CharacterData.Rendered_Holsters
-
-	child:GetPropertyChangedSignal("Value"):Connect(function()
-		for _, part in pairs(clone:GetDescendants()) do
-			if part:IsA("BasePart") and part:GetAttribute("Hide_On_Equip") then
-				part.Transparency = child.Value and 0 or 1
+	local transparency = {}
+	local connected = {[mount] = true}
+	for _, part in mount:GetConnectedParts(true) do connected[part] = true end
+	for _, part in clone:GetDescendants() do
+		if part:IsA("BasePart") then
+			transparency[part] = part.Transparency
+			part.Anchored = false
+			part.CanCollide = false
+			part.CanTouch = false
+			part.CanQuery = false
+			part.Massless = true
+			if not connected[part] then
+				local internal = Instance.new("WeldConstraint")
+				internal.Part0 = mount; internal.Part1 = part; internal.Parent = mount
 			end
 		end
-	end)
+	end
+	local function updateVisibility()
+		for _, part in pairs(clone:GetDescendants()) do
+			if part:IsA("BasePart") and (fromToolModel or part:GetAttribute("Hide_On_Equip")) then
+				part.Transparency = child.Value and transparency[part] or 1
+			end
+		end
+	end
+	updateVisibility()
+	clone.Parent = char.CharacterData.Rendered_Holsters
+	child:GetPropertyChangedSignal("Value"):Connect(updateVisibility)
 end
 
 local function RemoveHolster(player: Player, child: Instance)
@@ -1420,11 +1455,21 @@ function Module.HandleSfxReplication(...)
 		local pitchShift = args[6] or 0
 		local pitchVariation = args[7] or 0 -- pitch variation parameter
 
+		local soundPath = string.lower(soundInstance:GetFullName())
+		local ghostSound = string.find(soundPath, ".mondragon", 1, true) or string.find(soundPath, ".geistrifle", 1, true)
+		local maxDistance = args[8] or (ghostSound and (string.lower(soundInstance.Name) == "fire" and 20 or 65) or nil)
+		local sourceCharacter = typeof(player) == "Instance" and player:IsA("Player") and player.Character
+		local geist = sourceCharacter and sourceCharacter:GetAttribute("EliteClass")
+		if (geist == "GeistTrooper" or geist == "Geist Trooper") and string.find(soundPath, ".gunloading.", 1, true) then
+			volume *= 0.5
+			maxDistance = 65
+		end
 		SoundPlayback.Play(soundInstance, parent, {
 			PlaybackSpeed = playbackSpeed,
 			Volume = volume,
 			PitchShift = pitchShift,
 			PitchVariation = pitchVariation,
+			RollOffMaxDistance = maxDistance,
 		})
 	end
 end
@@ -1436,12 +1481,33 @@ function Module.HandleCasingReplication(...)
 	local casing = args[2]
 	local origin = args[3]
 	local direction = args[4]
+	local weaponName = args[5]
+	if typeof(casing) ~= "Instance" or not casing:IsA("BasePart") or typeof(origin) ~= "CFrame" then return end
+	local CasingAudio = require(ReplicatedStorage.Shared.Library.CasingAudio)
 
 	local clone = casing:Clone()
+	clone.CanCollide = false
+	clone.CanQuery = false
+	-- A dropped part must not retain the weapon's motors or welded neighbors.
+	for _, descendant in clone:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.CanCollide = false
+			descendant.CanQuery = false
+		end
+		if descendant:IsA("JointInstance") or descendant:IsA("WeldConstraint") then
+			local p0, p1 = descendant.Part0, descendant.Part1
+			if not p0 or not p1 or not (p0 == clone or p0:IsDescendantOf(clone))
+				or not (p1 == clone or p1:IsDescendantOf(clone)) then descendant:Destroy() end
+		end
+	end
+	local declared = casing:GetAttribute("CasingSoundFamily")
+	local family = CasingAudio.Family(casing.Name, weaponName, declared)
+	CasingAudio.Bind(clone, family, player)
 	clone.Parent = workspace
 	clone.CFrame = origin
 	clone.Anchored = false
-	clone.CanCollide = true
+	clone.CanTouch = true
+	clone.CanQuery = false
 	clone.Transparency = 0
 
 	local vel = direction or origin.LookVector * math.random(10, 15) + Vector3.new(0, math.random(10, 15), 0)

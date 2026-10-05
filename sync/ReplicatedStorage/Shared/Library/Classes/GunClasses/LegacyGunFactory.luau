@@ -120,9 +120,9 @@ local function aliasNames(...): { string }
 	return result
 end
 
-local function animation(folder: Instance?, names: { string }): Animation?
+local function animation(folder: Instance?, names: { string }): Instance?
 	local found = firstChild(folder, names)
-	return found and found:IsA("Animation") and found or nil
+	return found and (found:IsA("Animation") or found:IsA("KeyframeSequence")) and found or nil
 end
 
 local function sound(folder: Instance?, names: { string }): Sound?
@@ -140,7 +140,7 @@ local function canonicalAnimationName(name: string): string
 	return table.concat(pieces, "_")
 end
 
-local function buildAnimations(animationId: string, strict: boolean?, preferLong: boolean?, animationMap, weaponCategory: string?): { [string]: Animation }?
+local function buildAnimations(animationId: string, strict: boolean?, preferLong: boolean?, animationMap, weaponCategory: string?): { [string]: Instance }?
 	local guns = Assets:FindFirstChild("Animations")
 		and Assets.Animations:FindFirstChild("Tools")
 		and Assets.Animations.Tools:FindFirstChild("Guns")
@@ -210,7 +210,8 @@ local function buildAnimations(animationId: string, strict: boolean?, preferLong
 	-- frame events and item-specific sequences are not lost during migration.
 	if folder then
 		for _, child in folder:GetChildren() do
-			local clip = if child:IsA("Animation") then child else child:FindFirstChildWhichIsA("Animation", true)
+			local clip = if child:IsA("Animation") or child:IsA("KeyframeSequence") then child
+				else child:FindFirstChildWhichIsA("Animation", true) or child:FindFirstChildWhichIsA("KeyframeSequence", true)
 			if clip then
 				local canonicalName = canonicalAnimationName(child.Name)
 				if result[canonicalName] == nil then
@@ -300,6 +301,7 @@ local function publishStaticFields(Class, className: string, config)
 	Class.reload_end = config.reload_end or config.reloadEnd or 0
 	Class.hidereserves = config.hidereserves or false
 	Class.animations = config.animations or config.AnimationGunType
+	Class.AuthoredWelds = config.AuthoredWelds
 end
 
 local Factory = {}
@@ -341,6 +343,7 @@ function Factory.create(config)
 		self.className = className
 		self.name = config.name or className
 		self.StrictAnimations = config.StrictAnimations == true
+		self.PreferOwnDraw = config.PreferOwnDraw == true
 		self.item_image = Class.Tool_Image
 		self.Designation = Class.Designation
 		self.ANIM_LAYERS = config.ANIM_LAYERS or DEFAULT_LAYERS
@@ -355,9 +358,8 @@ function Factory.create(config)
 
 		local toolModels = GunAssets:FindFirstChild("ToolModels")
 		local holsters = GunAssets:FindFirstChild("Holsters")
-		local sounds = GunAssets:FindFirstChild("Sounds")
 		local sharedSounds = Assets:FindFirstChild("Sounds")
-		local toolSounds = sharedSounds and (sharedSounds:FindFirstChild("Tools") or sharedSounds:FindFirstChild("tools"))
+		local sounds = sharedSounds and sharedSounds:FindFirstChild("Guns")
 		self.model_reference = firstChild(toolModels, modelNames)
 		local holsterNames = {}
 		for _, name in aliasNames(config.holsterNames or {}, assetName, className) do
@@ -366,8 +368,6 @@ function Factory.create(config)
 		end
 		self.holster_reference = firstChild(holsters, holsterNames)
 		self.SoundFolder = firstChild(sounds, soundNames)
-			or firstChild(toolSounds, soundNames)
-			or firstChild(sharedSounds, soundNames)
 		self.FireSound = sound(self.SoundFolder, { "fire", "Fire", "shot" })
 
 		self.motor_6d_data = {
@@ -395,7 +395,7 @@ function Factory.create(config)
 		self.AmmoCheckPartName = config.ammoCheckPartName or "hitbox"
 		self.BulletSpeed = config.bullet_speed or config.bulletSpeed or 900
 		self.FireInterval = config.fireInterval or config.fire_rate or 0.5
-		self.Short_Distance = config.shortDistance or 3.5
+		self.Short_Distance = config.shortDistance or 4
 		self.Melee_Distance = config.meleeDistance or config.melee_range or 5
 		self.Melee_Damage = config.meleeDamage or config.melee_damage or 80
 		self.Can_Drop = config.canDrop ~= false
@@ -454,8 +454,13 @@ function Factory.create(config)
 		params.FilterDescendantsInstances = { character, self.actual_model }
 		local origin = head.Position - Vector3.new(0, 0.5, 0)
 		local down = -root.CFrame.UpVector * 2.25
-		return workspace:Raycast(origin + camera.CFrame.LookVector * 4, down, params) ~= nil
-			or workspace:Raycast(origin + camera.CFrame.LookVector * 1.5, down, params) ~= nil
+		local function validSupport(result)
+			if not result or result.Normal.Y < 0.6 then return false end
+			local model = result.Instance:FindFirstAncestorOfClass("Model")
+			return not (model and model:FindFirstChildOfClass("Humanoid"))
+		end
+		return validSupport(workspace:Raycast(origin + camera.CFrame.LookVector * 4, down, params))
+			or validSupport(workspace:Raycast(origin + camera.CFrame.LookVector * 1.5, down, params))
 	end
 
 	function Class:_isBusyForActivation(): boolean
@@ -467,6 +472,7 @@ function Factory.create(config)
 	end
 
 	function Class:_fireConfiguredShot(fireDelay: number?)
+		local equipGeneration = self._equipGeneration
 		if config.overheatAt and self.Capacity == config.overheatAt then
 			self:_playRandomConfiguredSound(config.steamSounds)
 		end
@@ -503,12 +509,15 @@ function Factory.create(config)
 				and self.RegisteredAnimations
 				and self.RegisteredAnimations.Cycle ~= nil)
 		if not fired or not hasManualCycle then return fired end
+		if not self.Equipped or equipGeneration ~= self._equipGeneration then return fired end
+		local generation = self._equipGeneration
 
 		self.Cycling = true
 		if sideCycleAnimations then
 			local cycleStarted = os.clock()
 			local cycleDelay = config.sideCycleDelay or 0.25
 			if cycleDelay > 0 then task.wait(cycleDelay) end
+			if not (self.Equipped and self._equipGeneration == generation) then return fired end
 
 			-- Firing the last round leaves the action open; there is nothing to
 			-- cycle into the chamber until the weapon is reloaded.
@@ -518,12 +527,13 @@ function Factory.create(config)
 					fade = config.sideCycleFade or 0.1,
 					speed = config.sideCycleSpeed or 2,
 				})
-				if cycleTrack then cycleTrack.Stopped:Wait() end
+				if not self.Equipped or self._equipGeneration ~= generation then return fired end
 			end
 
 			local minimumCycleTime = self:_effectiveFireDelay(self.FireInterval or config.fire_rate or 0)
 			local remaining = minimumCycleTime - (os.clock() - cycleStarted)
 			if remaining > 0 then task.wait(remaining) end
+			if not (self.Equipped and self._equipGeneration == generation) then return fired end
 			self.Cycling = false
 			self:_restoreBaseDeferred()
 			return fired
@@ -533,22 +543,20 @@ function Factory.create(config)
 			then "Bipod_Cycle"
 			else "Cycle"
 		local cycleDuration = config.cycle or self.cycle or self.FireInterval
-		if cycleName == "Bipod_Cycle" then cycleDuration *= config.bipodCycleMultiplier or 0.8 end
+		if cycleName == "Bipod_Cycle" then cycleDuration *= config.bipodCycleMultiplier or 1 end
+		cycleDuration=self:_cycleDuration(cycleDuration)
 		local cycleTrack = self.Equipped and self:_playAnim(cycleName, false,
 			cycleDuration and cycleDuration > 0 and { speed = 1 / cycleDuration } or nil)
-		if cycleTrack then
-			cycleTrack.Stopped:Wait()
-		else
-			task.wait(cycleDuration)
-		end
+		if not self:_waitActionPhase(cycleTrack,cycleDuration) then return fired end
 		task.wait(config.cycle_rest or self.cycle_rest or 0)
+		if not (self.Equipped and self._equipGeneration == generation) then return fired end
 		self.Cycling = false
 		self:_restoreBaseDeferred()
 		return fired
 	end
 
 	function Class:_reloadMagazine()
-		if not self.Equipped or self.Reloading or self.Equipping then return false end
+		if not self.Equipped or self.Reloading or self.Equipping or self.Firing or self.Cycling then return false end
 		if self.Capacity >= self.Max_Capacity then return false end
 
 		local reserveAmmo = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
@@ -562,6 +570,11 @@ function Factory.create(config)
 			return false
 		end
 
+		if self.require_full_load and reserveAmmo.Value < (self.capacity or self.Max_Capacity) then
+			self:notify("I need a full load of ammo...")
+			return false
+		end
+		local generation = self._equipGeneration
 		self:_stopAllExcept()
 		self.Reloading = true
 		self.Firing = false
@@ -581,13 +594,10 @@ function Factory.create(config)
 			if self.RegisteredAnimations[veteranAnimation] then reloadAnimation = veteranAnimation end
 		end
 		local startTrack = self:_playAnim(reloadAnimation)
-		if startTrack then
-			startTrack.Stopped:Wait()
-		else
-			task.wait(config.reload_full or config.reload_start or 0.8)
-		end
+		if not self:_waitReloadPhase(startTrack,config.reload_full or config.reload_start or 0.8) then return false end
+		if not self.Equipped or self._equipGeneration ~= generation then return false end
 
-		if self.Equipped and not self._reloadCancelled then
+		if (self.Equipped and self._equipGeneration == generation) then
 			local targetCapacity = self.Max_Capacity
 			if config.initialCapacityMin and config.initialCapacityMax then
 				targetCapacity = math.random(config.initialCapacityMin, config.initialCapacityMax)
@@ -607,7 +617,8 @@ function Factory.create(config)
 			end
 			local endTrack = self.RegisteredAnimations and self.RegisteredAnimations[endAnimation]
 				and self:_playAnim(endAnimation)
-			if endTrack then endTrack.Stopped:Wait() end
+			if not self:_waitReloadPhase(endTrack,config.reload_end or 0) then return false end
+			if not self.Equipped or self._equipGeneration ~= generation then return false end
 			self:_playConfiguredSound(config.ReloadEndSound or "charge_back")
 		end
 
@@ -622,10 +633,11 @@ function Factory.create(config)
 	function Class:_startAutoFire()
 		if self._autoFireLoopActive then return end
 		self._autoFireHeld = true
+		local equipGeneration = self._equipGeneration
 		self._autoFireLoopActive = true
 
 		task.spawn(function()
-			while self._autoFireHeld and self.Equipped and (self.Aiming or config.requireAiming == false) do
+			while self._autoFireHeld and self.Equipped and self._equipGeneration == equipGeneration and (self.Aiming or config.requireAiming == false) do
 				if self.Reloading or self.Cycling then
 					task.wait()
 				elseif self.Capacity <= 0 then

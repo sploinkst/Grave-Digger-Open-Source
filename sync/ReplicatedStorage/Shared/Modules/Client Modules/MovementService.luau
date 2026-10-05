@@ -12,6 +12,7 @@ local SettingsManager = require(
 
 -- // Player
 local LocalPlayer = Players.LocalPlayer
+local Locomotion = require(script.Parent.LocomotionService)
 
 -- // Dynamic character refs
 local Character = nil
@@ -20,12 +21,6 @@ local RootPart = nil
 local Animator = nil
 local InjuredLeftTrack: AnimationTrack? = nil
 local InjuredRightTrack: AnimationTrack? = nil
-
--- // Config
-local BaseSpeed = 10
-local MaxSpeed = 18
-local SprintRampTime = 2
-local RestrictedSpeedMultiplier = 0.5
 
 -- // VAULT CONFIG
 local VAULT_RAYCAST_RANGE_1 = 2
@@ -46,18 +41,9 @@ local VAULT_BODY_POSITION_D = 500
 -- // State
 local SprintKeyHeld = false
 local Sprinting = false
-local LoopRunning = false
-local Checked = false
 
-local SprintTicker = 0
 
-local HoldBreathe_time = 5.5
-local HoldBreathe_regen = 2.5
-local HoldBreathe_maxaccuracy = 0.35
 
-local HoldingBreath = false
-local HoldBreathStart = 0
-local HoldBreathCooldownEnd = 0
 
 local IsJumping = false
 local IsClimbing = false
@@ -66,8 +52,6 @@ local fall_time = tick()
 local fall_threshold = 0.35
 local fall_duration_threshold = 0.3
 
-local LastSprintCancelTime = 0
-local AimSprintCooldown = 0.35
 
 local InputsBinded = false
 
@@ -87,10 +71,6 @@ local mantleAnim =
 	.Jumping
 	.Mantle
 
--- // Velocity tracking
-local VelocityHistory = {}
-local MAX_VELOCITY_HISTORY = 5
-
 local KeyStates = {
 	Forward = false,
 	Backwards = false,
@@ -103,6 +83,7 @@ local characterConnections = {}
 
 -- // Forward declaration
 local tryStartSprint
+local updateSprint
 
 local function updateInjuredPose()
 	if not Humanoid then return end
@@ -126,56 +107,6 @@ local function lerp(a, b, t)
 	return a + (b - a) * t
 end
 
-local function getOrderSpeedMultiplier()
-	if not Character then
-		return 1
-	end
-
-	return Character:GetAttribute("OrderSpeedMultiplier") or 1
-end
-
-local function needsSurgery()
-	if not Character then return false end
-	local data = Character:FindFirstChild("CharacterData")
-	local wounds = data and data:FindFirstChild("Wounds")
-	return wounds ~= nil and #wounds:GetChildren() > 0
-end
-
-local function getMovementSpeedMultiplier()
-	if not Character then
-		return 1
-	end
-
-	local positive = if needsSurgery() then 1 else (Character:GetAttribute("BloodlustWalkMultiplier") or 1)
-	return (Character:GetAttribute("MovementSpeedMultiplier") or 1)
-		* (Character:GetAttribute("DebuffMovementMultiplier") or 1)
-		* (Character:GetAttribute("BurnMovementMultiplier") or 1)
-		* positive
-end
-
-local function getSprintSpeedMultiplier()
-	if not Character then
-		return 1
-	end
-
-	local positive = 1
-	if not needsSurgery() then
-		positive *= Character:GetAttribute("OrderSprintSpeedMultiplier") or 1
-		positive *= Character:GetAttribute("MoraleSprintMultiplier") or 1
-		positive *= Character:GetAttribute("BloodlustSprintMultiplier") or 1
-	end
-	return (Character:GetAttribute("SprintSpeedMultiplier") or 1) * positive
-end
-
-local function getSprintRampMultiplier()
-	if not Character then
-		return 1
-	end
-
-	return (Character:GetAttribute("SprintRampMultiplier") or 1)
-		* (Character:GetAttribute("OrderSprintRampMultiplier") or 1)
-end
-
 local function isAiming()
 	return Character
 		and Character:GetAttribute("Aiming") == true
@@ -186,60 +117,9 @@ local function isCrouching()
 		and Character:GetAttribute("Crouching") == true
 end
 
-local function isADSMovementExempt()
-	return Character
-		and Character:GetAttribute("ADSMovementExempt") == true
-end
-
-local function getAimingSpeed()
-	local orderSpeed = getOrderSpeedMultiplier()
-	local restrictedMultiplier = if Character and Character:GetAttribute("FocusOrder") then 0.65 else RestrictedSpeedMultiplier
-
-	-- Normal aiming movement.
-	if not isADSMovementExempt() then
-		return BaseSpeed
-			* restrictedMultiplier
-			* orderSpeed
-			* getMovementSpeedMultiplier()
-	end
-
-	-- Special tools that explicitly allow normal movement while aiming.
-	return BaseSpeed * orderSpeed * getMovementSpeedMultiplier()
-end
-
-local function getNormalSpeed()
-	local orderSpeed = getOrderSpeedMultiplier()
-
-	if isCrouching() then
-		return BaseSpeed
-			* RestrictedSpeedMultiplier
-			* orderSpeed
-			* getMovementSpeedMultiplier()
-	end
-
-	return BaseSpeed * orderSpeed * getMovementSpeedMultiplier()
-end
-
-local function setSprintAttribute(state: boolean)
-	if not Character then
-		return
-	end
-
-	local data = Character:FindFirstChild("CharacterData")
-
-	local value =
-		data
-		and data:FindFirstChild("State")
-		and data.State:FindFirstChild("Sprinting")
-
-	if value and value:IsA("BoolValue") then
-		value.Value = state
-	end
-
-	Character:SetAttribute(
-		"Sprinting",
-		state and true or nil
-	)
+local function setSprintAttribute(_state: boolean)
+    local result = Locomotion.Update(0)
+    Sprinting = result and result.accelerating or false
 end
 
 local function setCharacterBool(name: string, state: boolean)
@@ -264,256 +144,18 @@ local function setCharacterBool(name: string, state: boolean)
 	)
 end
 
--- // Hold Breath
-
-local function setHoldBreathe(holding: boolean)
-	if not Character then
-		return
-	end
-
-	if holding then
-
-		if HoldingBreath then
-			return
-		end
-
-		if tick() < HoldBreathCooldownEnd then
-			return
-		end
-
-		HoldingBreath = true
-		HoldBreathStart = tick()
-
-		setCharacterBool("HoldBreathe", true)
-
-		task.spawn(function()
-
-			while HoldingBreath do
-
-				if not Character then
-					break
-				end
-
-				if not Character:GetAttribute("Aiming") then
-					break
-				end
-
-				if Character.Humanoid.MoveDirection.Magnitude > 0 then
-					break
-				end
-
-				if not SprintKeyHeld then
-					break
-				end
-
-				if tick() - HoldBreathStart >= HoldBreathe_time then
-					break
-				end
-
-				if Character:GetAttribute("HoldBreathe") ~= true then
-					break
-				end
-
-				task.wait(0.05)
-			end
-
-			if HoldingBreath then
-
-				HoldingBreath = false
-
-				HoldBreathCooldownEnd =
-					tick() + HoldBreathe_regen
-
-				if Character
-					and Character:GetAttribute("HoldBreathe") then
-
-					setCharacterBool(
-						"HoldBreathe",
-						false
-					)
-				end
-
-				print(
-					"[HoldBreath] Ended. Cooldown until:",
-					HoldBreathCooldownEnd
-				)
-			end
-		end)
-
-	else
-
-		if not HoldingBreath then
-			return
-		end
-
-		HoldingBreath = false
-
-		HoldBreathCooldownEnd =
-			tick() + HoldBreathe_regen
-
-		if Character:GetAttribute("HoldBreathe") then
-			setCharacterBool(
-				"HoldBreathe",
-				false
-			)
-		end
-
-		print(
-			"[HoldBreath] Ended manually. Cooldown until:",
-			HoldBreathCooldownEnd
-		)
-	end
+local function refreshSprintInput()
+    SprintKeyHeld = Locomotion.IsSprintHeld()
 end
 
--- // Speed
-
-local function resetSpeed()
-	if not Character or not Humanoid then
-		return
-	end
-
-	Sprinting = false
-	SprintTicker = 0
-
-	setSprintAttribute(false)
-
-	-- AIMING ALWAYS WINS.
-	if isAiming() then
-
-		setHoldBreathe(false)
-
-		Humanoid.WalkSpeed =
-			getAimingSpeed()
-
-		return
-	end
-
-	-- Normal / crouch movement.
-	Humanoid.WalkSpeed =
-		getNormalSpeed()
+local function refreshLocomotion()
+    local result = Locomotion.Update(0)
+    Sprinting = result and result.accelerating or false
+    refreshSprintInput()
 end
-
-local function applyRestrictedSpeed()
-	if not Character or not Humanoid then
-		return
-	end
-
-	-- AIMING ALWAYS WINS.
-	if isAiming() then
-		Humanoid.WalkSpeed =
-			getAimingSpeed()
-
-		return
-	end
-
-	-- Crouching.
-	Humanoid.WalkSpeed =
-		getNormalSpeed()
-end
-
--- // IMPORTANT:
--- // This function is called continuously by the sprint loop.
--- // It prevents the sprint loop from ever leaving WalkSpeed
--- // at a sprint value while aiming.
-
-local function enforceMovementSpeed()
-	if not Character or not Humanoid then
-		return
-	end
-
-	if isAiming() then
-
-		local aimingSpeed = getAimingSpeed()
-
-		if Humanoid.WalkSpeed ~= aimingSpeed then
-			Humanoid.WalkSpeed = aimingSpeed
-		end
-
-		return
-	end
-end
-
--- // Sprint
-
-local function canStartSprint()
-	if not Character then
-		return false
-	end
-
-	-- NEVER sprint while aiming.
-	if Character:GetAttribute("Aiming") then
-		return false
-	end
-
-	-- NEVER sprint while crouching.
-	if Character:GetAttribute("Crouching") then
-		return false
-	end
-
-	if Character:GetAttribute("SprintBlocked") or Character:GetAttribute("ActionBlocked") then
-		return false
-	end
-
-	if IsClimbing then
-		return false
-	end
-
-	if W_Locked == true then
-		return KeyStates.Forward
-	else
-		return
-			KeyStates.Forward
-			or KeyStates.Backwards
-			or KeyStates.Left
-			or KeyStates.Right
-	end
-end
-
-local function getSmoothedVelocity()
-	if not RootPart then
-		return 0
-	end
-
-	local currentVel =
-		RootPart.AssemblyLinearVelocity.Magnitude
-
-	table.insert(
-		VelocityHistory,
-		currentVel
-	)
-
-	if #VelocityHistory > MAX_VELOCITY_HISTORY then
-		table.remove(
-			VelocityHistory,
-			1
-		)
-	end
-
-	local sum = 0
-
-	for _, vel in ipairs(VelocityHistory) do
-		sum += vel
-	end
-
-	if #VelocityHistory == 0 then
-		return 0
-	end
-
-	return sum / #VelocityHistory
-end
-
-local function getForwardVelocity()
-	if not RootPart then
-		return 0
-	end
-
-	local velocity =
-		RootPart.CFrame:VectorToObjectSpace(
-			RootPart.AssemblyLinearVelocity
-		)
-
-	return velocity.Z
-end
+local resetSpeed = refreshLocomotion
+local applyRestrictedSpeed = refreshLocomotion
+local enforceMovementSpeed = refreshLocomotion
 
 -- // Vault
 
@@ -737,369 +379,9 @@ local function checkVaultTrigger()
 	return checkVaultGeometry()
 end
 
--- // Core sprint loop
-
-local function sprintLoop()
-
-	if LoopRunning then
-		return
-	end
-
-	LoopRunning = true
-
-	SprintTicker = tick()
-
-	print(
-		"[SprintLoop] Started - W_Locked:",
-		W_Locked
-	)
-
-	while Sprinting do
-
-		if not Character
-			or not Humanoid
-			or not RootPart then
-
-			break
-		end
-
-		-- =====================================================
-		-- AIMING HAS ABSOLUTE PRIORITY
-		-- =====================================================
-
-		if isAiming() then
-
-			print(
-				"[SprintLoop] Stopped: Aiming"
-			)
-
-			Sprinting = false
-
-			setSprintAttribute(false)
-
-			-- Immediately force aiming speed.
-			Humanoid.WalkSpeed =
-				getAimingSpeed()
-
-			break
-		end
-
-		-- =====================================================
-		-- CLIMBING
-		-- =====================================================
-
-		if IsClimbing then
-
-			print(
-				"[SprintLoop] Stopped: Climbing"
-			)
-
-			break
-		end
-
-		-- =====================================================
-		-- JUMP / FALL
-		-- =====================================================
-
-		if IsJumping then
-
-			local fallDuration =
-				tick() - fall_time
-
-			if fallDuration >
-				fall_duration_threshold then
-
-				print(
-					"[SprintLoop] Stopped: Falling for too long"
-				)
-
-				break
-			end
-		end
-
-		-- =====================================================
-		-- CROUCH
-		-- =====================================================
-
-		if isCrouching() then
-
-			print(
-				"[SprintLoop] Stopped: Crouching"
-			)
-
-			break
-		end
-
-		-- =====================================================
-		-- INPUT
-		-- =====================================================
-
-		if W_Locked
-			and not KeyStates.Forward then
-
-			print(
-				"[SprintLoop] Stopped: W_Locked but W not held"
-			)
-
-			break
-		end
-
-		local hasMovementInput =
-			KeyStates.Forward
-			or KeyStates.Backwards
-			or KeyStates.Left
-			or KeyStates.Right
-
-		-- =====================================================
-		-- SECOND AIM CHECK
-		-- =====================================================
-		--
-		-- This check intentionally exists immediately before
-		-- writing WalkSpeed. This closes the exact race where
-		-- aiming can begin during the sprint ramp.
-
-		if isAiming() then
-
-			Sprinting = false
-
-			setSprintAttribute(false)
-
-			Humanoid.WalkSpeed =
-				getAimingSpeed()
-
-			break
-		end
-
-		local shouldSprint =
-			(
-				not isAiming()
-				and W_Locked
-				and KeyStates.Forward
-			)
-			or (
-				not W_Locked
-				and hasMovementInput
-			)
-
-		if shouldSprint then
-
-			local elapsed =
-				tick() - SprintTicker
-
-			local t
-			if Character:GetAttribute("InstantSprintAcceleration") == true then
-				t = 1
-			else
-				local rampTime = SprintRampTime * getSprintRampMultiplier()
-				t = math.clamp(
-					if rampTime > 0 then elapsed / rampTime else 1,
-					0,
-					1
-				)
-				-- SmoothStep gives the acceleration an actual tween curve instead
-				-- of changing speed at a visibly constant, mechanical rate.
-				t = t * t * (3 - 2 * t)
-			end
-
-			-- FINAL AIM CHECK BEFORE WALK SPEED WRITE
-			if isAiming() then
-
-				Sprinting = false
-
-				setSprintAttribute(false)
-
-				Humanoid.WalkSpeed =
-					getAimingSpeed()
-
-				break
-			end
-
-			local orderMultiplier = getOrderSpeedMultiplier()
-			local movementMultiplier = getMovementSpeedMultiplier()
-			local walkTarget = BaseSpeed * orderMultiplier * movementMultiplier
-			local sprintTarget = MaxSpeed
-				* orderMultiplier
-				* movementMultiplier
-				* getSprintSpeedMultiplier()
-			local sprintWalkSpeed = lerp(walkTarget, sprintTarget, t)
-
-			-- One last protection against an aiming state
-			-- changing during this iteration.
-			if isAiming() then
-
-				Sprinting = false
-
-				setSprintAttribute(false)
-
-				Humanoid.WalkSpeed =
-					getAimingSpeed()
-
-				break
-			end
-
-			Humanoid.WalkSpeed =
-				sprintWalkSpeed
-
-			-- Hand animation control to the sprint cycle near the end of the
-			-- acceleration tween. Waiting for a mathematically perfect endpoint
-			-- lets collision/velocity checks cancel the loop before it ever plays.
-			if t >= 0.8 then
-				setSprintAttribute(true)
-			end
-
-		else
-
-			if W_Locked then
-
-				print(
-					"[SprintLoop] Stopped: W_Locked and not pressing W"
-				)
-
-				break
-
-			else
-
-				if not hasMovementInput then
-
-					print(
-						"[SprintLoop] Stopped: No movement input at all"
-					)
-
-					break
-				end
-			end
-		end
-
-		-- =====================================================
-		-- VELOCITY CHECKS
-		-- =====================================================
-
-		local forwardVel =
-			getForwardVelocity()
-
-		if forwardVel > 2 then
-
-			print(
-				"[SprintLoop] Stopped: Moving backwards too much"
-			)
-
-			break
-		end
-
-		local smoothedVel =
-			getSmoothedVelocity()
-
-		if smoothedVel <
-			(Humanoid.WalkSpeed - 8) then
-
-			print(
-				"[SprintLoop] Stopped: Velocity too low (Hit a wall)"
-			)
-
-			break
-		end
-
-		task.wait(0.03)
-	end
-
-	LoopRunning = false
-
-	-- =========================================================
-	-- IMPORTANT
-	-- =========================================================
-	--
-	-- If aiming caused the loop to terminate, resetSpeed()
-	-- will explicitly select the aiming speed.
-
-	resetSpeed()
-
-	-- =========================================================
-	-- AUTO REBUILD
-	-- =========================================================
-
-	if SprintKeyHeld and not Checked then
-
-		task.defer(function()
-
-			print(
-				"[SprintLoop] Monitoring for Auto-Rebuild..."
-			)
-
-			while
-				SprintKeyHeld
-				and not Sprinting
-				and not Checked
-			do
-
-				-- NEVER rebuild sprint while aiming.
-				if isAiming() then
-					task.wait(0.1)
-					continue
-				end
-
-				if canStartSprint() then
-
-					Checked = true
-
-					local smoothedVel =
-						getSmoothedVelocity()
-
-					if smoothedVel >=
-						(BaseSpeed - 3)
-						or (
-							not W_Locked
-								and smoothedVel > 2
-						) then
-
-						print(
-							"[SprintLoop] Auto-Rebuild conditions met. Restarting!"
-						)
-
-						tryStartSprint()
-
-						break
-					end
-				end
-
-				task.wait(0.1)
-			end
-		end)
-	end
-end
-
-function tryStartSprint()
-
-	-- Absolute protection against sprinting while aiming.
-	if isAiming() then
-
-		Sprinting = false
-
-		if Humanoid then
-			Humanoid.WalkSpeed =
-				getAimingSpeed()
-		end
-
-		return
-	end
-
-	if not Sprinting
-		and canStartSprint() then
-
-		Sprinting = true
-
-		task.spawn(
-			sprintLoop
-		)
-
-		task.delay(
-			0.5,
-			function()
-
-				Checked = false
-			end
-		)
-	end
-end
+-- Vault/jump callbacks request a refresh; LocomotionService owns speed.
+updateSprint = refreshLocomotion
+tryStartSprint = refreshLocomotion
 
 -- // Bind character connections
 
@@ -1120,7 +402,7 @@ local function bindCharacterConnections()
 	end
 
 	local function updateJumpEnabled()
-		local blocked = Character:GetAttribute("JumpBlocked") == true
+		local blocked = Character:GetAttribute("JumpBlocked") == true or Character:GetAttribute("BulwarkReloading") == true
 		Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, not blocked)
 		if blocked then
 			Sprinting = false
@@ -1128,11 +410,16 @@ local function bindCharacterConnections()
 		end
 	end
 	track(Character:GetAttributeChangedSignal("JumpBlocked"):Connect(updateJumpEnabled))
+	track(Character:GetAttributeChangedSignal("BulwarkReloading"):Connect(updateJumpEnabled))
 	track(Character:GetAttributeChangedSignal("DebuffMovementMultiplier"):Connect(resetSpeed))
 	track(Character:GetAttributeChangedSignal("BurnMovementMultiplier"):Connect(resetSpeed))
+	track(Character:GetAttributeChangedSignal("TabletMovementMultiplier"):Connect(resetSpeed))
+	track(Character:GetAttributeChangedSignal("TakingTablets"):Connect(resetSpeed))
 	track(Character:GetAttributeChangedSignal("BloodlustWalkMultiplier"):Connect(resetSpeed))
 	track(Character:GetAttributeChangedSignal("MoraleSprintMultiplier"):Connect(resetSpeed))
 	track(Character:GetAttributeChangedSignal("OrderSprintSpeedMultiplier"):Connect(resetSpeed))
+	track(Character:GetAttributeChangedSignal("ChemicalSprintMultiplier"):Connect(resetSpeed))
+	track(Character:GetAttributeChangedSignal("ChemicalMovementPenaltyMultiplier"):Connect(resetSpeed))
 	track(Character:GetAttributeChangedSignal("SprintBlocked"):Connect(function()
 		if Character:GetAttribute("SprintBlocked") then
 			Sprinting = false
@@ -1230,7 +517,7 @@ local function bindCharacterConnections()
 
 								Humanoid:SetStateEnabled(
 									Enum.HumanoidStateType.Jumping,
-									Character:GetAttribute("JumpBlocked") ~= true
+									Character:GetAttribute("JumpBlocked") ~= true and Character:GetAttribute("BulwarkReloading") ~= true
 								)
 							end
 						end
@@ -1335,84 +622,13 @@ local function bindCharacterConnections()
 		)
 	)
 
-	-- // Aiming
-	track(
-		Character:GetAttributeChangedSignal(
-			"Aiming"
-		):Connect(
-			function()
-				updateInjuredPose()
-
-				local aiming =
-					Character:GetAttribute(
-						"Aiming"
-					) == true
-
-				if aiming then
-
-					-- =================================================
-					-- AIMING IMMEDIATELY KILLS SPRINT
-					-- =================================================
-
-					Sprinting = false
-					LastSprintCancelTime = tick()
-
-					setSprintAttribute(false)
-
-					print(
-						"[Aiming] Sprint cancelled"
-					)
-
-					-- Force the correct speed immediately.
-					Humanoid.WalkSpeed =
-						getAimingSpeed()
-
-					-- Disable jumping.
-					Humanoid:SetStateEnabled(
-						Enum.HumanoidStateType.Jumping,
-						false
-					)
-
-					-- Hold breath.
-					if SprintKeyHeld
-						and Humanoid.MoveDirection.Magnitude <= 0
-						and (
-							tick() - LastSprintCancelTime
-						) >= AimSprintCooldown then
-
-						setHoldBreathe(true)
-
-					else
-
-						setHoldBreathe(false)
-					end
-
-				else
-
-					-- Restore jumping.
-					Humanoid:SetStateEnabled(
-						Enum.HumanoidStateType.Jumping,
-						true
-					)
-
-					setHoldBreathe(false)
-
-					-- Restore normal movement.
-					applyRestrictedSpeed()
-
-					-- Resume sprint only if appropriate.
-					if SprintKeyHeld
-						and (
-							tick()
-							- LastSprintCancelTime
-						) >= AimSprintCooldown then
-
-						tryStartSprint()
-					end
-				end
-			end
-		)
-	)
+    -- ADS transitions never restart sprint or a breath timer.
+    track(Character:GetAttributeChangedSignal("Aiming"):Connect(function()
+        updateInjuredPose()
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping,
+            not isAiming() and Character:GetAttribute("JumpBlocked") ~= true and Character:GetAttribute("BulwarkReloading") ~= true)
+        refreshLocomotion()
+    end))
 
 	-- // Crouching
 	track(
@@ -1468,34 +684,7 @@ local function bindCharacterConnections()
 		)
 	)
 
-	-- // Hold breath force cancel
-	track(
-		Character:GetAttributeChangedSignal(
-			"HoldBreathe"
-		):Connect(
-			function()
 
-				local attributeState =
-					Character:GetAttribute(
-						"HoldBreathe"
-					)
-
-				if HoldingBreath
-					and attributeState ~= true then
-
-					HoldingBreath = false
-
-					HoldBreathCooldownEnd =
-						tick() + HoldBreathe_regen
-
-					print(
-						"[HoldBreath] Forcefully cancelled. Cooldown until:",
-						HoldBreathCooldownEnd
-					)
-				end
-			end
-		)
-	)
 end
 
 -- // Character binding
@@ -1546,18 +735,13 @@ local function bindCharacter(char)
 	Sprinting = false
 	SprintKeyHeld = false
 
-	LoopRunning = false
-	Checked = false
+	W_Locked = LocalPlayer:GetAttribute("FreeLook") ~= true
+	for key in KeyStates do KeyStates[key] = false end
 
-	HoldingBreath = false
-
-	VelocityHistory = {}
 
 	fall_time = tick()
 
-	Humanoid.WalkSpeed =
-		BaseSpeed
-		* getOrderSpeedMultiplier()
+	refreshLocomotion()
 
 	bindCharacterConnections()
 	updateInjuredPose()
@@ -1577,7 +761,7 @@ local function setupVaultInput()
 
 			local holdingGamepad =
 				UserInputService:IsGamepadButtonDown(
-					0,
+					Enum.UserInputType.Gamepad1,
 					Enum.KeyCode.ButtonA
 				)
 
@@ -1595,6 +779,7 @@ end
 -- // Input
 
 function module.start_module()
+	Locomotion.start_module()
 
 	bindCharacter(
 		LocalPlayer.Character
@@ -1720,50 +905,6 @@ function module.start_module()
 		end
 	)
 
-	-- // Sprint
-	SettingsManager.HookInput(
-		"Sprint",
-		function(Key, IsPressed)
-
-			print(
-				"Sprint input triggered:",
-				Key,
-				IsPressed
-			)
-
-			if IsPressed then
-
-				SprintKeyHeld = true
-
-				-- This will refuse to start if aiming.
-				tryStartSprint()
-
-				if Character
-					and Character:GetAttribute(
-						"Aiming"
-					)
-						and Character.Humanoid.MoveDirection.Magnitude <= 0 then
-
-					setHoldBreathe(true)
-
-				else
-
-					setHoldBreathe(false)
-				end
-
-			else
-
-				SprintKeyHeld = false
-
-				Sprinting = false
-
-				resetSpeed()
-
-				setHoldBreathe(false)
-			end
-		end
-	)
-
 	-- // Crouch
 	SettingsManager.HookInput(
 		"Crouch",
@@ -1800,44 +941,7 @@ function module.start_module()
 		end
 	)
 
-	-- =========================================================
-	-- FINAL SPEED ENFORCER
-	-- =========================================================
-	--
-	-- This is intentionally separate from sprintLoop.
-	--
-	-- If another part of the sprint system somehow writes a
-	-- sprint WalkSpeed after the Aiming signal fires, this
-	-- corrects it on the next render frame.
-	--
-	-- It ONLY runs while aiming, so it doesn't interfere with
-	-- normal sprint acceleration.
 
-	RunService:BindToRenderStep(
-		"AimingMovementSpeed",
-		Enum.RenderPriority.Character.Value + 1,
-		function()
-
-			if not Character
-				or not Humanoid
-				or Humanoid.Health <= 0 then
-
-				return
-			end
-
-			if isAiming() then
-
-				local targetSpeed =
-					getAimingSpeed()
-
-				if Humanoid.WalkSpeed ~= targetSpeed then
-
-					Humanoid.WalkSpeed =
-						targetSpeed
-				end
-			end
-		end
-	)
 end
 
 return module

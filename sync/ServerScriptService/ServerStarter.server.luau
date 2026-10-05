@@ -1,4 +1,20 @@
 --!strict
+local Players = game:GetService("Players")
+Players.CharacterAutoLoads = false
+
+local function WatchPlayerLoading(player: Player)
+	task.delay(120, function()
+		if player.Parent == Players and
+			(not player:GetAttribute("PlayerDataReady") or not player:GetAttribute("PlayerSetupReady")) then
+			player:Kick(" Data failed to load. ")
+		end
+	end)
+end
+Players.PlayerAdded:Connect(WatchPlayerLoading)
+for _, player in Players:GetPlayers() do
+	WatchPlayerLoading(player)
+end
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
 local MarketPlaceService = game:GetService("MarketplaceService")
@@ -20,7 +36,7 @@ if not eventsFolder:FindFirstChild("Presentation") then
 	presentation.Name = "Presentation"
 	presentation.Parent = eventsFolder
 end
-for _, name in {"BuffAbility", "HunterKitAbility"} do
+for _, name in {"BuffAbility", "HunterKitAbility", "MedicalSyrettes", "StimulantCompounds", "MedicalAction", "ConstructionAction", "UtilityAction", "OrdnanceAction", "ReconAction", "ShieldAction", "MatchControl"} do
 	if not eventsFolder:FindFirstChild(name) then
 		local event = Instance.new("RemoteEvent")
 		event.Name = name

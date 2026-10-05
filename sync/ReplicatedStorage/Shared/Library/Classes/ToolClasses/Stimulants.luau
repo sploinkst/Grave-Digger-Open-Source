@@ -1,4 +1,1 @@
-return require(script.Parent.GenericClassToolFactory).create({
-	name = "Stimulants",
-	Designation = "Equipment",
-})
+return require(script.Parent.StimulantCompounds)

@@ -15,19 +15,20 @@ local ToolFolder = GunAssets.ToolModels
 local Animations = Assets.Animations.Tools.Guns.AdjudicatorRifle
 
 local assetSounds = Assets:FindFirstChild("Sounds")
-local toolSounds = assetSounds and assetSounds:FindFirstChild("tools")
-local SoundFolder = (toolSounds and toolSounds:FindFirstChild("rsc"))
-	or GunAssets.Sounds:FindFirstChild("rsc") or GunAssets.Sounds:FindFirstChild("AdjudicatorRifle")
-	or GunAssets.Sounds.PrinceRifle
+local toolSounds = assetSounds and assetSounds:FindFirstChild("Guns")
+local SoundFolder = (toolSounds and toolSounds:FindFirstChild("AdjudicatorRifle"))
+	or (toolSounds and toolSounds:FindFirstChild("rsc"))
+	or Assets.Sounds.Guns:FindFirstChild("rsc") or Assets.Sounds.Guns:FindFirstChild("AdjudicatorRifle")
+	or Assets.Sounds.Guns.PrinceRifle
 
 local CLIP_SIZE = 5
 local STANDARD_RPM = 127
-local BLACK_HAND_RPM = 136
-local STANDARD_RELOAD_TIME = 3.6
-local VETERAN_RELOAD_TIME = 2.5
+local BLACK_HAND_RPM = 60 / (0.475 * 0.925)
+local STANDARD_RELOAD_TIME = 4.25
+local VETERAN_RELOAD_TIME = 4.25
 local STANDARD_FAILED_RELOAD_TIME = 4.25
-local VETERAN_FAILED_RELOAD_TIME = 3
-local BOLT_CATCH_FAILURE_CHANCE = 0.4
+local VETERAN_FAILED_RELOAD_TIME = 4.25
+local BOLT_CATCH_FAILURE_CHANCE = 0.5
 local ALT_SWITCH_TIME = 0.3
 local CUT = 0.06
 local WEAPON_STATS = {
@@ -66,6 +67,11 @@ local WEAPON_STATS = {
 	reload_loop = 0,
 	reload_end = 1.25,
 	require_full_load = true,
+	size = 2,
+	wallpen_distance = 50,
+	wallpen_studs = 3,
+	wound = 1,
+	length = 4.5,
 }
 
 local WALKING_FIRE_STATS = {
@@ -119,26 +125,20 @@ local function hasPerk(perkName: string): boolean
 end
 
 local function playReloadSequence(self: AdjudicatorRifle, endingName: string, duration: number)
+	local equipGeneration = self._equipGeneration
 	local animations = self.RegisteredAnimations
 	local startTrack = animations and animations.Reload_Start
-	local endTrack = animations and animations[endingName]
-	local authoredLength = (startTrack and startTrack.Length or 0) + (endTrack and endTrack.Length or 0)
-	local speed = if authoredLength > 0 then authoredLength / duration else 1
-
-	if startTrack then
-		local track = self:_playAnim("Reload_Start")
-		if track then
-			track:AdjustSpeed(speed)
-			track.Stopped:Wait()
-		end
-	end
-	if self.Equipped and not self._reloadCancelled and endTrack then
-		local track = self:_playAnim(endingName)
-		if track then
-			track:AdjustSpeed(speed)
-			track.Stopped:Wait()
-		end
-	end
+	local endTrack = endingName and animations and animations[endingName]
+ if startTrack then
+  local track=self:_playAnim("Reload_Start",false,{speed=1/self.reload_start})
+  if not self:_waitReloadPhase(track,self.reload_start) then return end
+ end
+ if not self.Equipped or self._equipGeneration~=equipGeneration then return end
+ if not self._reloadCancelled and endTrack then
+  local seconds=self.reload_end*(endingName=="Reload_End_Locked" and 0.5 or 1)
+  local track=self:_playAnim(endingName,false,{speed=1/seconds})
+  self:_waitReloadPhase(track,seconds)
+ end
 end
 
 function AdjudicatorRifle.new(info: Types.BaseToolCreateInfo): AdjudicatorRifle
@@ -147,6 +147,7 @@ function AdjudicatorRifle.new(info: Types.BaseToolCreateInfo): AdjudicatorRifle
 	local blackHand = hasPerk("Black Hand") or hasPerk("BlackHand")
 
 	self.className = "AdjudicatorRifle"
+	self.HandlesCasingKeyframes = true
 	self.name = "AdjudicatorRifle"
 	self.item_image = AdjudicatorRifle.Tool_Image
 	self.ANIM_LAYERS = ANIM_LAYERS
@@ -279,46 +280,59 @@ function AdjudicatorRifle:fire()
 		fireDelay = self.FireInterval or WEAPON_STATS.fire_rate,
 	})
 	if not fired then return end
+	if self.Capacity <= 0 then self.SlideLocked = math.random() < BOLT_CATCH_FAILURE_CHANCE end
 
 	self:_restoreBaseDeferred()
 end
 
 function AdjudicatorRifle:reload()
-	if self.Reloading or self.Equipping or self.Capacity >= self.Max_Capacity then return end
-	if self.Capacity > 0 then
-		self:notify("I need to empty the rifle before reloading...")
-		return
-	end
-	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
-	if not reserve or not reserve:IsA("NumberValue") or reserve.Value < CLIP_SIZE then
+	if not self.Equipped or self.Reloading or self.Equipping or self.Firing or self.Cycling then return end
+	local previousAmmo = self.Capacity
+	local retained = if self.IsVeteran and previousAmmo > 0 then 1 else 0
+	if self.Capacity >= WEAPON_STATS.capacity then return end
+	local reserve = self:_getReserveAmmo()
+	if not reserve or reserve.Value < CLIP_SIZE then
 		self:notify("I need a full clip to reload...")
 		return
 	end
-	if self.Max_Capacity - self.Capacity < CLIP_SIZE then
-		self:notify("There is no room for a full clip...")
-		return
-	end
-
+	local equipGeneration = self._equipGeneration
 	self.Reloading = true
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
-
-	local boltCatchFailed = math.random() < BOLT_CATCH_FAILURE_CHANCE
-	local duration = if boltCatchFailed
-		then (self.IsVeteran and VETERAN_FAILED_RELOAD_TIME or STANDARD_FAILED_RELOAD_TIME)
-		else (self.IsVeteran and VETERAN_RELOAD_TIME or STANDARD_RELOAD_TIME)
-	playReloadSequence(self, boltCatchFailed and "Reload_End_Locked" or "Reload_End", duration)
-
-	if self.Equipped and not self._reloadCancelled then
-		self.Capacity += CLIP_SIZE
-		self:_fire_ammo(CLIP_SIZE)
-	end
+	-- The master wastes a partial clip; Veteran retains only its chambered round.
+	self.Capacity = retained
+	local ending = if retained == 1 then nil elseif self.SlideLocked then "Reload_End_Locked" else "Reload_End"
+	local closingTime = if ending == "Reload_End_Locked" then WEAPON_STATS.reload_end * 0.5
+		elseif ending then WEAPON_STATS.reload_end else 0
+	playReloadSequence(self, ending, WEAPON_STATS.reload_start + closingTime)
+	if not self.Equipped or self._equipGeneration ~= equipGeneration then return end
+	self.Capacity = WEAPON_STATS.capacity + retained
+	self.Max_Capacity = WEAPON_STATS.capacity + (self.IsVeteran and 1 or 0)
+	self:_fire_ammo(CLIP_SIZE - (self.IsVeteran and previousAmmo or 0))
+	self.SlideLocked = false
 	self.Reloading = false
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
-	self:_blockFireFor(self.PostReloadDelay or 0)
 	self:_restoreBaseDeferred()
+end
+
+-- A shot opens one ejection event even if an animation contains both aliases.
+function AdjudicatorRifle:_playFireAnimation(name)
+	self._shotCasingEjected = false
+	return CrestfallRifle._playFireAnimation(self, name)
+end
+
+function AdjudicatorRifle:_ejectShotCasing()
+	if self._shotCasingEjected ~= false or not self.Equipped then return end
+	-- Eject the authored cartridge assembly, including its bullet mesh.
+	-- The ejection marker is not the object that should be dropped.
+	local casing = self:_findModelPart("casing")
+	if not casing then return end
+	self._shotCasingEjected = true
+	local muzzle = self:_findModelPart(self.MuzzlePartName or "muzzle")
+	local directionFrame = muzzle and muzzle.CFrame or casing.CFrame
+	self:emit_casing(casing, casing.CFrame, directionFrame.RightVector * 12)
 end
 
 function AdjudicatorRifle:_on_equip()
@@ -326,8 +340,10 @@ function AdjudicatorRifle:_on_equip()
 	local animations = self.RegisteredAnimations
 	if not animations then return end
 
+	local connectedTracks = {}
 	for _, track in pairs(animations) do
-		if not track:IsA("AnimationTrack") then continue end
+		if not track:IsA("AnimationTrack") or connectedTracks[track] then continue end
+		connectedTracks[track] = true
 		table.insert(self.keyframe_connections, track.KeyframeReached:Connect(function(keyframe)
 			local model = self.actual_model
 			if not model then return end
@@ -338,10 +354,7 @@ function AdjudicatorRifle:_on_equip()
 				local muzzle = self:_findModelPart(self.MuzzlePartName)
 				if sound and muzzle then self:_play_sfx(sound, muzzle, nil, 0.1) end
 			elseif keyframe == "vfx_eject_casing" or keyframe == "vfx_rsc_eject_casing" then
-				local casing = model:FindFirstChild("ejection", true)
-				if casing and casing:IsA("BasePart") then
-					self:emit_casing(casing :: any, casing.CFrame, casing.CFrame.RightVector * 5)
-				end
+				self:_ejectShotCasing()
 			elseif keyframe == "vfx_rsc_clip_eject" then
 				local clip = model:FindFirstChild("clip", true)
 				if clip and clip:IsA("BasePart") then
@@ -378,5 +391,17 @@ AdjudicatorRifle.ammo_give = WEAPON_STATS.ammo_give
 AdjudicatorRifle.ammo_reserves = WEAPON_STATS.ammo_reserves
 AdjudicatorRifle.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
 AdjudicatorRifle.pen = WEAPON_STATS.pen
+
+-- Authored mount data from weapon_modules.rsc (including inherited values).
+AdjudicatorRifle.AuthoredWelds = {
+	equipc0 = CFrame.new(0.253814697, -1.70311737, -0.565979004, -0.0170763358, -0.000915539567, -0.99985379, 0.99842006, 0.0535294637, -0.0171008594, 0.0535372309, -0.998565853, -4.00225453e-9),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = true,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-0.950378418, 0.100975513, 0.597045898, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(-0.00793457031, 0.0137820244, 0.597045898, 0, -1, 0, -1, 0, 0, 0, 0, -1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return AdjudicatorRifle

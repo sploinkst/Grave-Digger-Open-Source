@@ -30,24 +30,15 @@ function BaseShotgun.new(info: Types.BaseToolCreateInfo): BaseShotgun
 	return self
 end
 
-function BaseShotgun:get_pellet_directions(shootDirection: Vector3, spreadDegrees: number?): { Vector3 }
-	local directions = table.create(self.PelletCount)
-	local spread = math.tan(math.rad(spreadDegrees or self.ShotgunSpread))
-	local right = shootDirection:Cross(Vector3.yAxis)
-	if right.Magnitude < 0.001 then right = shootDirection:Cross(Vector3.xAxis) end
-	right = right.Unit
-	local up = right:Cross(shootDirection).Unit
-	local random = Random.new()
-
+-- The master places pellets on a 3x3 grid. Offsets are normalized to the
+-- crosshair boundary; the heavy Hellion supplies its own five-point cross.
+function BaseShotgun:get_pellet_offsets(): { Vector2 }
+	local offsets = table.create(self.PelletCount)
 	for index = 1, self.PelletCount do
-		-- sqrt produces an even pellet density over the circular shot pattern.
-		local radius = math.sqrt(random:NextNumber()) * spread
-		local angle = random:NextNumber(0, math.pi * 2)
-		directions[index] = (shootDirection
-			+ right * (math.cos(angle) * radius)
-			+ up * (math.sin(angle) * radius)).Unit
+		local cell = (index - 1) % 9
+		offsets[index] = Vector2.new(cell % 3 - 1, math.floor(cell / 3) - 1)
 	end
-	return directions
+	return offsets
 end
 
 function BaseShotgun:_firePellets(
@@ -58,7 +49,9 @@ function BaseShotgun:_firePellets(
 	knockbackForce: number
 )
 	local shotId = HttpService:GenerateGUID(false)
-	for pelletIndex, direction in ipairs(self:get_pellet_directions(shootDirection, self.ShotgunSpread)) do
+	for pelletIndex, offset in ipairs(self:get_pellet_offsets()) do
+		local direction = self:_getAimedShot(muzzle, nil, offset)
+		if not direction then continue end
 		local cast = self.Caster:Fire(muzzle.Position, direction, bulletSpeed, self.CasterBehavior)
 		cast.UserData = {
 			Direction = direction,
@@ -96,9 +89,10 @@ function BaseShotgun:_fireShotgunBlast(options): boolean
 	if not muzzle or not muzzle:IsA("BasePart") then return false end
 	if not self.Caster or not self.CasterBehavior then return false end
 
-	local direction = self:_getAimedShot(muzzle, options and options.distance)
+	local direction = self:_getAimedShot(muzzle, options and options.distance, Vector2.zero)
 	if not direction then return false end
 
+	local equipGeneration = self._equipGeneration
 	self.Firing = true
 	self:_firePellets(
 		muzzle,
@@ -120,6 +114,7 @@ function BaseShotgun:_fireShotgunBlast(options): boolean
 		task.wait(self.getFireDelay and self:getFireDelay(fireDelay) or fireDelay)
 	end
 
+	if not self.Equipped or equipGeneration ~= self._equipGeneration then return true end
 	self.Firing = false
 	self:_restoreBaseDeferred()
 	return true

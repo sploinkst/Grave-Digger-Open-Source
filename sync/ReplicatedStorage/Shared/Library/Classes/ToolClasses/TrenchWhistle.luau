@@ -1,12 +1,13 @@
 --!strict
--- Hidden Officer Tool. G equips it, Q cycles orders, T cycles duration, and M1
+-- Hidden Officer Tool. G equips it, Q opens order selection, T cycles duration, and M1
 -- submits the selection to the authoritative server.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local KSP = game:GetService("KeyframeSequenceProvider")
-local Orders = {"Advance", "Defend", "Focus"}
-local Durations = {60, 30}
+local OrdersView = require(ReplicatedStorage.Shared.Modules["Client Modules"].OfficerOrdersView)
+local Orders = OrdersView.Orders
+local Durations = OrdersView.Durations
 local OrderEvent = ReplicatedStorage.Shared.Library.Events:WaitForChild("WhistleOrder") :: RemoteEvent
 local Folder = ReplicatedStorage.Shared.Assets.Animations.Tools.Utility:WaitForChild("TrenchWhistle")
 local Equipment = ReplicatedStorage.Shared.Assets:WaitForChild("Equipment")
@@ -25,7 +26,11 @@ function Whistle.new(info)
 	}, Whistle)
 end
 function Whistle:_play(name, looped)
-	local t=self.tracks[name]; if t then t.Looped=looped==true; t.Priority=Enum.AnimationPriority.Action2; t:Play(.1) end
+	local t=self.tracks[name]
+	if not t then return end
+	t.Looped=looped==true; t.Priority=Enum.AnimationPriority.Action2
+	local speed=name=="held" and 0.25 or name=="aim" and 0.5 or name=="choosing" and 0.5 or name=="draw" and 1.5 or 1
+	t:Play(name=="draw" and 0 or name=="choosing" and 0.3 or 0.1,1,speed)
 end
 function Whistle:_setChargeDisplay(value)
 	local c=Players.LocalPlayer.Character
@@ -39,12 +44,42 @@ function Whistle:_notify(text)
 	local utils = notifications and notifications:FindFirstChild("Utils")
 	if utils then require(utils).send_notification(Players.LocalPlayer, text) end
 end
+function Whistle:_ready()
+	local player = Players.LocalPlayer
+	local character = player.Character
+	return self.equipped and not self.destroyed and self.tool and self.tool.Parent == character
+		and character and not player:GetAttribute("MenuOpen") and not character:GetAttribute("ActionBlocked")
+		and os.clock() >= math.max(self.nextRequest or 0,self.drawReadyAt or 0)
+end
+function Whistle:_refreshView()
+	if self.View then self.View:SetState(Orders[self.order], Durations[self.duration], self.charges) end
+end
+function Whistle:_selectOrder(order)
+	if not self:_ready() then return end
+	local index = table.find(Orders, order)
+	if not index then return end
+	self.order = index
+	self.View:CloseSelector()
+	self.View:SetMessage(nil)
+	self:_refreshView()
+	-- Selecting with the mouse must not also blow the whistle.
+	self.nextRequest = os.clock() + .15
+end
+function Whistle:_selectDuration(duration)
+	if not self:_ready() then return end
+	local index = table.find(Durations, duration)
+	if not index then return end
+	self.duration = index
+	self.View:SetMessage(nil)
+	self:_refreshView()
+end
 function Whistle:on_give(tool)
 	self.tool=tool
 	local character = Players.LocalPlayer.Character
 	local function syncCharges()
 		self.charges = character and character:GetAttribute("OfficerOrderCharges") or 1
 		self:_setChargeDisplay(self.charges)
+		self:_refreshView()
 	end
 	if character then
 		table.insert(self.connections, character:GetAttributeChangedSignal("OfficerOrderCharges"):Connect(syncCharges))
@@ -53,7 +88,7 @@ function Whistle:on_give(tool)
 	local hum=Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 	local animator=hum and (hum:FindFirstChildOfClass("Animator") or hum:WaitForChild("Animator"))
 	if animator then
-		for _, name in ipairs({"advance", "aim", "defend", "draw", "focus", "held", "unequip", "use"}) do
+		for _, name in ipairs({"advance", "aim", "choosing", "defend", "draw", "focus", "held", "unequip", "use"}) do
 			local source = Folder:FindFirstChild(name)
 			local animation = source and (source:IsA("Animation") and source or source:FindFirstChildWhichIsA("Animation", true))
 			local sequence = source and (source:IsA("KeyframeSequence") and source or source:FindFirstChildWhichIsA("KeyframeSequence", true))
@@ -82,8 +117,17 @@ function Whistle:on_give(tool)
 	local function equipped()
 		if self.equipped then return end
 		self.equipped = true
+		self.drawReadyAt=os.clock()+0.5
+		if not self.View then
+			self.View = OrdersView.new(function(order) self:_selectOrder(order) end,
+				function(duration) self:_selectDuration(duration) end, function() return self:_ready() end,function()
+					local choosing=self.tracks.choosing; if choosing then choosing:Stop(0.1) end
+				end)
+		end
+		self.View:Show(Players.LocalPlayer.Character)
+		self:_refreshView()
 		self:_play("draw")
-		task.delay(.2, function()
+		task.delay(.5, function()
 			if self.equipped then self:_play("held", true) end
 		end)
 	end
@@ -91,6 +135,7 @@ function Whistle:on_give(tool)
 	table.insert(self.connections, tool.Unequipped:Connect(function()
 		if not self.equipped then return end
 		self.equipped = false
+		if self.View then self.View:Hide() end
 		for _, track in self.tracks do track:Stop(.1) end
 		self:_play("unequip")
 	end))
@@ -99,7 +144,7 @@ function Whistle:on_give(tool)
 	-- draw/held state from its current parent instead of losing every animation.
 	if tool.Parent == Players.LocalPlayer.Character then equipped() end
 	table.insert(self.connections, tool.Activated:Connect(function()
-		if not self.equipped or os.clock() < (self.nextRequest or 0) then return end
+		if not self:_ready() or (self.View and self.View.Selecting) then return end
 		self.nextRequest = os.clock() + .4
 		OrderEvent:FireServer(Orders[self.order], Durations[self.duration])
 	end))
@@ -107,29 +152,34 @@ function Whistle:on_give(tool)
 		if kind == "Accepted" then
 			self.charges = tonumber(value) or 0
 			self:_setChargeDisplay(self.charges)
+			self:_refreshView()
+			if self.View then self.View:SetMessage(tostring(detail) .. " order issued.") end
 			local animationName = string.lower(tostring(detail))
 			if self.equipped then self:_play("use"); self:_play(animationName) end
 		elseif kind == "State" then
 			self.charges = tonumber(value) or self.charges
 			self:_setChargeDisplay(self.charges)
+			self:_refreshView()
+			if self.View then self.View:SetMessage(nil) end
 		elseif kind == "Rejected" and type(value) == "string" then
 			self:_notify(value)
+			if self.View then self.View:SetMessage(value) end
 		end
 	end))
 	table.insert(self.connections, UserInputService.InputBegan:Connect(function(i,p)
-		if p or not self.equipped then return end
-		if i.KeyCode==Enum.KeyCode.Q then
-			self.order = self.order % #Orders + 1
-			self:_notify(Orders[self.order] .. " order selected")
-		elseif i.KeyCode==Enum.KeyCode.T then
-			self.duration = self.duration % #Durations + 1
-			self:_notify(tostring(Durations[self.duration]) .. " second order duration selected")
+		if p or not self:_ready() then return end
+		if i.KeyCode == Enum.KeyCode.Q then
+			self.View:ToggleSelector()
+			if self.View.Selecting then self:_play("choosing",true) end
+		elseif i.KeyCode == Enum.KeyCode.T then
+			self:_selectDuration(Durations[self.duration % #Durations + 1])
 		end
 	end))
 end
 function Whistle:destroy()
 	if self.destroyed then return end
 	self.destroyed = true
+	if self.View then self.View:Destroy(); self.View = nil end
 	self.equipped = false
 	for _, connection in self.connections do connection:Disconnect() end
 	table.clear(self.connections)

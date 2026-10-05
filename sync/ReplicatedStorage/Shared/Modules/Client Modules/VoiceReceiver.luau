@@ -50,6 +50,7 @@ local function CreateBillBoard(position)
 
 
 	task.delay(10, function()
+		billboard:Destroy()
 		part:Destroy()
 	end)
 end

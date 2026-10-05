@@ -365,6 +365,7 @@ function Util.setupFastCast(config: {
 
 		local hit = result.Instance
 		if not hit then return false end
+		if hit:GetAttribute("IndestructibleShield") then return false end
 
 		-- Character limbs are normally non-collidable (and accessories may be
 		-- transparent), so resolve characters before the generic visual-part
@@ -562,7 +563,6 @@ end
 
 local Camera_Service = require(game.ReplicatedStorage.Shared.Modules["Client Modules"].CameraService)
 local recoilRandom = Random.new()
-local nextHorizontalDirection = recoilRandom:NextNumber() < 0.5 and -1 or 1
 
 -- Recoil
 function Util.applyRecoil(
@@ -572,29 +572,17 @@ function Util.applyRecoil(
 	doRoll: boolean?,
 	scale: number
 )
-	-- Keep most shots close to the weapon's normal recoil while allowing
-	-- occasional stronger or weaker kicks.
-	local function gaussian(): number
-		local u1 = math.max(recoilRandom:NextNumber(), 1e-6)
-		local u2 = recoilRandom:NextNumber()
-		return math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
-	end
-
-	-- Guns predominantly climb, but every shot can also pull left or right.
-	local verticalScale = math.clamp(0.055 + gaussian() * 0.008, 0.035, 0.075)
-	local horizontalRoll = gaussian()
-	local horizontalDirection = nextHorizontalDirection
-	nextHorizontalDirection *= -1
-	local horizontalVariation = math.clamp(math.abs(horizontalRoll) * 0.018, 0, 0.04)
-	local verticalDegrees = math.max(recoil * verticalScale, 1.5)
-	local horizontalDegrees = horizontalDirection * (0.55 + recoil * horizontalVariation)
-	local vertical = math.rad(verticalDegrees)
-	local horizontal = math.rad(horizontalDegrees)
+	-- Master recoil_kick: one pitch value and one random signed yaw value
+	-- repeated recoil_count + 1 times. Weapon recoil is degrees / 10 per step.
+	local vertical = math.rad(recoil / 10)
+	local horizontal = math.rad(recoilRandom:NextInteger(-math.floor(recoil * 10), math.floor(recoil * 10)) / 100)
 	local character = game.Players.LocalPlayer.Character
 	local recoilMultiplier = character and character:GetAttribute("OrderRecoilMultiplier") or 1
 	if character then
+		if character:GetAttribute("Marksman") then recoilMultiplier *= 0.5 end
 		recoilMultiplier *= character:GetAttribute("DebuffRecoilMultiplier") or 1
 		recoilMultiplier *= character:GetAttribute("RallyRecoilMultiplier") or 1
+		recoilMultiplier *= character:GetAttribute("ChemicalRecoilMultiplier") or 1
 	end
 	vertical *= recoilMultiplier
 	horizontal *= recoilMultiplier

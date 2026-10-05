@@ -15,12 +15,12 @@ local GunAssets = Assets.Guns
 local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 local AnimFolder = Assets.Animations.Tools.Guns:WaitForChild("HonourPistol")
-local SoundFolder = GunAssets.Sounds:FindFirstChild("HonourPistol") or GunAssets.Sounds:FindFirstChild("mauser")
+local SoundFolder = Assets.Sounds.Guns:FindFirstChild("HonourPistol") or Assets.Sounds.Guns:FindFirstChild("mauser")
 
-local FIRE_RATE = 60 / 207
-local BLACK_HAND_FIRE_RATE = 60 / 222
-local STOCK_FIRE_RATE = 60 / 214
-local BLACK_HAND_STOCK_FIRE_RATE = 60 / 231
+local FIRE_RATE = 0.29
+local BLACK_HAND_FIRE_RATE = 0.29 * 0.925
+local STOCK_FIRE_RATE = 0.27
+local BLACK_HAND_STOCK_FIRE_RATE = 0.27 * 0.925
 local BULLET_SPEED = 850
 local CLIP_SIZE = 10
 
@@ -57,7 +57,7 @@ local WEAPON_STATS = {
 	moving_accuracy = 30,
 	stock_accuracy = 8,
 	stock_moving_accuracy = 45,
-	fire_rate = FIRE_RATE,
+	fire_rate = 0.29,
 	black_hand_fire_rate = BLACK_HAND_FIRE_RATE,
 	stock_fire_rate = STOCK_FIRE_RATE,
 	black_hand_stock_fire_rate = BLACK_HAND_STOCK_FIRE_RATE,
@@ -70,7 +70,7 @@ local WEAPON_STATS = {
 	wound = 1,
 	length = 4,
 	recoil = 6,
-	stock_recoil = 3,
+	stock_recoil = 4,
 	recoil_count = 6,
 	movement = 0.5,
 	firing_movement = 0.5,
@@ -84,7 +84,7 @@ local WEAPON_STATS = {
 	reload_loop = 0,
 	reload_loop_after = 0,
 	reload_end = 0,
-	reload_full = 2.8,
+	reload_full = 2.2,
 	veteran_reload_full = 1.85,
 	require_full_load = true,
 	post_reload_delay = 0.15,
@@ -215,7 +215,7 @@ function HonourPistol.new(info: Types.BaseToolCreateInfo): HonourPistol
 	self.MuzzlePartName = "muzzle"
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
-	self.Short_Distance = 3.5
+	self.Short_Distance = 4
 	self.IsVeteran = self.IsVeteran or hasPerk("vet")
 	self.IsBlackHand = blackHand
 	self.StockAttached = false
@@ -236,6 +236,8 @@ function HonourPistol.new(info: Types.BaseToolCreateInfo): HonourPistol
 end
 
 function HonourPistol:_applyStockStats()
+	self.movement = if self.StockAttached then 2 else WEAPON_STATS.movement
+	self.firing_movement = if self.StockAttached then 2 else WEAPON_STATS.firing_movement
 	if self.StockAttached then
 		self.Accuracy = WEAPON_STATS.stock_accuracy
 		self.Moving_Accuracy = WEAPON_STATS.stock_moving_accuracy
@@ -339,7 +341,7 @@ function HonourPistol:reload()
 		self:_restoreBase()
 		return
 	end
-	if reserveAmmo.Value < self.Max_Capacity and not self.IsVeteran then
+	if reserveAmmo.Value < CLIP_SIZE then
 		self:notify("I need a full clip to reload...")
 		return
 	end
@@ -464,5 +466,17 @@ HonourPistol.ammo_give = WEAPON_STATS.ammo_give
 HonourPistol.ammo_reserves = WEAPON_STATS.ammo_reserves
 HonourPistol.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
 HonourPistol.pen = WEAPON_STATS.pen
+
+-- Authored mount data from weapon_modules.mauser (including inherited values).
+HonourPistol.AuthoredWelds = {
+	equipc0 = CFrame.new(-0.257659912, -1.43795609, -0.50579834, 0, 0, -1, 0.99999994, 0, 0, 0, -1, 0),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = false,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-1.07449341, -0.18704772, -0.313476562, 0.338645965, -0.604027152, 0.721437454, 0.828506589, 0.554849684, 0.0756458044, -0.445981085, 0.572097838, 0.688336194),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(0.0736999512, -0.684338331, -0.582336426, 0.342020154, -0.939692616, 0, 0.939692616, 0.342020154, 0, 0, 0, 1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return HonourPistol

@@ -13,11 +13,11 @@ local Assets = ReplicatedStorage.Shared.Assets
 local Guns = Assets.Guns
 local Effects = Guns.Effects
 local AnimationFolder = Assets.Animations.Tools.Guns.JesseRifle
-local SoundFolder = Guns.Sounds.JesseRifle
+local SoundFolder = ReplicatedStorage.Shared.Assets.Sounds.Guns.JesseRifle
 
 local BULLET_SPEED = 1100
 local STANDARD_RPM = 100
-local BLACK_HAND_RPM = 120
+local BLACK_HAND_RPM = 60 / (0.2 * 0.955)
 local STANDARD_RELOAD_TIME = 5.4
 local VETERAN_RELOAD_TIME = 3.8
 local CLIP_SIZE = 5
@@ -60,6 +60,12 @@ local WEAPON_STATS = {
 	veteran_reload_time = VETERAN_RELOAD_TIME,
 	clip_size = CLIP_SIZE,
 	black_hand_fire_rate = 60 / BLACK_HAND_RPM,
+	size = 2,
+	wallpen_distance = 50,
+	wallpen_studs = 3,
+	wound = 1,
+	length = 5,
+	reload_full = 1.8,
 }
 
 local ANIMATION_LAYERS = {
@@ -130,20 +136,9 @@ local function getModelReference(): Model?
 end
 
 local function playTimedAnimation(self: JesseRifle, name: string, duration: number): boolean
-	local registered = self.RegisteredAnimations
-	local available = registered and registered[name]
-	if not available then
-		task.wait(duration)
-		return self.Equipped and not self._reloadCancelled
-	end
-
-	local track = self:_playAnim(name)
-	if not track then return false end
-	if track.Length > 0 then
-		track:AdjustSpeed(track.Length / math.max(duration, 0.05))
-	end
-	track.Stopped:Wait()
-	return self.Equipped and not self._reloadCancelled
+ local track = self.RegisteredAnimations and self.RegisteredAnimations[name] and self:_playAnim(name)
+ local multiplier = name:find("Reload") and self:_reloadSpeedMultiplier() or 1
+ return self:_waitActionPhase(track,duration/multiplier) and not self._reloadCancelled
 end
 
 function JesseRifle.new(info: Types.BaseToolCreateInfo): JesseRifle
@@ -269,7 +264,7 @@ function JesseRifle:fire()
 
 	self.Cycling = true
 	local cycleTrack = self.Equipped and self:_playAnim("Cycle")
-	if cycleTrack then cycleTrack.Stopped:Wait() end
+	if not self:_waitActionPhase(cycleTrack,self:_cycleDuration()) then return end
 	task.wait(self.cycle_rest or 0)
 	self.Cycling = false
 	self:_restoreBaseDeferred()
@@ -284,8 +279,8 @@ function JesseRifle:_fireGrenade()
 	self.Firing = true
 	local mousePosition = UserInputService:GetMouseLocation()
 	local ray = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
-	local grenadeEvent = ReplicatedStorage.Shared.Library.Events:WaitForChild("JesseGrenade") :: RemoteEvent
-	grenadeEvent:FireServer(muzzle.Position, ray.Direction.Unit)
+	local grenadeEvent = ReplicatedStorage.Shared.Library.Events:WaitForChild("OrdnanceAction") :: RemoteEvent
+	grenadeEvent:FireServer(self.tool, "RifleGrenade", ray.Direction.Unit)
 	local blankSound = SoundFolder:FindFirstChild("blank", true)
 	if blankSound then self:_play_sfx(blankSound, muzzle) end
 	self:_playFireAnimation("Fire")
@@ -311,16 +306,16 @@ function JesseRifle:setAltMode()
 	self:_stopAllExcept()
 
 	if self.GrenadeLoaded then
-		playTimedAnimation(self, "Unload_Grenade", 3.5)
+		playTimedAnimation(self, "Unload_Grenade", 1.5)
 		playTimedAnimation(self, "Cutoff_Off", 0.25)
 		self.GrenadeLoaded = false
 	else
 		playTimedAnimation(self, "Cutoff_On", 0.25)
 		if not self.IsVeteran and self.Capacity > 0 then self.Capacity -= 1 end
 		local blankAnimation = self.IsVeteran and "Load_Blank_Vet" or "Load_Blank"
-		if playTimedAnimation(self, blankAnimation, 2.25) then
+		if playTimedAnimation(self, blankAnimation, 1.5) then
 			playTimedAnimation(self, "Blank_End", 0.5)
-			playTimedAnimation(self, "Load_Grenade", 2.25)
+			playTimedAnimation(self, "Load_Grenade", 1.5)
 			self.GrenadeLoaded = true
 		end
 	end
@@ -335,34 +330,39 @@ function JesseRifle:setAltMode()
 end
 
 function JesseRifle:reload()
-	if self.Reloading or self.Equipping or self.GrenadeLoaded or self.Capacity >= self.Max_Capacity then return end
+	if not self.Equipped or self.Reloading or self.Equipping or self.Firing or self.Cycling
+		or self.GrenadeLoaded or self.Capacity >= self.Max_Capacity then return end
 	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
 	if not reserve or not reserve:IsA("NumberValue") or reserve.Value <= 0 then
 		self:notify("I don't have any more ammo...")
 		return
 	end
+	local generation = self._equipGeneration
 	self.Reloading = true
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	self:_stopAllExcept()
 
-	local needed = math.min(self.Max_Capacity - self.Capacity, reserve.Value)
-	local clipCount = math.ceil(needed / WEAPON_STATS.clip_size)
-	local actionDuration = self.ReloadDuration / (clipCount + 2)
-	playTimedAnimation(self, self.IsVeteran and "Reload_Start_Vet" or "Reload_Start", actionDuration)
-	for _ = 1, clipCount do
-		if not self.Equipped or self._reloadCancelled then break end
-		local amount = math.min(WEAPON_STATS.clip_size, self.Max_Capacity - self.Capacity, reserve.Value)
-		local animationName = self.Capacity == 0 and "Reload_Clip_Empty" or "Reload_Clip"
-		if not playTimedAnimation(self, animationName, actionDuration) then break end
+	-- Jesse always uses the complete Veteran opening, without insertion loops.
+	local animations = self.RegisteredAnimations or {}
+	local opening = animations.Reload_Start_Vet and "Reload_Start_Vet" or "Reload_Start"
+	local duration = (self.reload_start or 1.2) * (opening == "Reload_Start_Vet" and 1.2 or 1)
+	local multiplier = self:_reloadSpeedMultiplier()
+	local track = self:_playAnim(opening)
+	if track then track:AdjustSpeed(multiplier / duration) end
+	if not self:_waitActionPhase(track, duration / multiplier) then return end
+	if not self._reloadCancelled then
+		local amount = math.min(self.Max_Capacity - self.Capacity, reserve.Value)
 		self.Capacity += amount
 		self:_fire_ammo(amount)
 	end
-	if self.Equipped and not self._reloadCancelled then
-		playTimedAnimation(self, "Reload_End", actionDuration)
-	end
+
+	local ending = self:_playAnim("Reload_End")
+	if not self:_waitReloadPhase(ending, self.reload_end) then return end
+	if not self.Equipped or self._equipGeneration ~= generation then return end
 	self.Reloading = false
 	self._reloadCancelled = false
+	self.Cycled = true
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 	self:_restoreBaseDeferred()
 end
@@ -428,5 +428,17 @@ JesseRifle.ammo_give = WEAPON_STATS.ammo_give
 JesseRifle.ammo_reserves = WEAPON_STATS.ammo_reserves
 JesseRifle.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
 JesseRifle.pen = WEAPON_STATS.pen
+
+-- Authored mount data from weapon_modules.enfield (including inherited values).
+JesseRifle.AuthoredWelds = {
+	equipc0 = CFrame.new(0.253814697, -1.70311737, -0.565979004, -0.0170763358, -0.000915539567, -0.99985379, 0.99842006, 0.0535294637, -0.0171008594, 0.0535372309, -0.998565853, -4.00225453e-9),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = true,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-0.843444824, -0.160831451, 0.563819885, -0.0857552588, 0.996316195, -2.14072588e-6, -0.996316195, -0.0857552588, 6.89330363e-6, 6.68433131e-6, 2.72397665e-6, 1),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(-0.0671386719, 0.0569257736, 0.563720703, -0.085755609, -0.996316195, 1.70646985e-7, -0.996320546, 0.0857559666, 8.59710667e-7, -2.90349675e-7, -2.8889346e-7, -1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return JesseRifle

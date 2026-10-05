@@ -50,6 +50,7 @@ function HeavyPickaxe.new(PickaxeCreateInfo: Types.BaseToolCreateInfo): HeavyPic
 	}
 
 	self.mining_power = 13
+	self.mining_recovery = 0.5
 	self._activationConnection = nil
 
 	return self

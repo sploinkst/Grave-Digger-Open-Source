@@ -15,7 +15,7 @@ Classes.Definitions = {
 		ExplosiveKnockdownImmune = true,
 	},
 	Mortician = {
-		Passive = "Stimulant Compounds", MaxWeight = 2, Equipment = "MedicalSyrettes",
+		Passive = "Surgery Expertise", MaxWeight = 2, Equipment = "MedicalSyrettes",
 		EquipmentName = "Medical Syrettes", Tools = {"Pickaxe", "StimulantCompounds"},
 		AllyHealHealth = 200, SurgerySpeed = 1.5, MobileSurgery = true, GasImmune = true,
 	},

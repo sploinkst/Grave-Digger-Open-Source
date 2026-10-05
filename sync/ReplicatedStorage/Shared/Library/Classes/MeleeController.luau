@@ -28,7 +28,8 @@ function Controller.Swing(self, mode)
 	if not self.Equipped or self.Equipping or not self.tool or self.tool.Parent ~= character
 		or self.Charging or self.Meleeing or self.Inspiring or Players.LocalPlayer:GetAttribute("FreeLook")
 		or os.clock() < (self.nextSwing or 0) then return end
-	self.nextSwing = os.clock() + Rules.Lance.Interval
+	local interval = Rules.Lance.Interval / (character:GetAttribute("ChemicalSwingMultiplier") or 1)
+	self.nextSwing = os.clock() + interval
 	self.Meleeing = true
 	self._meleeStep = (self._meleeStep or 0) % 2 + 1
 	self:_stopAllExcept()
@@ -37,7 +38,7 @@ function Controller.Swing(self, mode)
 	if track then track.Looped = false; track.Priority = Enum.AnimationPriority.Action3 end
 	Controller.Remote():FireServer(mode, Controller.Direction())
 	local tool = self.tool
-	task.delay(Rules.Lance.Interval, function()
+	task.delay(interval, function()
 		self.Meleeing = false
 		if track then track:Stop(.08) end
 		if self.Equipped and self.tool == tool and tool.Parent == character then

@@ -17,11 +17,12 @@ local FxFolder = GunAssets.Effects
 
 local judgementAnimations = Assets.Animations.Tools.Guns:FindFirstChild("JudgementRifle")
 
-local judgementSounds = GunAssets.Sounds:FindFirstChild("henry")
-	or GunAssets.Sounds:FindFirstChild("JudgementRifle")
-	or GunAssets.Sounds:FindFirstChild("Judgement")
-	or GunAssets.Sounds:FindFirstChild("lever")
-local SoundFolder = judgementSounds or GunAssets.Sounds.PrinceRifle
+local judgementSounds = Assets.Sounds.Guns:FindFirstChild("JudgementRifle")
+	or Assets.Sounds.Guns:FindFirstChild("henry")
+	or Assets.Sounds.Guns:FindFirstChild("JudgementRifle")
+	or Assets.Sounds.Guns:FindFirstChild("Judgement")
+	or Assets.Sounds.Guns:FindFirstChild("lever")
+local SoundFolder = judgementSounds or Assets.Sounds.Guns.PrinceRifle
 
 local FIRE_INTERVAL = 60 / 80
 local BULLET_SPEED = 1000
@@ -237,7 +238,7 @@ function JudgementRifle.new(info: Types.BaseToolCreateInfo): JudgementRifle
 	self.BulletSpeed = BULLET_SPEED
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
-	self.Short_Distance = 3.5
+	self.Short_Distance = 4
 	self.Melee_Distance = WEAPON_STATS.melee_range
 	self.Melee_Damage = WEAPON_STATS.melee_damage
 	self.Accuracy = WEAPON_STATS.accuracy
@@ -449,5 +450,17 @@ JudgementRifle.lefthand = WEAPON_STATS.lefthand
 JudgementRifle.equipc0 = WEAPON_STATS.equipc0
 JudgementRifle.equipc1 = WEAPON_STATS.equipc1
 JudgementRifle.special = WEAPON_STATS.special
+
+-- Authored mount data from weapon_modules.henry (including inherited values).
+JudgementRifle.AuthoredWelds = {
+	equipc0 = CFrame.new(0.367686272, -3.14173198, -0.561454773, 0, 0, -0.999995708, 0.99999994, 0, 0, 0, -0.999995708, 0),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = true,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-0.932582855, 2.12966585, 0.536758423, 0, 0.999995708, 0, -1, 0, 0, 0, 0, 0.999995708),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(-0.43554306, 2.12966585, 0.570640564, -0.0355006903, 0.999369681, 0, -0.99936974, -0.0355006866, 0, -0, 0, 1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return JudgementRifle

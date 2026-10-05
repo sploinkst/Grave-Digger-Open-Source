@@ -471,7 +471,7 @@ return {
 		["CMDRLevel"] = 5,
         ["Progression"] = {Medals=0, Duty=0, Rank=0, PlaySeconds=0, Kills=0, Deaths=0},
         ["Mastery"] = {},
-        ["Cosmetics"] = {},
+        ["Cosmetics"] = {HairColour="Brown", SkinColour="Avatar", Gender="m", Language="american", Helmet="Default", Accessories={}},
         ["CosmeticUnlocks"] = {},
 		["Dogtags"] = {
 			["Empire"] = 0,

@@ -2,6 +2,7 @@
 --!native
 --!optimize 2
 
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -15,13 +16,14 @@ local FxFolder = GunAssets.Effects
 local rifleFallback = Assets.Animations.Tools.Guns:FindFirstChild("PrinceRifle")
 local hellionAnimations = Assets.Animations.Tools.Guns:FindFirstChild("HellionShotgun")
 local assetSounds = Assets:FindFirstChild("Sounds")
-local toolSounds = assetSounds and assetSounds:FindFirstChild("tools")
-local SoundFolder = (toolSounds and toolSounds:FindFirstChild("autosg"))
-	or GunAssets.Sounds:FindFirstChild("autosg")
-	or GunAssets.Sounds.PrinceRifle
+local toolSounds = assetSounds and assetSounds:FindFirstChild("Guns")
+local SoundFolder = (toolSounds and toolSounds:FindFirstChild("HellionShotgun"))
+	or (toolSounds and toolSounds:FindFirstChild("autosg"))
+	or Assets.Sounds.Guns:FindFirstChild("autosg")
+	or Assets.Sounds.Guns.PrinceRifle
 
 local STANDARD_RPM = 150
-local BLACK_HAND_RPM = 161
+local BLACK_HAND_RPM = 60 / (0.4 * 0.925)
 local BULLET_SPEED = 850
 local STANDARD_FULL_RELOAD = 7.75
 local VETERAN_FULL_RELOAD = 5.5
@@ -62,6 +64,11 @@ local WEAPON_STATS = {
 	reload_loop = 1,
 	reload_end = 0,
 	bullet_speed = BULLET_SPEED,
+	size = 2,
+	wallpen_distance = 40,
+	wallpen_studs = 3,
+	wound = 1,
+	length = 4.5,
 }
 
 local function animation(name: string, fallback: Animation?): Animation?
@@ -246,10 +253,6 @@ function HellionShotgun:_damageAtDistance(distance: number): number
 	return self.far_damage
 end
 
-function HellionShotgun:get_pellet_directions(direction: Vector3, _spread: number?): { Vector3 }
-	return BaseShotgun.get_pellet_directions(self, direction,
-		self.Shouldered and self.ShoulderedSpread or self.ShotgunSpread)
-end
 
 function HellionShotgun:_aimTrack(): AnimationTrack?
 	local animations = self.RegisteredAnimations
@@ -292,8 +295,11 @@ function HellionShotgun:setAltMode()
 				or self._walkSpeedBeforeShoulder
 		end
 	end
-	self.recoil = self.Shouldered and 52 or 78
-	self.recoil_count = self.Shouldered and 6 or 9
+	self.recoil = self.Shouldered and 6 or WEAPON_STATS.recoil
+	self.recoil_count = self.Shouldered and 6 or WEAPON_STATS.recoil_count
+	self.movement = self.Shouldered and 4 or WEAPON_STATS.movement
+	self.firing_movement = self.Shouldered and 3 or WEAPON_STATS.firing_movement
+	self.aim_speed = self.Shouldered and 0.5 or WEAPON_STATS.aim_speed
 	self:notify(self.Shouldered and "Stock shouldered" or "Stock lowered")
 	self.Alting = false
 	self:_restoreBase()
@@ -332,60 +338,12 @@ function HellionShotgun:fire()
 end
 
 function HellionShotgun:reload()
-	if self.Reloading or self.Equipping or self.Capacity >= self.Max_Capacity then return end
-	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
-	if not reserve or not reserve:IsA("NumberValue") or reserve.Value <= 0 then
-		self:notify("I don't have any more ammo...")
-		return
-	end
-	self.Reloading = true
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
-	self:_stopAllExcept()
-
-	local shellsNeeded = math.min(self.Max_Capacity - self.Capacity, reserve.Value)
-	local animations = self.RegisteredAnimations
-	local startName = if self.Capacity <= 0
-		then (self.IsVeteran and "Reload_Empty_Vet" or "Reload_Empty")
-		else "Reload_Start"
-	local start = animations and animations[startName]
-	local loop = animations and animations.Reload_Loop
-	local finish = animations and animations.Reload_End
-	local authored = (start and start.Length or 0) + (loop and loop.Length or 0) * shellsNeeded
-		+ (finish and finish.Length or 0)
-	local targetDuration = self.FullReloadTime * (shellsNeeded / self.Max_Capacity)
-	local speed = authored > 0 and authored / math.max(targetDuration, 0.1) or 1
-	if start then
-		local track = self:_playAnim(startName)
-		if track then
-			track:AdjustSpeed(speed)
-			track.Stopped:Wait()
-		end
-	end
-	for _ = 1, shellsNeeded do
-		if not self.Equipped or self._reloadCancelled or reserve.Value <= 0 then break end
-		if loop then
-			local track = self:_playAnim("Reload_Loop")
-			if track then
-				track:AdjustSpeed(speed)
-				track.Stopped:Wait()
-			end
-		end
-		if self._reloadCancelled then break end
-		self.Capacity += 1
-		self:_fire_ammo(1)
-	end
-	if self.Equipped and not self._reloadCancelled and finish then
-		local track = self:_playAnim("Reload_End")
-		if track then
-			track:AdjustSpeed(speed)
-			track.Stopped:Wait()
-		end
-	end
-	self.Reloading = false
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
-	self:_restoreBaseDeferred()
+	return self:_reloadByRound({
+		startAnim = "Reload_Start",
+		loopAnim = "Reload_Loop",
+		endAnim = false,
+		loopWait = WEAPON_STATS.reload_loop,
+	})
 end
 
 function HellionShotgun:activate()
@@ -469,5 +427,17 @@ HellionShotgun.ammo_reserves = WEAPON_STATS.ammo_reserves
 HellionShotgun.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
 HellionShotgun.pen = WEAPON_STATS.pen
 HellionShotgun.pellets = WEAPON_STATS.pellets
+
+-- Authored mount data from weapon_modules.autosg (including inherited values).
+HellionShotgun.AuthoredWelds = {
+	equipc0 = CFrame.new(0.253814697, -1.70311737, -0.565979004, -0.0170763358, -0.000915539567, -0.99985379, 0.99842006, 0.0535294637, -0.0171008594, 0.0535372309, -0.998565853, -4.00225453e-9),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = true,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-0.950378418, 0.100975513, 0.597045898, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(-0.00793457031, 0.0137820244, 0.597045898, 0, -1, 0, -1, 0, 0, 0, 0, -1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return HellionShotgun

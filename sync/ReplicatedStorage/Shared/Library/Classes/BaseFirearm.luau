@@ -6,7 +6,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
+local GuiService = game:GetService("GuiService")
+local spreadRandom = Random.new()
 
 local BaseTool = require(script.Parent.BaseTool)
 local utilities_module = require(ReplicatedStorage.Shared.Library.Util)
@@ -23,8 +24,6 @@ local ammo_communication = events.Ammo
 local FX_BULLET_HOLE = ReplicatedStorage.Shared.Assets.Guns.Effects.BulletHole
 local CUT = 0.06
 local MIN_AMMO_CHECK_DISPLAY_TIME = 1
--- At 150 RPM or faster the shot pulse reads as permanent crosshair growth.
-local FAST_CROSSHAIR_INTERVAL = 0.4
 
 local function hasVeteranPerk(): boolean
 	local player = LOCAL_PLAYER
@@ -153,6 +152,10 @@ function BaseFirearm:applyFirearmConfig(config)
 	self.alt_name = config.alt_name or self.alt_name
 	self.Starting_Reserve_Ammo = config.startingReserve or config.Starting_Reserve_Ammo or capacity * reserveClips
 	self.Max_Reserve_Ammo = config.maxReserve or config.Max_Reserve_Ammo or capacity * maxReserveClips
+	if maxReserveClips == 200 then
+		self.Starting_Reserve_Ammo = 20000
+		self.Max_Reserve_Ammo = 20000
+	end
 	self.animation_speeds = self.animation_speeds or {}
 	if config.draw_speed and self.animation_speeds.Draw == nil then self.animation_speeds.Draw = 1 / config.draw_speed end
 	local function setAnimationSpeeds(names, duration)
@@ -225,6 +228,11 @@ function BaseFirearm:applyFirearmConfig(config)
 		recoil_count = self.recoil_count,
 	}
 
+	if self.IsVeteran and self.chamber and not self._veteranChamberApplied then
+		self._veteranChamberApplied = true
+		self.Max_Capacity += 1
+		self.Capacity += 1
+	end
 	return self
 end
 
@@ -275,56 +283,40 @@ function BaseFirearm:_hasReserveAmmo(): boolean
 end
 
 function BaseFirearm:_withUnequipLock(callback: () -> ())
+	local equipGeneration = self._equipGeneration
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
 	local ok, err = pcall(callback)
-	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
+	if self.Equipped and self._equipGeneration == equipGeneration then
+		LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
+	end
 	if not ok then
 		error(err, 2)
 	end
 end
 
 function BaseFirearm:_playCycle(options): boolean
-	if self.Cycling then return false end
+	if self.Cycling or not self.Equipped or not self.RegisteredAnimations then return false end
+	local generation = self._equipGeneration
 	self.Cycling = true
 	self.Cycled = false
-
-	if not self.RegisteredAnimations then
-		self.Cycling = false
-		return false
-	end
-
-	local cycleDelay = options and options.delay or self.CycleDelay or 0
-	local cycleAnim = options and options.animation or self.CycleAnimation or "Cycle"
-	local complete = options and options.complete
-	local recoveryDelay = options and options.recoveryDelay or self.PostCycleDelay or self.cycle_rest or 0
-
-	local function finishCycle()
-		if recoveryDelay > 0 then
-			task.wait(self:_effectiveFireDelay(recoveryDelay))
-		end
-		if complete then
-			complete(self)
-		else
-			self.Cycled = true
-		end
+	local delay = options and options.delay or self.CycleDelay or 0
+	local animation = options and options.animation or self.CycleAnimation or "Cycle"
+	local recovery = options and options.recoveryDelay or self.PostCycleDelay or self.cycle_rest or 0
+	task.delay(delay, function()
+		if not (self.Equipped and self._equipGeneration == generation) then return end
+		self:_stopAllExcept()
+		local track = self:_playAnim(animation)
+		if track then track.Stopped:Wait() elseif (self.cycle or 0) > 0 then task.wait(self.cycle or 0) end
+		if not self.Equipped or self._equipGeneration ~= generation then return end
+		if recovery > 0 then task.wait(self:_effectiveFireDelay(recovery)) end
+		if not (self.Equipped and self._equipGeneration == generation) then return end
+		if options and options.complete then options.complete(self) else self.Cycled = true end
 		self.Cycling = false
 		self:_restoreBase()
-	end
-
-	task.delay(cycleDelay, function()
-		self:_stopAllExcept()
-		local cycleTrack = self:_playAnim(cycleAnim)
-		if cycleTrack then
-			cycleTrack.Stopped:Once(function()
-				finishCycle()
-			end)
-		else
-			finishCycle()
-		end
 	end)
-
 	return true
 end
+
 
 function BaseFirearm:_fireAnimationName(): string
 	if self.FireAnimation then return self.FireAnimation end
@@ -553,7 +545,7 @@ end
 -- // Projectile firing
 
 function BaseFirearm:_fireProjectile(bulletSpeed, penetrationLevel, damage, knockbackForce): boolean
-	if self:_if_sprinting() or self:_if_jumping() then return false end
+	if self.ForceBlockFire or self:_if_sprinting() or self:_if_jumping() then return false end
 
 	local muzzle = self:_findModelPart(self.MuzzlePartName or "Muzzle")
 	if not muzzle then warn(self.className .. ": Muzzle not found") return false end
@@ -590,27 +582,73 @@ function BaseFirearm:_fireProjectile(bulletSpeed, penetrationLevel, damage, knoc
 	return true
 end
 
-function BaseFirearm:_getAimedShot(muzzle: BasePart, distance: number?): (Vector3?, RaycastResult?)
+-- Accuracy and the reticle use the same state, including alternate stances.
+function BaseFirearm:_getShotAccuracy(): number
+	if self._quickdrawShot or (self.IsOcelotTrooper and self.Aiming) then return 1 end
+	if self._fanFiring or (not self.Aiming and (self.HipFireMode or self.IsOcelotTrooper)) then return self.OcelotHipSpread or 75 end
+	local character = LOCAL_PLAYER.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local moving = root and Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z).Magnitude >= 3
+	local airborne = humanoid and humanoid.FloorMaterial == Enum.Material.Air
+	local accuracy = (moving or airborne) and self.Moving_Accuracy or self.Accuracy
+	if self.HipBraced then accuracy = self.HipBraceAccuracy or accuracy end
+	if self.FixedAimingSpread ~= nil then accuracy = self.FixedAimingSpread end
+	accuracy = accuracy or self.ShotgunSpread or 0
+	if self._isBipodActive and self:_isBipodActive() and not moving and not airborne then accuracy = 2 end
+	-- The master only applies focus and steady breathing to single projectiles.
+	if (self.PelletCount or 1) == 1 and character then
+		if moving then
+			accuracy = (self.Accuracy or accuracy) + math.max(0, accuracy - (self.Accuracy or accuracy))
+				* (character:GetAttribute("ChemicalMovementPenaltyMultiplier") or 1)
+		end
+		accuracy *= character:GetAttribute("SpreadMultiplier") or 1
+		accuracy /= math.max(character:GetAttribute("OrderFocusMultiplier") or 1, 0.01)
+		if not self.DisableSteadyAimAccuracy and character:GetAttribute("HoldBreathe") == true and not moving and not airborne then
+			self._breathStartTime = character:GetAttribute("HoldBreathStartedAt") or self._breathStartTime or os.clock()
+			local accuracyTime = self.HoldBreathAccuracyTime or character:GetAttribute("HoldBreathAccuracyTime") or 0.35
+			if os.clock() - self._breathStartTime >= accuracyTime then accuracy = 1 end
+		else
+			self._breathStartTime = nil
+		end
+	end
+	return math.max(1, accuracy)
+end
+
+-- GuiObject.AbsolutePosition uses core-UI coordinates. ScreenPointToRay
+-- handles their inset; raw mouse coordinates must subtract it first.
+function BaseFirearm:_getShotScreenBounds(): (Vector2, Vector2)
+	local aiming = LOCAL_PLAYER.PlayerGui:FindFirstChild("Aiming")
+	local scoped = aiming and aiming:FindFirstChild("Scoped_In")
+	local main = scoped and scoped:FindFirstChild("main")
+	if self.Aiming and scoped and scoped.Visible and main then
+		return main.AbsolutePosition + main.AbsoluteSize / 2, main.AbsoluteSize / 2
+	end
+	local regular = aiming and aiming:FindFirstChild("Regular_Crosshair")
+	local hipMain = regular and (regular:FindFirstChild("main") or regular)
+	if hipMain and regular.Visible then return hipMain.AbsolutePosition + hipMain.AbsoluteSize / 2, hipMain.AbsoluteSize / 2 end
+	local inset = GuiService:GetGuiInset()
+	local center = UserInputService:GetMouseLocation() - inset
+	local diameter = self:_getCrosshairTargetDiameter()
+	return center, Vector2.new(diameter / 2, diameter / 2)
+end
+
+function BaseFirearm:_getAimedShot(muzzle: BasePart, distance: number?, patternOffset: Vector2?): (Vector3?, RaycastResult?)
 	local camera = workspace.CurrentCamera
 	if not camera then return nil, nil end
-
-	local mousePos = UserInputService:GetMouseLocation()
-	local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
-
-	local raycastParams = RaycastParams.new()
-	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-	raycastParams.FilterDescendantsInstances = { LOCAL_PLAYER.Character }
-
+	local center, radius = self:_getShotScreenBounds()
+	local offset = patternOffset or Vector2.new(spreadRandom:NextNumber(-1, 1), spreadRandom:NextNumber(-1, 1))
+	-- Sample the displayed box rather than adding a second world-space spread.
+	-- This also keeps the firing zone correct when FOV or resolution changes.
+	local pixel = center + Vector2.new(math.clamp(offset.X, -1, 1) * radius.X, math.clamp(offset.Y, -1, 1) * radius.Y)
+	local ray = camera:ScreenPointToRay(pixel.X, pixel.Y)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { LOCAL_PLAYER.Character, self.actual_model }
 	local maxDistance = distance or self.FireRayDistance or 5000
-	local result = utilities_module.raycastSkipTransparent(ray.Origin, ray.Direction * maxDistance, raycastParams)
-	local targetPos = result and result.Position or (ray.Origin + ray.Direction * maxDistance)
-	local shootDir = (targetPos - muzzle.Position).Unit
-
-	if self.get_spread then
-		shootDir = self:get_spread(muzzle, shootDir)
-	end
-
-	return shootDir, result
+	local result = utilities_module.raycastSkipTransparent(ray.Origin, ray.Direction * maxDistance, params)
+	local target = result and result.Position or (ray.Origin + ray.Direction * maxDistance)
+	return (target - muzzle.Position).Unit, result
 end
 
 function BaseFirearm:_fireCastFromMuzzle(muzzle: BasePart, direction: Vector3, bulletSpeed: number, metadata: any?)
@@ -646,7 +684,10 @@ function BaseFirearm:_playShotFeedback(muzzle: BasePart, sound: Sound?, soundPit
 	end
 	self:_bounce_scoped_ui()
 	self:_fireMuzzleFlash()
-	utilities_module.applyRecoil(self.recoil, self.recoil_count, 10, false, 1)
+	local recoil = self.recoil
+	if self.IsOcelotTrooper then recoil *= 0.25 end
+	if self._isBipodActive and self:_isBipodActive() then recoil = 1 end
+	utilities_module.applyRecoil(recoil, self.recoil_count, 10, true, 1)
 end
 
 function BaseFirearm:_fireSingleShot(options): boolean
@@ -666,6 +707,7 @@ function BaseFirearm:_fireSingleShot(options): boolean
 	local direction = self:_getAimedShot(muzzle, options and options.distance)
 	if not direction then return false end
 
+	local equipGeneration = self._equipGeneration
 	self.Firing = true
 	local ammoBeforeShot = self.Capacity
 	local shotMetadata = options and options.metadata
@@ -689,6 +731,7 @@ function BaseFirearm:_fireSingleShot(options): boolean
 
 	if fireTrack then
 		fireTrack.Stopped:Once(function()
+			if not self.Equipped or equipGeneration ~= self._equipGeneration then return end
 			if not self.Cycling then
 				self:_restoreBase()
 			end
@@ -705,6 +748,7 @@ function BaseFirearm:_fireSingleShot(options): boolean
 		task.wait(self:_effectiveFireDelay(fireDelay))
 	end
 
+	if not self.Equipped or equipGeneration ~= self._equipGeneration then return true end
 	self.Firing = false
 	self:_blockFireFor(self.PostFireDelay or 0)
 	if self.Equipped and not self.Cycling and not self.Reloading then
@@ -714,7 +758,7 @@ function BaseFirearm:_fireSingleShot(options): boolean
 end
 
 function BaseFirearm:_reloadByRound(options): boolean
-	if not self.Equipped or self.Reloading or self.Equipping then return false end
+	if not self.Equipped or self.Reloading or self.Equipping or self.Firing or self.Cycling then return false end
 	if self.Capacity >= self.Max_Capacity then return false end
 
 	local reserveAmmo = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
@@ -728,6 +772,7 @@ function BaseFirearm:_reloadByRound(options): boolean
 		return false
 	end
 
+	local generation = self._equipGeneration
 	self:_stopAllExcept()
 	self.Reloading = true
 	self._reloadCancelled = false
@@ -753,11 +798,13 @@ function BaseFirearm:_reloadByRound(options): boolean
 	endAnim = veteranAnimation(endAnim)
 	local startTrack = startAnim and self:_playAnim(startAnim) or nil
 	if startTrack then startTrack.Stopped:Wait() end
+	if not self.Equipped or self._equipGeneration ~= generation then return false end
 	-- Some opening clips include the first insertion already.
 	if options and options.startLoadsRound and startTrack and self.Equipped
 		and not self._reloadCancelled and self.Capacity < self.Max_Capacity and reserveAmmo.Value > 0 then
-		self.Capacity += 1
-		self:_fire_ammo(options.ammoCost or 1)
+		local amount = math.max(0, math.min(1, self.Max_Capacity - self.Capacity, math.floor(reserveAmmo.Value / math.max(options.ammoCost or 1, 1))))
+		self.Capacity += amount
+		self:_fire_ammo(amount * (options.ammoCost or 1))
 	end
 
 	local loopIndex = 0
@@ -776,24 +823,27 @@ function BaseFirearm:_reloadByRound(options): boolean
 		elseif options and options.loopWait then
 			task.wait(self.getFireDelay and self:getFireDelay(options.loopWait) or options.loopWait)
 		end
-		if self._reloadCancelled then break end
-		if options and options.stopAfterLoop and options.stopAfterLoop(self) then break end
+		if not self.Equipped or self._equipGeneration ~= generation then return false end
 
 		local roundsPerLoop = options and options.roundsPerLoop or 1
-		local roundsLoaded = math.min(roundsPerLoop, self.Max_Capacity - self.Capacity, reserveAmmo.Value)
+		local roundsLoaded = math.max(0, math.min(roundsPerLoop, self.Max_Capacity - self.Capacity, math.floor(reserveAmmo.Value / math.max(options and options.ammoCost or 1, 1))))
+		if roundsLoaded <= 0 then break end
 		self.Capacity += roundsLoaded
 		self:_fire_ammo(roundsLoaded * (options and options.ammoCost or 1))
+		if self._reloadCancelled or (options and options.stopAfterLoop and options.stopAfterLoop(self)) then break end
 	end
 
-	if not self._reloadCancelled then
+	if (self.Equipped and self._equipGeneration == generation) then
 		local endTrack = endAnim and self:_playAnim(endAnim) or nil
 		if endTrack then endTrack.Stopped:Wait() end
+		if not self.Equipped or self._equipGeneration ~= generation then return false end
 	end
 
 	self.Reloading = false
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 	self:_blockFireFor(self.PostReloadDelay or 0)
+	self.Cycled = true
 	self:_restoreBaseDeferred()
 	return true
 end
@@ -919,125 +969,70 @@ end
 
 -- // Aiming UI
 
-function BaseFirearm:_enable_aiming_ui(max_aiming: number)
-	local aiming_gui = game.Players.LocalPlayer.PlayerGui.Aiming
-	aiming_gui.Regular_Crosshair.Visible = false
-	aiming_gui.Scoped_In.Visible = true
+function BaseFirearm:_getCrosshairTargetDiameter(): number
+	local diameter = math.clamp(self:_getShotAccuracy() * 1.1, 0, 200)
+	if (self.PelletCount or 1) > 1 then diameter = math.clamp(diameter * 0.7, 0, 200) end
+	-- Keep the center open, even when steady breathing or perks improve accuracy.
+	-- The scoped Volk has the tightest firing zone, but never perfect accuracy.
+	local minimumDiameter = self.ScopedMode and self.Aiming and 12 or 14
+	return math.max(minimumDiameter, diameter)
+end
 
-	local scoped = aiming_gui.Scoped_In.main
-	local down, left, right, up = scoped.down, scoped.left, scoped.right, scoped.up
-	-- Preserve the authored size. Shot feedback must always return here rather
-	-- than using the size of an in-progress tween as its next starting point.
-	if not self._crosshairBaseSize then self._crosshairBaseSize = scoped.Size end
-	if self._crosshairKickTween then self._crosshairKickTween:Cancel() end
-	if self._crosshairReturnTween then self._crosshairReturnTween:Cancel() end
-	scoped.Size = self._crosshairBaseSize
+function BaseFirearm:_updateCrosshair(dt: number)
+	local main = self._crosshairMain
+	if not main or not main.Parent then return end
+	local pulse = os.clock() - (self._lastCrosshairShot or -math.huge) < 0.03 and 40 or 0
+	local target = self:_getCrosshairTargetDiameter() + pulse
+	-- Master lerp(0.3), normalized to its 60 Hz response.
+	local alpha = 1 - 0.7 ^ (math.max(dt, 0) * 60)
+	self._crosshairDiameter += (target - self._crosshairDiameter) * alpha
+	main.Size = UDim2.fromOffset(self._crosshairDiameter, self._crosshairDiameter)
+end
 
-	local character = game.Players.LocalPlayer.Character or game.Players.LocalPlayer.CharacterAdded:Wait()
-	local root = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 5)
-	local humanoid = character:FindFirstChild("Humanoid") or character:WaitForChild("Humanoid", 5)
-	if not root or not humanoid or character ~= game.Players.LocalPlayer.Character then
-		return
-	end
+-- The regular caret is fixed-size; only the ADS reticle displays spread.
+function BaseFirearm:_startAimTracking()
+    BaseTool._startAimTracking(self)
+end
 
-	if self.character_connection then
-		self.character_connection:Disconnect()
-	end
+function BaseFirearm:_stopAimTracking()
+    BaseTool._stopAimTracking(self)
+end
 
-	local fixedSpread = self.FixedAimingSpread
-	local currentSpread = fixedSpread or 0
-
-	self.character_connection = RunService.RenderStepped:Connect(function()
-		if not root or not humanoid then
-			return
-		end
-
-		local holdingBreath = character:GetAttribute("HoldBreathe") == true
-		local targetSpread
-
-		if fixedSpread then
-			targetSpread = fixedSpread
-		elseif holdingBreath then
-			if not self._breathStartTime then
-				self._breathStartTime = tick()
-				self._spreadAtBreath = currentSpread
-			end
-
-			local breathHeldFor = tick() - self._breathStartTime
-			local focusMultiplier = character:GetAttribute("OrderFocusMultiplier") or 1
-			local windUp = math.clamp(breathHeldFor / (0.5 / focusMultiplier), 0, 1)
-
-			local breathBonus = 5 * focusMultiplier
-
-			targetSpread = (self._spreadAtBreath or currentSpread)
-				+ ((-breathBonus) - (self._spreadAtBreath or currentSpread)) * windUp
-		else
-			self._breathStartTime = nil
-			self._spreadAtBreath = nil
-
-			local speed = Vector3.new(
-				root.AssemblyLinearVelocity.X,
-				0,
-				root.AssemblyLinearVelocity.Z
-			).Magnitude
-
-			local alpha = (humanoid.WalkSpeed > 0)
-				and math.clamp(speed / humanoid.WalkSpeed, 0, 1)
-				or 0
-
-			targetSpread = alpha * max_aiming
-		end
-
-		currentSpread = currentSpread + (targetSpread - currentSpread) * 0.3
-
-		local offset = math.max(1, 5 + currentSpread)
-
-		up.Position    = UDim2.new(0.5, 0, 0, -offset)
-		down.Position  = UDim2.new(0.5, 0, 1, offset)
-		left.Position  = UDim2.new(0, -offset, 0.5, 0)
-		right.Position = UDim2.new(1, offset, 0.5, 0)
-	end)
+function BaseFirearm:_enable_aiming_ui(_max_aiming: number)
+	local aiming = LOCAL_PLAYER.PlayerGui.Aiming
+	aiming.Regular_Crosshair.Visible = false
+	aiming.Scoped_In.Visible = true
+	if self.character_connection then self.character_connection:Disconnect() end
+	local main = aiming.Scoped_In.main
+	self._crosshairMain = main
+	self._crosshairDiameter = self:_getCrosshairTargetDiameter()
+	self._lastCrosshairShot = nil
+	main.Size = UDim2.fromOffset(self._crosshairDiameter, self._crosshairDiameter)
+	-- Put the inner edge of each arm on the exact sampled firing boundary.
+	main.up.AnchorPoint = Vector2.new(0.5, 1)
+	main.down.AnchorPoint = Vector2.new(0.5, 0)
+	main.left.AnchorPoint = Vector2.new(1, 0.5)
+	main.right.AnchorPoint = Vector2.new(0, 0.5)
+	main.up.Position = UDim2.fromScale(0.5, 0)
+	main.down.Position = UDim2.fromScale(0.5, 1)
+	main.left.Position = UDim2.fromScale(0, 0.5)
+	main.right.Position = UDim2.fromScale(1, 0.5)
+	self.character_connection = RunService.RenderStepped:Connect(function(dt) self:_updateCrosshair(dt) end)
 end
 
 function BaseFirearm:_bounce_scoped_ui()
-	-- Automatic weapons already communicate sustained recoil through the gun
-	-- and camera. Fast semi-automatic weapons have the same visual problem, so
-	-- neither category is allowed to resize the crosshair.
-	local fireInterval = self:_effectiveFireDelay(self.FireInterval or self.fire_rate or 0)
-	if self.auto == true or (fireInterval > 0 and fireInterval <= FAST_CROSSHAIR_INTERVAL) then return end
-	local Scoped_In = LOCAL_PLAYER.PlayerGui.Aiming.Scoped_In
-	local main = Scoped_In.main
-
-	local baseSize = self._crosshairBaseSize or main.Size
-	self._crosshairBaseSize = baseSize
-	if self._crosshairKickTween then self._crosshairKickTween:Cancel() end
-	if self._crosshairReturnTween then self._crosshairReturnTween:Cancel() end
-	self._crosshairBounceToken = (self._crosshairBounceToken or 0) + 1
-	local token = self._crosshairBounceToken
-	main.Size = baseSize
-	local kickSize = UDim2.new(
-		baseSize.X.Scale, baseSize.X.Offset + 40,
-		baseSize.Y.Scale, baseSize.Y.Offset + 40
-	)
-
-	self._crosshairKickTween = TweenService:Create(main, TweenInfo.new(0.03, Enum.EasingStyle.Linear), {Size = kickSize})
-	self._crosshairKickTween:Play()
-
-	task.delay(0.03, function()
-		if token ~= self._crosshairBounceToken or not main.Parent then return end
-		self._crosshairReturnTween = TweenService:Create(main, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = baseSize})
-		self._crosshairReturnTween:Play()
-	end)
+	-- All firearms receive the same 40-pixel, 30-ms master pulse, including autos.
+	self._lastCrosshairShot = os.clock()
 end
 
 function BaseFirearm:_disable_aiming_ui()
-	local aiming_gui = LOCAL_PLAYER.PlayerGui.Aiming
-	aiming_gui.Regular_Crosshair.Visible = true
-	aiming_gui.Scoped_In.Visible = false
-	self._crosshairBounceToken = (self._crosshairBounceToken or 0) + 1
-	if self._crosshairKickTween then self._crosshairKickTween:Cancel(); self._crosshairKickTween = nil end
-	if self._crosshairReturnTween then self._crosshairReturnTween:Cancel(); self._crosshairReturnTween = nil end
-	if self._crosshairBaseSize then aiming_gui.Scoped_In.main.Size = self._crosshairBaseSize end
+	local aiming = LOCAL_PLAYER.PlayerGui.Aiming
+	aiming.Regular_Crosshair.Visible = true
+	aiming.Scoped_In.Visible = false
+	self._crosshairMain = nil
+	self._crosshairDiameter = nil
+	self._lastCrosshairShot = nil
+	self._breathStartTime = nil
 	if self.character_connection then
 		self.character_connection:Disconnect()
 		self.character_connection = nil
@@ -1116,6 +1111,7 @@ function BaseFirearm:ammo_check()
 		muzzle = middle
 	end
 
+	local generation = self._equipGeneration
 	self:_set_sprint_arms(true)
 	self.Checking     = true
 	self.Check_Delayed = true
@@ -1146,8 +1142,7 @@ function BaseFirearm:ammo_check()
 	checkTrack:AdjustWeight(1)
 	self:_playAnim(checkName)
 
-	-- Leave enough of the animation after this point to close and recock the gun.
-	-- Releasing the ammo-check key before this point simply lets it finish normally.
+	-- Hold the inspection pose until the ammo-check key is released.
 	task.delay(self.AmmoCheckHoldTime or 0.65, function()
 		if self.Checking and self._ammoCheckHeld and checkTrack.IsPlaying then
 			self._ammoCheckPaused = true
@@ -1158,21 +1153,24 @@ function BaseFirearm:ammo_check()
 	ammo_check_part.CFrame = middle.CFrame + middle.CFrame.rightVector * -0.5 + middle.CFrame.upVector * 1
 
 
-	if not ammo_check_part:FindFirstChild("WeldConstraint") then
-		local weld   = Instance.new("WeldConstraint")
+	do
+		local weld = ammo_check_part:FindFirstChild("WeldConstraint") or Instance.new("WeldConstraint")
 		weld.Part0   = ammo_check_part
 		weld.Part1   = muzzle
 		weld.Parent  = ammo_check_part
 	end
 
 	ammo_check_utils.utils(self.Ammo_Type, math.clamp(self.Capacity / self.Max_Capacity, 0, 1),
-		false, reserveAmmo.Value / (self.Max_Capacity * 3))
+		false, reserveAmmo.Value / math.max(self.Max_Reserve_Ammo or self.Max_Capacity * 3, 1),
+		if self.IsVeteran and self.Capacity > (self.capacity or self.Max_Capacity) then "Full plus one." elseif self.Capacity == 1 then "One shot left." elseif (self.IsVeteran or self.ExactAmmoCount) and self.Capacity > 0 then tostring(self.Capacity) .. " left." else nil,
+		self.hidereserves or (self.ammo_reserves_max or 0) >= 200)
 	self._ammoCheckShownAt = os.clock()
 	if not self._ammoCheckHeld then
 		self:end_ammo_check()
 	end
 
 	checkTrack.Stopped:Wait()
+	if not self.Equipped or self._equipGeneration ~= generation then return end
 
 	self._ammoCheckPaused = false
 	self.Checking = false
@@ -1183,6 +1181,7 @@ function BaseFirearm:ammo_check()
 		self.Check_Delayed = false
 	end)
 end
+
 
 
 function BaseFirearm:_fireMuzzleFlash()
@@ -1232,8 +1231,8 @@ end
 
 function BaseFirearm:emit_casing(casing: Part, origin: CFrame, direction: Vector3)
 	print("Fired casing event with:", casing.Name, origin, direction)
-	replicant_service.HandleCasingReplication(LOCAL_PLAYER, casing, origin, direction)
-	casing_event:FireServer(casing, origin, direction)
+	replicant_service.HandleCasingReplication(LOCAL_PLAYER, casing, origin, direction, self.className)
+	casing_event:FireServer(casing, origin, direction, self.className)
 end
 
 -- // Stubs

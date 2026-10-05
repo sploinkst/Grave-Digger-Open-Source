@@ -1,5 +1,1 @@
-return require(script.Parent.GenericClassToolFactory).create({
-	name = "Machete",
-	Designation = "Melee",
-	Weight = 0,
-})
+return require(script.Parent.Parent.UtilityTool).create("Machete", "machete", "Machete")

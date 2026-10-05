@@ -18,11 +18,16 @@ BaseCamera.__index = BaseCamera
 
 -- // Constants
 local LocalPlayer = PlayerService.LocalPlayer
+local function selectionMenuOpen()
+	local character = LocalPlayer.Character
+	return character and (character:GetAttribute("StimulantSelecting") or character:GetAttribute("OfficerOrderSelecting"))
+end
 local Camera      = Workspace.CurrentCamera
 
 local mainGui = LocalPlayer.PlayerGui:WaitForChild("main")
 local coreGame = mainGui:WaitForChild("core_game")
 local cursor_ui = coreGame:WaitForChild("genericcrosshair")
+cursor_ui.Visible = false
 
 local Values = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Configuration"):WaitForChild("Character_Variables"):WaitForChild("Camera"):WaitForChild("BaseCamera")
 local CameraOffsets = {
@@ -101,7 +106,7 @@ local Presets = {
 		MouseVisible   = false,
 		FOV            = FOV_Config.BASE,
 		AutoRotate     = false,
-		Cursor_UI      = true,
+		Cursor_UI      = false,
 		Aiming_Dynamic = true,
 	},
 	CustomCamera = {
@@ -132,8 +137,9 @@ function BaseCamera.new(cameraInfo)
 	self.RecoilYaw         = 0
 	self.RecoilTargetPitch = 0
 	self.RecoilTargetYaw   = 0
-	self.RecoilSnappiness  = RECOIL_SNAPPINESS
 	self.RecoilImpulses    = {}
+	self.RecoilRoll        = 0
+	self.RecoilSnappiness  = RECOIL_SNAPPINESS
 
 	self.ShoulderAlpha       = 1
 	self.ShoulderTarget      = 1
@@ -214,13 +220,37 @@ function BaseCamera:_bind(callback)
 	RunService:BindToRenderStep(RENDER_STEP_NAME, RENDER_PRIORITY, function(dt)
 		self:_updateFOV(dt)
 		callback(dt)
+		self:_updateCursorVisibility()
 	end)
 end
 
+function BaseCamera:_updateCursorVisibility()
+	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	local main = playerGui and playerGui:FindFirstChild("main")
+	local core = main and main:FindFirstChild("core_game")
+	local cursor = core and core:FindFirstChild("genericcrosshair")
+	if not cursor then return end
+	cursor_ui = cursor
+	cursor.Visible = false
+end
+
 function BaseCamera:_updateFOV(dt: number)
-	local target = self.TargetFOV or FOV_Config.BASE
 	local character = LocalPlayer.Character
+	local progress = character and character:GetAttribute("SprintProgress") or 0
+	self.holding_breath = character and character:GetAttribute("HoldBreathe") == true or false
+	self.is_aiming = character and character:GetAttribute("Aiming") == true or false
+	local target = FOV_Config.BASE + 15 * math.clamp(progress, 0, 1)
+	if self.holding_breath then
+		target = FOV_Config.HOLD_BREATH
+	elseif self.is_aiming then
+		target = FOV_Config.AIMING
+	end
+	self.TargetFOV = target
 	local weaponFOV = character and character:GetAttribute("WeaponFOV")
+	if self.holding_breath and type(weaponFOV) == "number" and weaponFOV < FOV_Config.AIMING then
+		-- Focus preserves scope magnification rather than zooming back out.
+		target *= weaponFOV / FOV_Config.AIMING
+	end
 	if self.is_aiming and not self.holding_breath and type(weaponFOV) == "number" then
 		target = weaponFOV
 	end
@@ -249,6 +279,7 @@ function BaseCamera:_decayCameraOffsetZ(dt: number)
 end
 
 function BaseCamera:_applyTransition(root: BasePart, targetCFrame: CFrame, dt)
+	targetCFrame *= CFrame.Angles(0, 0, self.RecoilRoll or 0)
 	if self.IsTransitioning then
 		self.TransitionElapsed += dt
 
@@ -301,32 +332,26 @@ function BaseCamera:_applyTransition(root: BasePart, targetCFrame: CFrame, dt)
 end
 
 function BaseCamera:_updateRecoil(dt: number)
-	-- Apply each shot over a few frames so the kick feels quick but smooth.
-	-- The camera stays at the new angle until the player moves it back.
 	self.RecoilPitch = 0
 	self.RecoilYaw = 0
-
+	self.RecoilRoll = (self.RecoilRoll or 0) * math.exp(-35 * dt)
 	for index = #self.RecoilImpulses, 1, -1 do
 		local impulse = self.RecoilImpulses[index]
-		impulse.elapsed = math.min(impulse.elapsed + dt, impulse.duration)
-
-		local alpha = impulse.elapsed / impulse.duration
-		local eased = TweenService:GetValue(alpha, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-		local pitch = impulse.pitch * eased
-		local yaw = impulse.yaw * eased
-
-		self.CameraPitch = math.clamp(
-			self.CameraPitch + pitch - impulse.appliedPitch,
-			PITCH_MIN,
-			PITCH_MAX
-		)
-		self.CameraYaw += yaw - impulse.appliedYaw
-		impulse.appliedPitch = pitch
-		impulse.appliedYaw = yaw
-
-		if impulse.elapsed >= impulse.duration then
-			table.remove(self.RecoilImpulses, index)
+		impulse.elapsed += dt
+		local alpha = math.clamp(impulse.elapsed / impulse.duration, 0, 1)
+		local eased = TweenService:GetValue(alpha, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+		-- Apply only the tween's change so mouse input and overlapping shots
+		-- remain additive, while preserving the master's total climb.
+		local change = eased - impulse.appliedAlpha
+		self.CameraPitch = math.clamp(self.CameraPitch + impulse.pitch * change, PITCH_MIN, PITCH_MAX)
+		self.CameraYaw += impulse.yaw * change
+		impulse.appliedAlpha = eased
+		if impulse.roll then
+			local rollAlpha = eased
+			self.RecoilRoll += math.rad(3) * (rollAlpha - impulse.appliedRollAlpha)
+			impulse.appliedRollAlpha = rollAlpha
 		end
+		if alpha >= 1 then table.remove(self.RecoilImpulses, index) end
 	end
 end
 
@@ -424,6 +449,7 @@ end
 function BaseCamera:_consumeMouseDelta()
 	local d = self._mouseDelta
 	self._mouseDelta = Vector2.zero
+	if selectionMenuOpen() then return Vector2.zero end
 	return d
 end
 
@@ -665,6 +691,7 @@ function BaseCamera:_setupHoldBreathCheck()
 	self.HoldBreathConnection = LocalPlayer.Character:GetAttributeChangedSignal("HoldBreathe"):Connect(function()
 		self:_onHoldBreathStateChanged()
 	end)
+	self:_onHoldBreathStateChanged()
 end
 
 function BaseCamera:_onHoldBreathStateChanged()
@@ -1044,6 +1071,7 @@ function BaseCamera:CustomCamera()
 	self.transparency_connection = first_person_transparency(character, false)
 
 	self:_bind(function(dt)
+		self:_updateRecoil(dt)
 		local character, root = self:_getCharacterParts()
 		if not root then return
 		end
@@ -1105,6 +1133,8 @@ function BaseCamera:FirstPerson()
 	self.RecoilYaw         = 0
 	self.RecoilTargetPitch = 0
 	self.RecoilTargetYaw   = 0
+	self.RecoilImpulses    = {}
+	self.RecoilRoll        = 0
 	self.CameraKick        = 0
 
 	if humanoid then
@@ -1160,7 +1190,7 @@ function BaseCamera:FirstPerson()
 
 		self:_applyTransition(root, targetCFrame, dt)
 
-		InputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+		InputService.MouseBehavior = selectionMenuOpen() and Enum.MouseBehavior.Default or Enum.MouseBehavior.LockCenter
 	end) 
 end
 
@@ -1173,6 +1203,8 @@ function BaseCamera:OverTheShoulder()
 	self.RecoilYaw         = 0
 	self.RecoilTargetPitch = 0
 	self.RecoilTargetYaw   = 0
+	self.RecoilImpulses    = {}
+	self.RecoilRoll        = 0
 
 	local hum = self:_getHumanoid()
 	if hum then
@@ -1301,7 +1333,7 @@ function BaseCamera:OverTheShoulder()
 		self:_applyTransition(root, targetCFrame, dt)
 		self:_updateCharacterRotation(root, dt)
 
-		InputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+		InputService.MouseBehavior = selectionMenuOpen() and Enum.MouseBehavior.Default or Enum.MouseBehavior.LockCenter
 	end)
 end
 
@@ -1331,10 +1363,10 @@ function BaseCamera:Switch_Camera(target: string)
 
 	local preset = Presets[target]
 	Camera.CameraType             = preset.CameraType
-	Camera.FieldOfView            = self.TargetFOV or preset.FOV or FOV_Config.BASE
+	-- Keep the live FOV so camera mode changes continue the current easing.
 	self.CurrentFOV               = Camera.FieldOfView
-	InputService.MouseIconEnabled = preset.MouseVisible or false
-	InputService.MouseBehavior    = preset.MouseLocked and Enum.MouseBehavior.LockCenter or Enum.MouseBehavior.Default
+	InputService.MouseIconEnabled = selectionMenuOpen() or preset.MouseVisible or false
+	InputService.MouseBehavior    = not selectionMenuOpen() and preset.MouseLocked and Enum.MouseBehavior.LockCenter or Enum.MouseBehavior.Default
 
 	if self.aim_check            then self.aim_check:Disconnect();            self.aim_check            = nil end
 	if self.HoldBreathConnection then self.HoldBreathConnection:Disconnect(); self.HoldBreathConnection = nil end
@@ -1344,7 +1376,7 @@ function BaseCamera:Switch_Camera(target: string)
 	local humanoid  = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then task.defer(function() humanoid.AutoRotate = preset.AutoRotate or false end) end
 
-	cursor_ui.Visible = preset.Cursor_UI and not character:GetAttribute("Aiming") or false
+	self:_updateCursorVisibility()
 	LocalPlayer:SetAttribute("FreeLook", nil)
 	LocalPlayer:SetAttribute("FirstPerson", nil)
 
@@ -1407,6 +1439,8 @@ function BaseCamera:Start()
 		self.RecoilYaw         = 0
 		self.RecoilTargetPitch = 0
 		self.RecoilTargetYaw   = 0
+	self.RecoilImpulses    = {}
+	self.RecoilRoll        = 0
 		self.IsTransitioning   = false
 		self.TransitionElapsed = 0
 		self.holding_breath    = false
@@ -1521,23 +1555,19 @@ function BaseCamera:Cut()
 end
 
 function BaseCamera:ApplyRecoil(vertical: number, horizontal: number, steps: number?, doRoll: boolean?, scale: number?)
-	-- Push the camera over a longer impulse so each shot feels heavier.
-	scale = (scale or 1) * 1.4
+	scale = scale or 1
 	local character = LocalPlayer.Character
-	local steadyAiming = character
-		and character:GetAttribute("Aiming") == true
-		and character:GetAttribute("HoldBreathe") == true
-	if steadyAiming then
-		scale *= 0.45
-	end
-
+	if character and character:GetAttribute("HoldBreathe") == true then scale /= 1.5 end
+	local count = math.max(0, math.floor(steps or 0))
+	-- Ease each shot in and out without interrupting mouse input or other shots.
 	table.insert(self.RecoilImpulses, {
-		pitch = vertical * scale,
-		yaw = horizontal * scale,
-		duration = 0.13,
+		pitch = vertical * scale * (count + 1),
+		yaw = horizontal * scale * (count + 1),
+		duration = math.max(0.09, (count - 1) * 0.015),
 		elapsed = 0,
-		appliedPitch = 0,
-		appliedYaw = 0,
+		appliedAlpha = 0,
+		roll = doRoll,
+		appliedRollAlpha = 0,
 	})
 end
 

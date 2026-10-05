@@ -279,6 +279,7 @@ function Service.ApplySpawn(player, character)
 		"SurgerySpeed", "MobileSurgery", "SuppressionImmune", "MeleeDamageMultiplier"} do
 		character:SetAttribute(attribute, definition[attribute])
 	end
+	character:SetAttribute("GasImmune", isDreadnought or definition.GasImmune or nil)
 	local leatherneck = hasPerk(player, "Leatherneck")
 	character:SetAttribute("InstantSprintAcceleration", eliteName == "OcelotTrooper" or eliteName == "StormTrooper" or eliteName == "GeistTrooper" or hasPerk(player, "Greyhound") or nil)
 	character:SetAttribute("FlinchImmune", leatherneck or nil)
@@ -339,12 +340,7 @@ function Service.SetShockTrooper(player: Player, eliteName: string, bypassRequir
 	character:SetAttribute("ClassPrimary", elite.Primary)
 	character:SetAttribute("ClassSecondary", elite.Secondary)
 	character:SetAttribute("ClassEquipmentGranted", nil)
-	ClassAppearance.Apply(
-		character,
-		player.Team and player.Team.Name,
-		elite.OutfitClass,
-		true
-	)
+
 	if canonicalName == "OcelotTrooper" then
 		character:SetAttribute("MovementSpeedMultiplier", 1.25)
 		character:SetAttribute("SprintSpeedMultiplier", 1.2)
@@ -367,6 +363,8 @@ function Service.SetShockTrooper(player: Player, eliteName: string, bypassRequir
 	end
 
 	clearCurrentInventory(player, character, humanoid)
+	-- Inventory cleanup clears Equipment; apply the new appearance afterward.
+	ClassAppearance.Apply(character, player.Team and player.Team.Name, elite.OutfitClass)
 
 	local toolsLoaded = character:FindFirstChild("tools_loaded")
 	if toolsLoaded and toolsLoaded:IsA("BoolValue") then
@@ -425,7 +423,8 @@ function Service.GiveLoadout(player, character)
 			continue
 		end
 
-		local inventoryDesignation = if index == 1 then "Primary" elseif index == 2 then "Secondary" else nil
+		local inventoryDesignation = if index == 1 then "Primary" elseif index == 2 then "Secondary"
+			elseif index == 5 then "Melee" else nil
 		local ok, err = pcall(Items.give_item, player, name, nil, inventoryDesignation)
 		if not ok then
 			warn("[Classes] Could not grant " .. name .. ": " .. tostring(err))

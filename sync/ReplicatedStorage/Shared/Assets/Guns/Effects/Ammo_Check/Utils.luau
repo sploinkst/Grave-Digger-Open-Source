@@ -35,13 +35,12 @@ local function hide()
 	end
 end
 
-function module.utils(Ammo_Type: string, Ammo_Percentage: number, Revolver: boolean, bar_size: UDim2?)
+function module.utils(Ammo_Type: string, Ammo_Percentage: number, Revolver: boolean, bar_size: number?, description: string?, hideReserves: boolean?)
 	displayVersion += 1
-	print("Ammo Check: ", Ammo_Type, Ammo_Percentage, Revolver, bar_size)
-	bar_size = UDim2.new(1, 0, bar_size, 0)
+	bar_size = UDim2.new(1, 0, math.clamp(bar_size or 0, 0, 1), 0)
 
 	billboard_main.Enabled = true
-	max_ammo.Visible = true
+	max_ammo.Visible = not hideReserves
 	inner_bar.Visible = true
 	ammo_bar.Visible = true
 	background.Visible = true
@@ -70,7 +69,7 @@ function module.utils(Ammo_Type: string, Ammo_Percentage: number, Revolver: bool
 	else
 		status = "Full."
 	end
-	Count_TextLabel.Text = status
+	Count_TextLabel.Text = description or status
 
 	-- fade in
 	fadeIn(Ammo_TextLabel, "TextTransparency")

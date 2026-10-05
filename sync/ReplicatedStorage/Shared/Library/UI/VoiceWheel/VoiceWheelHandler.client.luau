@@ -49,7 +49,8 @@ local function DangerPing()
 	end
 
 	VoiceComms:FireServer("danger", {
-		Position = result.Position
+		Position = result.Position,
+		Hit = result.Instance,
 	})
 end
 
@@ -78,6 +79,8 @@ local function Init()
 
 			if Selected == "danger" then
 				DangerPing()
+			elseif Selected == "thanks" then
+				VoiceComms:FireServer("thanks")
 			end
 
 			if Player:GetAttribute("FreeLook") then

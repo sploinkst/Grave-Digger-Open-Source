@@ -48,7 +48,7 @@ local SpawnAnims = Shared:WaitForChild("Assets"):WaitForChild("Animations"):Wait
 local CoreMaps = Shared.Assets.Maps["Core Maps"]
 
 local Sounds = Shared:WaitForChild("Assets"):WaitForChild("Sounds"):WaitForChild("Game")
-local Tick = Sounds:WaitForChild("Countdown")
+local Tick = Sounds:WaitForChild("Gamestart"):WaitForChild("Countdown")
 
 -- // Points billboard
 local UiFolder = Shared.Assets.UI
@@ -263,7 +263,7 @@ local function IsTeamWiped(team: Team): boolean
 		end
 
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if humanoid and humanoid.Health > 0 then
+		if humanoid and humanoid.Health > 0 and not character:GetAttribute("Surrendered") then
 			return false
 		end
 	end
@@ -461,6 +461,7 @@ local function StartFinalStand(losingTeam: Team, generation: number)
 	finalStandGeneration[losingTeam] = generation
 	print("[GameManager] Final stand begun for", losingTeam.Name, "- generation", generation)
 
+	workspace:SetAttribute("LosingTeam", losingTeam.Name)
 	FinalStandEvent:FireAllClients(losingTeam.Name)
 	print("[FinalStandEvent] Fired!")
 
@@ -480,6 +481,7 @@ end
 local function EndFinalStand(losingTeam: Team)
 	print("[FinalStand] === EndFinalStand:", losingTeam.Name, "(was generation", finalStandGeneration[losingTeam], ") ===")
 	finalStandGeneration[losingTeam] = nil
+	workspace:SetAttribute("LosingTeam", nil)
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Team == losingTeam then
@@ -560,6 +562,11 @@ local function EquipWhenReady(player: Player, character: Model)
 end
 
 local function SpawnAndEquipPlayer(player: Player, spawnRoom: Model)
+	if player.Parent ~= Players or not player:GetAttribute("PlayerDataReady")
+		or not player:GetAttribute("PlayerSetupReady") then
+		return
+	end
+
 	if not spawnRoom then
 		warn("[GameManager] SpawnAndEquipPlayer called with no spawnRoom for", player.Name)
 		return
@@ -1071,6 +1078,9 @@ end
 -- // Round start / restart
 BeginRound = function()
 	roundGeneration += 1
+	workspace:SetAttribute("MatchGeneration", roundGeneration)
+	workspace:SetAttribute("TruceResolved", nil)
+	for _, player in ipairs(Players:GetPlayers()) do player:SetAttribute("TruceVote", nil) end
 	local generation = roundGeneration
 	roundEnding = false
 
@@ -1367,6 +1377,37 @@ function Module.start_module()
 			player.PlayerGui.Hiatus.Enabled = false
 		end
 	end)
+end
+
+function Module.ControlState(player)
+ local mode = GamemodeFolder:FindFirstChild("Gamemode_Type")
+ return {generation=roundGeneration,active=roundActive,mode=mode and string.lower(tostring(mode.Value)) or "",
+  losing=player.Team ~= nil and finalStandGeneration[player.Team] ~= nil}
+end
+function Module.OutOfBounds(player)
+ local character=player.Character
+ local out=MainGame:FindFirstChild("outofbounds",true)
+ local stuff=workspace:FindFirstChild("serverStuff")
+ local setup=stuff and stuff:FindFirstChild("game_setup")
+ out=out or setup and setup:FindFirstChild("outofbounds")
+ if not out or not out:IsA("BasePart") then return false end
+ local team=out:FindFirstChild("team")
+ if team and team.Value and team.Value~=player.Team then return false end
+ return IsCharacterWithinPart(character,out)
+end
+function Module.IsDeserter(player)
+ local c=player.Character; local deadline=c and c:GetAttribute("SurrenderDeadline")
+ return roundActive and type(deadline)=="number" and workspace:GetServerTimeNow()>=deadline and Module.OutOfBounds(player)
+end
+function Module.ResolveTruce(accepted)
+ workspace:SetAttribute("TruceResolved",accepted)
+ if not accepted then
+  local mode=GamemodeFolder:FindFirstChild("Gamemode_Type")
+  if mode and mode:IsA("StringValue") then mode.Value="capture" end
+ else
+  roundActive=false; timeTick=false; hiatusPeriod=true
+  roundGeneration+=1
+ end
 end
 
 return Module

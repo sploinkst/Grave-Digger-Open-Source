@@ -560,6 +560,9 @@ function Module.start_module()
 		for _, key in ipairs(SlotOrder) do
 			local slot = InventorySlots[key]
 
+			if LocalPlayer.Character:GetAttribute("StimulantSelecting")
+				or LocalPlayer.Character:GetAttribute("OfficerOrderSelecting")
+				or LocalPlayer.Character:GetAttribute("ConstructionSelecting") then return end
 			if input.KeyCode == slot.Keybind then
 				local tool = slot.Tool
 

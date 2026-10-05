@@ -1,4 +1,1 @@
-return require(script.Parent.GenericClassToolFactory).create({
-	name = "Binoculars",
-	Designation = "Equipment",
-})
+return require(script.Parent.BinocularController)

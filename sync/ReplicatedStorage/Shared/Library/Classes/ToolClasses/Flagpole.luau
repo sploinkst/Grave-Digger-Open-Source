@@ -1,4 +1,1 @@
-return require(script.Parent.GenericClassToolFactory).create({
-	name = "Flagpole",
-	Designation = "Equipment",
-})
+return require(script.Parent.Parent.UtilityTool).create("Flagpole", "flagpole", "Flag")

@@ -16,7 +16,7 @@ local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
 local antimaterialAnimations = Assets.Animations.Tools.Guns:FindFirstChild("AntiMaterialRifle")
-local SoundFolder = GunAssets.Sounds:WaitForChild("AntiMaterialRifle")
+local SoundFolder = Assets.Sounds.Guns:WaitForChild("AntiMaterialRifle")
 
 local FIRE_INTERVAL = 0.5
 local BULLET_SPEED = 1400
@@ -53,6 +53,24 @@ local WEAPON_STATS = {
 	melee_range = 5,
 	accuracy = 12,
 	moving_accuracy = 60,
+	size = 2,
+	melee_swing_speed = 0.8,
+	wallpen_distance = 70,
+	wallpen_studs = 5,
+	draw_speed = 1.2,
+	aim_speed = 0.45,
+	wound = 1,
+	length = 7,
+	movement = 1,
+	firing_movement = 1,
+	firing_movement_last = 0.5,
+	ammo_reserves = 200,
+	ammo_reserves_max = 200,
+	chamber = false,
+	reload_start = 2.75,
+	reload_empty = 3,
+	reload_loop = 0,
+	reload_end = 0,
 }
 
 local ANIM_LAYERS: { [string]: number } = {
@@ -165,11 +183,12 @@ function Antimaterial.new(info: Types.BaseToolCreateInfo): Antimaterial
 	}
 
 	self.animation_speeds = {
-		Draw = 1 / 1.3,
-		Aim = 1 / 0.5,
-		Aim_Left = 1 / 0.5,
+		Draw = 1 / WEAPON_STATS.draw_speed,
+		Aim = 1 / WEAPON_STATS.aim_speed,
+		Aim_Left = 1 / WEAPON_STATS.aim_speed,
 	}
 
+	self:applyFirearmConfig(WEAPON_STATS)
 	self.damage = WEAPON_STATS.damage
 	self.range = WEAPON_STATS.range
 	self.range_damage = WEAPON_STATS.range_damage
@@ -191,7 +210,7 @@ function Antimaterial.new(info: Types.BaseToolCreateInfo): Antimaterial
 	self.FireSound = SoundFolder:FindFirstChild("fire", true)
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
-	self.Short_Distance = 3.5
+	self.Short_Distance = 4
 	self.Melee_Distance = WEAPON_STATS.melee_range
 	self.Melee_Damage = WEAPON_STATS.melee_damage
 	self.Accuracy = WEAPON_STATS.accuracy
@@ -295,9 +314,9 @@ function Antimaterial:fire()
 	local cycleTrack = self.RegisteredAnimations
 		and self.RegisteredAnimations.Cycle
 		and self:_playAnim("Cycle")
-	local cycleTime = self.CycleTime or CYCLE_TIME
-	if cycleTrack then cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / cycleTime, 0.01)) end
-	task.wait(cycleTime + (self.PostCycleDelay or self.CycleRestTime or CYCLE_REST_TIME))
+	local cycleTime = self:_cycleDuration(self.cycle or CYCLE_TIME)
+	if cycleTrack then cycleTrack:AdjustSpeed(1 / cycleTime) end
+	if not self:_waitActionPhase(cycleTrack,cycleTime+(self.PostCycleDelay or self.CycleRestTime or CYCLE_REST_TIME)) then return end
 	self.Cycling = false
 	self:_restoreBaseDeferred()
 end
@@ -317,56 +336,20 @@ function Antimaterial:reload()
 		return
 	end
 
-	local roundsNeeded = math.min(self.Max_Capacity - self.Capacity, reserveAmmo.Value)
-	if roundsNeeded <= 0 then return end
-
-	local animations = self.RegisteredAnimations
-	local startTrack = animations and animations.Reload_Start
-	local loopTrack = animations and animations.Reload_Loop
-	local endTrack = animations and animations.Reload_End
-	local authoredLength = (startTrack and startTrack.Length or 0)
-		+ (loopTrack and loopTrack.Length or 0) * roundsNeeded
-		+ (endTrack and endTrack.Length or 0)
-	local targetDuration = (self.FullReloadTime or STANDARD_FULL_RELOAD_TIME) * (roundsNeeded / self.Max_Capacity)
-	local speed = authoredLength > 0 and authoredLength / math.max(targetDuration, 0.1) or 1
-
-	self.Reloading = true
-	self._reloadCancelled = false
-	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
-	self:_stopAllExcept()
-
-	if startTrack then
-		local track = self:_playAnim("Reload_Start")
-		if track then
-			track:AdjustSpeed(speed)
-			track.Stopped:Wait()
-		end
-	end
-
-	for _ = 1, roundsNeeded do
-		if not self.Equipped or self._reloadCancelled or reserveAmmo.Value <= 0 then break end
-		if loopTrack then
-			local track = self:_playAnim("Reload_Loop")
-			if track then
-				track:AdjustSpeed(speed)
-				track.Stopped:Wait()
-			end
-		else
-			task.wait(targetDuration / math.max(roundsNeeded, 1))
-		end
-		if self._reloadCancelled then break end
-		self.Capacity += 1
-		self:_fire_ammo(1)
-	end
-
-	if self.Equipped and not self._reloadCancelled and endTrack then
-		local track = self:_playAnim("Reload_End")
-		if track then
-			track:AdjustSpeed(speed)
-			track.Stopped:Wait()
-		end
-	end
-
+ local generation=self._equipGeneration
+ self.Reloading=true; self._reloadCancelled=false
+ LOCAL_PLAYER:SetAttribute("CantUnequip",true); self:_stopAllExcept()
+ if self.Capacity<=0 then
+  local bolt=self:_playAnim("Reload_Bolt",false,{speed=1/self.reload_empty})
+  if not self:_waitReloadPhase(bolt,self.reload_empty) then return end
+ end
+ local opening=self:_playAnim("Reload_Start")
+ if not self:_waitReloadPhase(opening,self.reload_start) then return end
+ if not self.Equipped or self._equipGeneration~=generation then return end
+ if not self._reloadCancelled then
+  local amount=math.min(self.Max_Capacity-self.Capacity,reserveAmmo.Value)
+  self.Capacity+=amount; self:_fire_ammo(amount)
+ end
 	self.Reloading = false
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
@@ -425,5 +408,15 @@ Antimaterial.Tool_Image = "rbxthumb://type=Asset&id=118811623120292&w=420&h=420"
 Antimaterial.Medal_Cost = 0
 Antimaterial.Weight = 2
 Antimaterial.Designation = "Primary"
+
+-- Authored mount data from weapon_modules.pugsley (including inherited values).
+Antimaterial.AuthoredWelds = {
+	equipc0 = CFrame.new(0.285194397, -2.18691468, -0.505020142, -3.32235053e-14, -1.41561031e-7, -1, 0.99999994, 4.76835254e-7, -1.00724794e-13, 4.76835282e-7, -1, 1.41561031e-7),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = true,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-0.749019623, 0.855535507, 0.6152668, 0.342020124, 0.939692616, 1.41561031e-7, -0.939692616, 0.342020124, -4.76835282e-7, -4.96495318e-7, 3.00634042e-8, 1),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return Antimaterial

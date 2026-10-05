@@ -1,6 +1,6 @@
 # Project place file
 /-G-D-R-Development-Repository.rbxlx
-
+/sync/ServerScriptService/Whitelist/Webhook.luau
 # Roblox Studio lock files
 /*.rbxlx.lock
 /*.rbxl.lock

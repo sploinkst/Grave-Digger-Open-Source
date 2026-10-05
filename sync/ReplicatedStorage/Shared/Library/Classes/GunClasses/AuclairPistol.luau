@@ -1,5 +1,15 @@
 local AuclairPistol = require(script.Parent.LegacyGunFactory).create({
 	className = "AuclairPistol",
+	AuthoredWelds = {
+		equipc0 = CFrame.new(-0.257659912, -1.43795609, -0.50579834, 0, 0, -1, 0.99999994, 0, 0, 0, -1, 0),
+		equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		lefthand = false,
+		holster_point = "Torso",
+		holsterc0 = CFrame.new(-1.07449341, -0.18704772, -0.313476562, 0.338645965, -0.604027152, 0.721437454, 0.828506589, 0.554849684, 0.0756458044, -0.445981085, 0.572097838, 0.688336194),
+		holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		alt_holsterc0 = CFrame.new(0.0736999512, -0.684338331, -0.582336426, 0.342020154, -0.939692616, 0, 0.939692616, 0.342020154, 0, 0, 0, 1),
+		alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	},
 	assetName = "mares",
 	AnimationGunType = "AuclairPistol",
 	StrictAnimations = true,
@@ -51,6 +61,9 @@ local AuclairPistol = require(script.Parent.LegacyGunFactory).create({
 		reload_empty = 2,
 		reload_loop = 0.95,
 		reload_end = 0,
+		size = 1,
+		wound = 1,
+		length = 4,
 	},
 	bulletSpeed = 800,
 	cycles = true,
@@ -75,7 +88,11 @@ function AuclairPistol:setAltMode()
 	animations.Fire_Left = if self.Alt_Mode then animations.Alt_Changefire_Left or self._auclairNormalFireLeft else self._auclairNormalFireLeft
 	self.FireInterval = 0.7 * (if self.Alt_Mode then 1.1 else 1)
 	self.recoil = if self.Alt_Mode then 12 else 6
-	self.aim_speed = if self.Alt_Mode then 0.13 else 0.2
+	self.aim_speed = if self.Alt_Mode then 0.125 else 0.2
+	self.movement = if self.Alt_Mode then 0.5 else 1
+	self.firing_movement = if self.Alt_Mode then 0.5 else 1
+	self.firing_movement_last = if self.Alt_Mode then 0.25 else 0.5
+	self.Moving_Accuracy = if self.Alt_Mode then 60 else 80
 	self:notify(if self.Alt_Mode then "One-handed handling" else "Two-handed handling")
 	self:_restoreBaseDeferred()
 end

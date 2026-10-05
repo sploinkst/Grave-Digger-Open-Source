@@ -67,6 +67,7 @@ WeaponIds.LegacyToCanonical = {
 	enfield = "JesseRifle",
 	enfieldvariant = "JessePrecisionRifle",
 	lewis = "LewisGun",
+	bulwarkrifle = "LewisGun",
 	mares = "AuclairPistol",
 	mauser = "HonourPistol",
 	mausercarbine = "MauserCarbine",
@@ -74,6 +75,7 @@ WeaponIds.LegacyToCanonical = {
 	mgturret = "MachineGunTurret",
 	machinegunturret = "MachineGunTurret",
 	mondragon = "MondragonRifle",
+	geistrifle = "MondragonRifle",
 	mpgun = "StormRifle",
 	mpistol = "HopePistol",
 	pieper = "KnellRevolver",
@@ -105,19 +107,19 @@ WeaponIds.LegacyToCanonical = {
 	binocs = "Binoculars",
 	binoculars = "Binoculars",
 	conscriptlantern = "ConscriptLantern",
-	firstaid = "FirstAidKit",
-	firstaidkit = "FirstAidKit",
+	firstaid = "Medkit",
+	firstaidkit = "Medkit",
 	flagpole = "Flagpole",
 	hammer = "Hammer",
-	jaegerkit = "JaegerKit",
+	jaegerkit = "HunterKit",
 	lance = "lance",
 	lancerstim = "LancerStim",
 	nebel = "NebelGrenade",
 	nebelgrenade = "NebelGrenade",
 	pick = "Pick",
 	pickaxe = "Pickaxe",
-	stims = "Stimulants",
-	stimulants = "Stimulants",
+	stims = "StimulantCompounds",
+	stimulants = "StimulantCompounds",
 	throwaxe = "ThrowingAxes",
 	throwingaxes = "ThrowingAxes",
 	vanguardshield = "VanguardShield",
@@ -181,6 +183,8 @@ WeaponIds.DisplayNames = {
 }
 
 WeaponIds.PreferredAssetNames = {
+	MachinePistol = "mpgun",
+	OcelotTalonRevolverSecondary = "saa",
 	AdjudicatorRifle = "rsc",
 	AntiMaterialRifle = "pugsley",
 	AuclairPistol = "mares",
@@ -282,6 +286,20 @@ end
 function WeaponIds.AssetName(name: any): string
 	local canonical = WeaponIds.Canonical(name)
 	return WeaponIds.CanonicalToLegacyAsset[canonical] or canonical
+end
+
+-- Variants share models with their base guns but have separate master rules.
+local masterVariants = {
+	CrestfallRangerRifle="levervariant", EquineSawedShotgun="dbgunvariant",
+	HellionHeavyShotgun="autosgvariant", HonourInsurgentPistol="mauservariant",
+	JessePrecisionRifle="enfieldvariant", JudgementIncendiaryRifle="henryvariant",
+	KnellBanditRevolver="piepervariant", NegotiatorLongShotgun="remingtonvariant",
+	TalonCavalryRevolver="saavariant", UnionStockedPistol="steyrvariant",
+	VolkFrontlineRifle="mosinvariant", WhisperFlyboyRifle="springfieldvariant",
+}
+function WeaponIds.MasterSourceName(name: any): string
+	local canonical=WeaponIds.Canonical(name)
+	return masterVariants[canonical] or WeaponIds.AssetName(canonical)
 end
 
 function WeaponIds.Aliases(name: any): { string }

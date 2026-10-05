@@ -2,6 +2,7 @@
 --!native
 --!optimize 2
 
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -17,8 +18,9 @@ local FxFolder = GunAssets.Effects
 
 local stormAnimations = Assets.Animations.Tools.Guns:FindFirstChild("StormRifle")
 	or Assets.Animations.Tools.Guns:FindFirstChild("mpgun")
-local stormSounds = GunAssets.Sounds:FindFirstChild("mpgun") or GunAssets.Sounds:FindFirstChild("StormRifle")
-local SoundFolder = stormSounds or GunAssets.Sounds.mpgun
+local stormSounds = Assets.Sounds.Guns:FindFirstChild("StormRifle")
+	or Assets.Sounds.Guns:FindFirstChild("mpgun") or Assets.Sounds.Guns:FindFirstChild("StormRifle")
+local SoundFolder = stormSounds or Assets.Sounds.Guns.mpgun
 
 local FIRE_INTERVAL = 0.12
 local BULLET_SPEED = 800
@@ -208,7 +210,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	self.BulletSpeed = WEAPON_STATS.bullet_speed
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
-	self.Short_Distance = 3.5
+	self.Short_Distance = 4
 	self.Melee_Distance = WEAPON_STATS.melee_range
 	self.Melee_Damage = WEAPON_STATS.melee_damage
 	self.Accuracy = WEAPON_STATS.accuracy
@@ -301,6 +303,7 @@ function Crestfall:reload()
 		return
 	end
 
+	local generation = self._equipGeneration
 	self.Reloading = true
 	self._reloadCancelled = false
 	LOCAL_PLAYER:SetAttribute("CantUnequip", true)
@@ -314,13 +317,15 @@ function Crestfall:reload()
 		and eliteKit.Value == classValue.Value
 	if self.Capacity <= 0 and self.RegisteredAnimations and self.RegisteredAnimations.Cycle then
 		local boltTrack = self:_playAnim("Cycle")
-		if boltTrack then boltTrack.Stopped:Wait() end
+		if not self:_waitReloadPhase(boltTrack,self.reload_empty) then return end
+		if not self.Equipped or self._equipGeneration ~= generation then return end
 	end
 	local reloadName = if eliteSoldat and self.RegisteredAnimations and self.RegisteredAnimations.Reload_Start_Soldat
 		then "Reload_Start_Soldat"
 		else "Reload_Start"
 	local reloadTrack = self:_playAnim(reloadName)
-	if reloadTrack then reloadTrack.Stopped:Wait() end
+	if not self:_waitReloadPhase(reloadTrack,self.reload_start) then return end
+	if not self.Equipped or self._equipGeneration ~= generation then return end
 
 	if self.Equipped and not self._reloadCancelled then
 		local ammoNeeded = math.min(self.Max_Capacity - self.Capacity, reserveAmmo.Value)
@@ -430,5 +435,17 @@ Crestfall.ammo_give = WEAPON_STATS.ammo_give
 Crestfall.ammo_reserves = WEAPON_STATS.ammo_reserves
 Crestfall.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
 Crestfall.pen = WEAPON_STATS.pen
+
+-- Authored mount data from weapon_modules.mpgun (including inherited values).
+Crestfall.AuthoredWelds = {
+	equipc0 = CFrame.new(-0.266601562, -1.29742551, -0.465759277, -5.68434189e-14, -2.95329523e-14, -1, 0.99999994, -5.55623014e-16, 5.68434155e-14, 5.5562312e-16, -0.999999881, -2.95329557e-14),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = false,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(0.428756714, -0.00153756142, 0.563869476, 0.487990797, -0.662724197, 0.568031669, 0.872847557, 0.370578408, -0.317500949, -0.0000846743642, 0.650742352, 0.759297907),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(0.428756714, -0.00153756142, 0.563869476, 0.487990797, -0.662724197, 0.568031669, 0.872847557, 0.370578408, -0.317500949, -0.0000846743642, 0.650742352, 0.759297907),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return Crestfall

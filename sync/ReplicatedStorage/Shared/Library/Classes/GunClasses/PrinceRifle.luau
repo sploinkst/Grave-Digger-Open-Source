@@ -18,7 +18,7 @@ local LOCAL_PLAYER = Players.LocalPlayer
 -- // Assets
 
 local Assets        = ReplicatedStorage.Shared.Assets
-local SoundFolder   = Assets.Guns:WaitForChild("Sounds"):WaitForChild("PrinceRifle")
+local SoundFolder   = Assets:WaitForChild("Sounds"):WaitForChild("Guns"):WaitForChild("PrinceRifle")
 local HolsterFolder = Assets.Guns.Holsters
 local ToolFolder    = Assets.Guns.ToolModels
 local AnimFolder    = Assets.Animations.Tools.Guns.PrinceRifle
@@ -202,7 +202,7 @@ local FIREARM_CONFIG = {
 	FireSound = fire_sound,
 	Can_Drop = true,
 	SoundFolder = SoundFolder,
-	Short_Distance = 3.5,
+	Short_Distance = 4,
 	Melee_Distance = 5,
 	Melee_Damage = 80,
 	Accuracy = 6,
@@ -306,7 +306,8 @@ end
 
 -- // Actions
 function PrinceRifle:setAltMode()
-	if self:_isBusy() then return end
+	if not self.Equipped or self:_isBusy() then return end
+	local equipGeneration = self._equipGeneration
 	self.Alting = true
 	self:_stopAllExcept()
 	local shouldCycle = false
@@ -314,6 +315,7 @@ function PrinceRifle:setAltMode()
 	if self.Alt_Mode then
 		local track = self:_playAnim("Alt_Mode_On")
 		if track then track.Stopped:Wait() end
+		if not self.Equipped or self._equipGeneration ~= equipGeneration then return end
 		self.Alt_Mode = false
 		-- Single Fire uses a separately hand-loaded round, never the internal
 		-- magazine. Require the player to load that first round with R.
@@ -322,6 +324,7 @@ function PrinceRifle:setAltMode()
 	else
 		local track = self:_playAnim("Alt_Mode_Off")
 		if track then track.Stopped:Wait() end
+		if not self.Equipped or self._equipGeneration ~= equipGeneration then return end
 		self.Alt_Mode = true
 		self:notify("Firemode: Repeating Fire")
 		shouldCycle = not self.Cycled
@@ -345,6 +348,7 @@ function PrinceRifle:_getMeleeAnimationName(index: number): string
 end
 
 function PrinceRifle:fire()
+	local equipGeneration = self._equipGeneration
 	if self.Checking then return end
 	if self.CantFire then return end
 
@@ -355,13 +359,14 @@ function PrinceRifle:fire()
 		soundPitchVariation = self.Alt_Mode and 0.5 or nil,
 		fireDelay = if self.Alt_Mode then 0 else (self.FireInterval or self.fire_rate),
 	})
-	if not fired then return end
+	if not fired or not self.Equipped or self._equipGeneration ~= equipGeneration then return end
 
 	self.Cycled = false
 	if self.Alt_Mode then self:_cycleAction() end
 
 	self.CantFire = true
 	task.delay(self.PostCycleDelay or self.cycle_rest or CYCLE_REST_TIME, function()
+		if self._equipGeneration ~= equipGeneration then return end
 		self.CantFire = false
 	end)
 end
@@ -372,7 +377,8 @@ function PrinceRifle:_magazineAnimation(name: string): string
 end
 
 function PrinceRifle:_autoCycle()
-	if self.Cycling then return end
+	if not self.Equipped or self.Cycling then return end
+	local equipGeneration = self._equipGeneration
 
 	self:_withUnequipLock(function()
 		self.Cycling = true
@@ -387,6 +393,7 @@ function PrinceRifle:_autoCycle()
 		local reloadName = self.Capacity > 0 and "Reload_Alt_Extra" or "Reload_Alt"
 		local reloadTrack = self:_playAnim(reloadName)
 		if reloadTrack then reloadTrack.Stopped:Wait() end
+		if not self.Equipped or self._equipGeneration ~= equipGeneration then return end
 
 		if self:_hasReserveAmmo() then
 			-- The hand-loaded round is paid for directly from reserve ammo. It is
@@ -402,7 +409,7 @@ end
 
 function PrinceRifle:reload()
 	if not self.Equipped then return end
-	if self.Reloading or self.Equipping then return end
+	if self.Reloading or self.Equipping or self.Firing or self.Cycling then return end
 	if self.Alt_Mode and self.Capacity >= self.Max_Capacity then return end
 	if not self.Alt_Mode and self.Cycled then return end
 	if not self:_hasReserveAmmo() then
@@ -419,7 +426,6 @@ function PrinceRifle:reload()
 			endAnim = "Reload_End",
 			stopAfterLoop = function(controller)
 				if controller._ToCancelReload then
-					controller.Capacity += 1
 					return true
 				end
 				return false
@@ -475,6 +481,7 @@ function PrinceRifle:_on_unequip()
 	self.Aiming    = false
 	-- Re-equipping in Single Fire must not grant an unaccounted free round.
 	self.Cycled    = self.Alt_Mode
+	self.CantFire  = false
 	self.Firing    = false
 	self.Cycling   = false
 	self.Reloading = false
@@ -512,5 +519,20 @@ PrinceRifle.ammo_give = FIREARM_CONFIG.ammo_give
 PrinceRifle.ammo_reserves = FIREARM_CONFIG.ammo_reserves
 PrinceRifle.ammo_reserves_max = FIREARM_CONFIG.ammo_reserves_max
 PrinceRifle.pen = FIREARM_CONFIG.pen
+
+-- Authored mount data from weapon_modules.lebel (including inherited values).
+-- This authored model uses PrinceRifle_Middle rather than the legacy hitbox.
+-- Its constructor defines the matching hand mount and internal joints.
+PrinceRifle.UseNativeEquipMount = true
+PrinceRifle.AuthoredWelds = {
+	equipc0 = CFrame.new(0.253814697, -1.70311737, -0.565979004, -0.0170763358, -0.000915539567, -0.99985379, 0.99842006, 0.0535294637, -0.0171008594, 0.0535372309, -0.998565853, -4.00225453e-9),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = true,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-0.843444824, -0.160831451, 0.563819885, -0.0857552588, 0.996316195, -2.14072588e-6, -0.996316195, -0.0857552588, 6.89330363e-6, 6.68433131e-6, 2.72397665e-6, 1),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(-0.0671386719, 0.0569257736, 0.563720703, -0.085755609, -0.996316195, 1.70646985e-7, -0.996320546, 0.0857559666, 8.59710667e-7, -2.90349675e-7, -2.8889346e-7, -1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return PrinceRifle

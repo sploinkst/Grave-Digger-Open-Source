@@ -6,6 +6,12 @@ local StatusFolder = game.ReplicatedStorage.Shared.Library.Classes.StatusClasses
 local StatusTable = {}
 local ExpirationTokens = {}
 
+local function notifyMorale(player, status)
+	if status ~= "MoraleStatus" then return end
+	local event = game.ReplicatedStorage.Shared.Library.Events:FindFirstChild("Presentation")
+	if event then event:FireClient(player, "morale", {}) end
+end
+
 function StatusService.GiveStatus(player, status, ...)
 	local args = { ... }
 	print("Giving status:", player.Name, status, args)
@@ -37,20 +43,22 @@ function StatusService.GiveStatus(player, status, ...)
 	if existing and status ~= "WoundStatus" then
 		local requestedDuration = args[1]
 		if existing.duration == nil then
+			notifyMorale(player, status)
 			return
 		end
 		if type(requestedDuration) == "number" and type(existing.expiresAt) == "number"
 			and existing.expiresAt - os.clock() >= requestedDuration then
+			notifyMorale(player, status)
 			return
 		end
 	end
-	if existing and not existing._remove_interception then
+	if existing and status ~= "HuntedStatus" and not existing._remove_interception then
 		existing:un_apply(player)
 	end
 	StatusTable[player][status] = nil
 	ExpirationTokens[player][status] = nil
 
-	local statusInstance = statusModule.new()
+	local statusInstance = if status == "HuntedStatus" and existing then existing else statusModule.new()
 	statusInstance:apply(player, ...)
 	if not statusInstance:is_applied(player) then
 		if next(StatusTable[player]) == nil then
@@ -63,6 +71,7 @@ function StatusService.GiveStatus(player, status, ...)
 	-- // Initialize player table if needed
 	-- // Store by status name
 	StatusTable[player][status] = statusInstance
+	notifyMorale(player, status)
 
 	local duration = statusInstance.duration
 	if type(duration) == "number" and duration > 0 then
@@ -78,7 +87,7 @@ function StatusService.GiveStatus(player, status, ...)
 	print("StatusService: Status applied:", status)
 end
 
-function StatusService.RemoveStatus(player, status)
+function StatusService.RemoveStatus(player, status, ...)
 	print("Removing status:", player.Name, status)
 
 	local statusModuleScript = StatusFolder:FindFirstChild(status)
@@ -99,7 +108,7 @@ function StatusService.RemoveStatus(player, status)
 		return
 	end
 
-	statusInstance:un_apply(player)
+	statusInstance:un_apply(player, ...)
 	if ExpirationTokens[player] then
 		ExpirationTokens[player][status] = nil
 	end

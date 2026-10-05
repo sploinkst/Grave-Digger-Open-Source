@@ -148,7 +148,9 @@ local function load_animations()
 			or animation.Name == "Sprinting_Full"
 
 		-- PRIORITIES
-		if animation.Name == "Climb" then
+		if string.find(animation.Name, "Sprint", 1, true) then
+			track.Priority = Enum.AnimationPriority.Core
+		elseif animation.Name == "Climb" then
 			track.Priority = Enum.AnimationPriority.Action
 		elseif is_leg_locomotion then
 			track.Priority = Enum.AnimationPriority.Action4
@@ -284,13 +286,11 @@ local function is_aiming()
 end
 
 local function sprint_arms_overlay()
-	if character:GetAttribute("Sprint_Animation") then
-		return tostring(
-			character:GetAttribute("Sprint_Animation")
-		) .. "_Sprint"
-	else
-		return "Sprint_Arms"
-	end
+	local weapon = character:GetAttribute("Sprint_Animation")
+	local name = weapon and tostring(weapon) .. "_Sprint"
+	-- Most gun clips are owned by BaseTool, not loaded in this Animator list.
+	-- Fall back instead of silently requesting a nonexistent character track.
+	return name and loaded_animations[name] and name or "Sprint_Arms"
 end
 
 local function get_walk_animation()
@@ -686,39 +686,39 @@ local function update_movement(speed: number)
 				sprint_playback
 			)
 
-			if not character:GetAttribute(
-				"No_Sprint_Animation"
-				) then
 
-				play_overlay(
-					sprint_arms_overlay(),
-					0.1,
-					sprint_playback,
-					1
-				)
-
-				local arms = active_overlays[sprint_arms_overlay()]
-				if arms and active_base then
-					-- The full sprint owns the torso bob. Starting the arm cycle at
-					-- the same frame keeps the shoulders attached to that motion.
-					arms.TimePosition = active_base.TimePosition
-				end
-
-				playing_sprint_arms = true
-			end
 		end
 
 		if active_base then
 			active_base:AdjustSpeed(sprint_playback)
 		end
-		if playing_sprint_arms then
-			local arms = active_overlays[sprint_arms_overlay()]
+		-- Re-evaluate while running: equipping a gun or finishing an action can
+		-- change who owns the shoulders without restarting the leg animation.
+		local name = sprint_arms_overlay()
+		if character:GetAttribute("No_Sprint_Animation") then
+			clear_sprint_overlays(0.1)
+		else
+			for other in active_overlays do
+				if other ~= name and (other == "Sprint_Arms" or string.find(other, "_Sprint")) then
+					stop_overlay(other, 0.1)
+				end
+			end
+			play_overlay(name, 0.1, sprint_playback, 1)
+			local arms = active_overlays[name]
 			if arms then arms:AdjustSpeed(sprint_playback) end
+			playing_sprint_arms = arms ~= nil
 		end
 
 		return
 	end
 
+end
+
+for _, attribute in {"Sprinting", "No_Sprint_Animation", "Sprint_Animation"} do
+	character:GetAttributeChangedSignal(attribute):Connect(function()
+		local velocity = humanoid_root_part.AssemblyLinearVelocity
+		update_movement(Vector3.new(velocity.X, 0, velocity.Z).Magnitude)
+	end)
 end
 
 -- // (Input)
@@ -835,7 +835,7 @@ local_player:GetAttributeChangedSignal("Flinch"):Connect(function()
 			"Miss_Flinch" .. math.random(1, 4),
 			0,
 			2,
-			0.05
+			0.05 * (character:GetAttribute("ChemicalRecoilMultiplier") or 1)
 		)
 
 		print("FLINCHING")

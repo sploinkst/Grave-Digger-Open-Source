@@ -163,23 +163,23 @@ local function RetrieveRestores()
 	return restoreTable
 end
 
-local function LoadProfile(player: Player)
+local function InitializeProfile(player: Player)
 	local profileKey = "Player_" .. player.UserId
 
-	local profile = PlayerStoreKey:LoadProfileAsync(profileKey)
+	local profile = PlayerStoreKey:LoadProfileAsync(profileKey, function()
+		return if player.Parent == PlayersService then "ForceLoad" else "Cancel"
+	end)
 
 	if not profile then
-		player:Kick("Failed to load data. Please rejoin.")
+		player:Kick(" Data failed to load. ")
 		return
 	end
 
-	profile:AddUserId(player.UserId)
-	profile:Reconcile()
-
 	profile:ListenToRelease(function()
 		activeProfiles[player] = nil
+		player:SetAttribute("PlayerDataReady", nil)
 
-		if player and player.Parent then
+		if player.Parent and not (Module._internal_releasing and Module._internal_releasing[player]) then
 			player:Kick("Data loaded on another server.")
 		end
 	end)
@@ -191,13 +191,11 @@ local function LoadProfile(player: Player)
 	end
 
 	activeProfiles[player] = profile
+	profile:AddUserId(player.UserId)
+	profile:Reconcile()
 
 	UtilitiesModule.visualize_table(player, profile.Data)
 	UpdateTableData(player)
-	-- PlayerData and every reconciled value now exist and are replicated. The
-	-- client bootstrap uses this separately from PlayerService's UI readiness.
-	player:SetAttribute("PlayerDataReady", true)
-
 	local restores = RetrieveRestores()
 	if typeof(restores) == "table" then
 		local index = table.find(restores, player.UserId)
@@ -206,6 +204,26 @@ local function LoadProfile(player: Player)
 			table.remove(restores, index)
 			DatastoreModule.data_push("restores", restores, "main", true)
 			print("RestoreServer: restored player data for", player.Name)
+		end
+	end
+	-- Publish readiness only after every load step, including restores, succeeds.
+	if player.Parent == PlayersService and profile:IsActive() then
+		player:SetAttribute("PlayerDataReady", true)
+	end
+end
+
+local function LoadProfile(player: Player)
+	player:SetAttribute("PlayerDataReady", nil)
+	local success, err = pcall(InitializeProfile, player)
+	if not success then
+		warn("[DataService] Failed to load data for", player.Name, err)
+		if player.Parent == PlayersService then
+			player:Kick(" Data failed to load. ")
+		end
+		local profile = activeProfiles[player]
+		if profile then
+			activeProfiles[player] = nil
+			profile:Release()
 		end
 	end
 end
@@ -300,6 +318,7 @@ function Module.WipePlayerData(player: Player, wipeType)
 	-- // Safely release profile
 	profile:Release()
 	activeProfiles[player] = nil
+	releasingForWipe[player] = nil
 
 	-- // Destroy old PlayerData instance
 	local playerData = player:FindFirstChild("PlayerData")

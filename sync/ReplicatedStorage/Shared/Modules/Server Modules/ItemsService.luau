@@ -137,6 +137,7 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 		name = item,
 		player = player,
     })
+	if object._applyWeaponWelds then object:_applyWeaponWelds() end
 	if inventory_designation then
 		object.Designation = inventory_designation
 	end
@@ -181,6 +182,7 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 	weaponValue("StringValue", "model", object.model_reference and object.model_reference.Name or object.name)
 	weaponValue("StringValue", "slot", object.Designation or "")
 	weaponValue("StringValue", "weapon", class_item)
+	if object.Starting_Grenades then weaponValue("NumberValue", "Grenades", object.Starting_Grenades) end
 	local weaponEvent = Instance.new("RemoteEvent")
 	weaponEvent.Name = "event"
 	weaponEvent.Parent = tool
@@ -260,10 +262,20 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 	-- Models can be equipped even when a weapon does not have a separate holster model.
 	if object.holster_reference or object.model_reference then
 		local string_value
-		if object.holster_reference then
+		local holsterReference = object.holster_reference or (object.AuthoredWelds and object.model_reference)
+		if holsterReference then
 			print("Has Holster", object)
 			string_value = Instance.new("BoolValue")
-			string_value.Name = object.holster_reference.Name
+			string_value.Name = holsterReference.Name
+			string_value:SetAttribute("FromToolModel", object.holster_reference == nil)
+			if object.AuthoredWelds then
+				string_value:SetAttribute("HolsterPoint", object.holster_point)
+				string_value:SetAttribute("HolsterC0", object.holsterc0)
+				string_value:SetAttribute("HolsterC1", object.holsterc1)
+				string_value:SetAttribute("AltHolsterC0", object.alt_holsterc0)
+				string_value:SetAttribute("AltHolsterC1", object.alt_holsterc1)
+				string_value:SetAttribute("UseAltHolster", object.className == "OcelotTalonRevolverSecondary")
+			end
 			string_value.Parent = player.GameData.Accessorys.Holsters
 			string_value.Value = true
 		end
@@ -279,6 +291,7 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 				local clone = object.model_reference:Clone()
 				clone.Parent = player.Character.CharacterData.Equipment
 				object.actual_model = clone
+				if tool.Name=="shield" then require(script.Parent.DeployedShieldService).RestoreSegments(tool,clone) end
 				print("[MODEL REFERENCE] cloned!")
 
 
@@ -322,7 +335,7 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 				local authoredC0, authoredC1
 				if object.AnimationDrivenGrip then
 					part0, authoredC0, authoredC1 = animatedMount(object, character, clone, part1)
-				elseif object.UseAuthoredGrip then
+				elseif object.UseAuthoredGrip and not object.AuthoredWelds and not object.EquipWelds then
 					authoredC0, authoredC1 = authoredGrip(clone, part1)
 				end
 				if not part0 then clone:Destroy(); return end

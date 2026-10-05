@@ -21,16 +21,15 @@ local function animation(folder: Instance?, name: string): Animation?
 	return if found and found:IsA("Animation") then found else nil
 end
 
-local whisperSounds = GunAssets.Sounds:FindFirstChild("springfield")
-		or GunAssets.Sounds:FindFirstChild("Springfield")
-		or GunAssets.Sounds:FindFirstChild("WhisperRifle")
-		or GunAssets.Sounds:FindFirstChild("Whisper")
-		or GunAssets.Sounds.PrinceRifle
+local whisperSounds = Assets.Sounds.Guns:FindFirstChild("WhisperRifle")
+	or Assets.Sounds.Guns:FindFirstChild("springfield")
+		or Assets.Sounds.Guns:FindFirstChild("Springfield")
+		or Assets.Sounds.Guns:FindFirstChild("WhisperRifle")
+		or Assets.Sounds.Guns:FindFirstChild("Whisper")
+		or Assets.Sounds.Guns.PrinceRifle
 
-local PEDERSEN_FIRE_INTERVAL = 60 / 186
+local PEDERSEN_FIRE_INTERVAL = 0.333
 local BOLT_FIRE_INTERVAL = 0.3
-local PEDERSEN_SWITCH_TIME = 7
-local PEDERSEN_RELOAD_TIME = 5
 local PEDERSEN_JAM_CLEAR_TIME = 1
 local WEAPON_STATS = {
 	name = "'Whisper' Silenced Rifle",
@@ -45,7 +44,7 @@ local WEAPON_STATS = {
 	melee_damage = 80,
 	melee_swing_speed = 0.7,
 	melee_range = 5,
-	pen = 2,
+	pen = 3,
 	armor_pen = 3,
 	accuracy = 6,
 	moving_accuracy = 100,
@@ -67,6 +66,12 @@ local WEAPON_STATS = {
 	reload_empty = 1.75,
 	reload_loop = 0.65,
 	reload_end = 0.75,
+	size = 2,
+	wallpen_distance = 50,
+	wallpen_studs = 3,
+	wound = 1,
+	length = 5.5,
+	reload_full = 1.5,
 }
 
 local ANIM_LAYERS: { [string]: number } = {
@@ -212,7 +217,7 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 	-- starts empty and must be replenished separately.
 	self.PedersenCapacity = 40
 	self.PedersenMaxCapacity = self.IsVeteran and 41 or 40
-	self.ShotsUntilJam = math.random(7, 15)
+	self.ShotsUntilJam = math.random(7, 18)
 	self.Jammed = false
 	self.Alting = false
 
@@ -295,29 +300,8 @@ function WhisperRifle:endAiming()
 end
 
 function WhisperRifle:_playTimedAction(name: string, duration: number): boolean
-	local track = self:_playAnim(name)
-	if not track then
-		task.wait(duration)
-		return false
-	end
-
-	local loadDeadline = os.clock() + 0.25
-	while track.Length <= 0 and os.clock() < loadDeadline and self.Equipped do
-		RunService.Heartbeat:Wait()
-	end
-	if track.Length > 0 then
-		track:AdjustSpeed(track.Length / math.max(duration, 0.01))
-	end
-
-	local finished = false
-	local stoppedConnection = track.Stopped:Once(function() finished = true end)
-	local deadline = os.clock() + duration + 0.25
-	while not finished and self.Equipped and os.clock() < deadline do
-		RunService.Heartbeat:Wait()
-	end
-	stoppedConnection:Disconnect()
-	if track.IsPlaying then track:Stop(0.05) end
-	return self.Equipped
+ local track=self.RegisteredAnimations and self.RegisteredAnimations[name] and self:_playAnim(name)
+ return self:_waitActionPhase(track,duration)
 end
 
 function WhisperRifle:setAltMode()
@@ -325,15 +309,16 @@ function WhisperRifle:setAltMode()
 	if self.Aiming then self:endAiming() end
 
 	self.Alting = true
+	local generation=self._equipGeneration
 	self:_stopAllExcept()
 	local switchSequence = if self.PedersenMode
 		then { "Pedersen_Mag_Out", "Pedersen_Device_Off", "Pedersen_Bolt_Place", "Cycle_Pedersen" }
 		else { "Pedersen_Bolt_Remove", "Pedersen_Device_On", "Pedersen_Mag_In", "Pedersen_Charge" }
 	for _, animationName in switchSequence do
-		if not self:_playTimedAction(animationName, PEDERSEN_SWITCH_TIME / #switchSequence) then break end
+		if not self:_playTimedAction(animationName, (animationName=="Pedersen_Charge" or animationName=="Cycle_Pedersen") and 1 or 2) then return end
 	end
 
-	if self.Equipped then
+	if self.Equipped and self._equipGeneration==generation then
 		self.PedersenMode = not self.PedersenMode
 		if self.PedersenMode then
 			self._BoltCapacity = self.Capacity
@@ -349,7 +334,7 @@ function WhisperRifle:setAltMode()
 			self.Capacity = self._BoltCapacity or 5
 			self.Max_Capacity = 5
 			self.Ammo_Type = ".30-06 Ball"
-			self.Penetration_Level = 2
+			self.Penetration_Level = WEAPON_STATS.pen
 			self.Armor_Penetration_Level = 3
 			self.FireInterval = BOLT_FIRE_INTERVAL
 			self.recoil = WEAPON_STATS.recoil
@@ -370,7 +355,7 @@ function WhisperRifle:fire()
 		self:notify("Clearing jam...")
 		self:_playTimedAction("Pedersen_Jam", PEDERSEN_JAM_CLEAR_TIME)
 		self.Jammed = false
-		self.ShotsUntilJam = math.random(7, 15)
+		self.ShotsUntilJam = math.random(7, 18)
 		self.Cycling = false
 		return
 	end
@@ -407,7 +392,7 @@ function WhisperRifle:fire()
 			local cycleSound = whisperSounds:FindFirstChild("cycle") or whisperSounds:FindFirstChild("bolt")
 			local muzzle = self:_getMuzzlePart()
 			if cycleSound and cycleSound:IsA("Sound") and muzzle then self:_play_sfx(cycleSound, muzzle) end
-			if cycleTrack then cycleTrack.Stopped:Wait() end
+			if not self:_waitActionPhase(cycleTrack,self:_cycleDuration()) then return end
 		end
 		task.wait(self.cycle_rest or 0)
 		self.Cycling = false
@@ -417,7 +402,8 @@ end
 
 function WhisperRifle:reload()
 	if not self.PedersenMode then
-		if self.IsVeteran and self.Capacity <= 1 then
+		local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
+		if self.IsVeteran and self.Capacity <= 1 and reserve and reserve.Value >= self.Max_Capacity then
 			self:_reloadByRound({
 				startAnim = self.Capacity <= 0 and "Reload_Clip_Start_Empty" or "Reload_Clip_Start_One",
 				useEmptyAnim = false,
@@ -438,6 +424,7 @@ function WhisperRifle:reload()
 	end
 	if self.Reloading or self.Capacity >= self.Max_Capacity or reserve.Value <= 0 then return end
 
+	local equipGeneration = self._equipGeneration
 	self.Reloading = true
 	self:_stopAllExcept()
 	local wasEmpty = self.Capacity <= 0
@@ -447,8 +434,9 @@ function WhisperRifle:reload()
 	}
 	if wasEmpty then table.insert(sequence, "Pedersen_Charge") end
 	for _, animationName in sequence do
-		if not self:_playTimedAction(animationName, PEDERSEN_RELOAD_TIME / #sequence) then break end
+		if not self:_playTimedAction(animationName, animationName=="Pedersen_Charge" and 1 or 2) then break end
 	end
+	if not self.Equipped or self._equipGeneration ~= equipGeneration then return end
 	if self.Equipped then
 		local loaded = math.min(self.Max_Capacity - self.Capacity, reserve.Value)
 		self.Capacity += loaded
@@ -490,5 +478,17 @@ WhisperRifle.ammo_give = WEAPON_STATS.ammo_give
 WhisperRifle.ammo_reserves = WEAPON_STATS.ammo_reserves
 WhisperRifle.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
 WhisperRifle.pen = WEAPON_STATS.pen
+
+-- Authored mount data from weapon_modules.springfield (including inherited values).
+WhisperRifle.AuthoredWelds = {
+	equipc0 = CFrame.new(0.253814697, -1.70311737, -0.565979004, -0.0170763358, -0.000915539567, -0.99985379, 0.99842006, 0.0535294637, -0.0171008594, 0.0535372309, -0.998565853, -4.00225453e-9),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = true,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-0.843444824, -0.160831451, 0.563819885, -0.0857552588, 0.996316195, -2.14072588e-6, -0.996316195, -0.0857552588, 6.89330363e-6, 6.68433131e-6, 2.72397665e-6, 1),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(-0.0671386719, 0.0569257736, 0.563720703, -0.085755609, -0.996316195, 1.70646985e-7, -0.996320546, 0.0857559666, 8.59710667e-7, -2.90349675e-7, -2.8889346e-7, -1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return WhisperRifle

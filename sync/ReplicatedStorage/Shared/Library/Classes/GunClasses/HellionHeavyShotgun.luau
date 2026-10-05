@@ -1,5 +1,15 @@
-return require(script.Parent.LegacyGunFactory).create({
+local HellionHeavyShotgun = require(script.Parent.LegacyGunFactory).create({
 	className = "HellionHeavyShotgun",
+	AuthoredWelds = {
+		equipc0 = CFrame.new(0.253814697, -1.70311737, -0.565979004, -0.0170763358, -0.000915539567, -0.99985379, 0.99842006, 0.0535294637, -0.0171008594, 0.0535372309, -0.998565853, -4.00225453e-9),
+		equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		lefthand = true,
+		holster_point = "Torso",
+		holsterc0 = CFrame.new(-0.950378418, 0.100975513, 0.597045898, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+		holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		alt_holsterc0 = CFrame.new(-0.00793457031, 0.0137820244, 0.597045898, 0, -1, 0, -1, 0, 0, 0, 0, -1),
+		alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	},
 	assetName = "autosg",
 	AnimationGunType = "HellionShotgun",
 	WeaponCategory = "Shotgun",
@@ -27,6 +37,31 @@ return require(script.Parent.LegacyGunFactory).create({
 		ammo_reserves_max = 2,
 		capacity = 5,
 		chamber = false,
+		size = 2,
+		melee_damage = 80,
+		melee_swing_speed = 0.7,
+		melee_range = 5,
+		wallpen_distance = 40,
+		wallpen_studs = 3,
+		cycle = 0,
+		cycle_rest = 0,
+		draw_speed = 1,
+		wound = 1,
+		length = 4.5,
+		movement = 4,
+		firing_movement = 3,
+		firing_movement_last = 0.75,
+		reload_start = 0.75,
+		reload_empty = 2,
+		reload_loop = 1,
+		reload_end = 0,
 	},
 	bulletSpeed = 750,
 })
+
+-- Central ball and four outer pellets, all within the displayed firing zone.
+function HellionHeavyShotgun:get_pellet_offsets(): { Vector2 }
+	return { Vector2.zero, Vector2.new(-1, 0), Vector2.new(1, 0), Vector2.new(0, -1), Vector2.new(0, 1) }
+end
+
+return HellionHeavyShotgun

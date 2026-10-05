@@ -12,6 +12,87 @@ if not remote then
 end
 local states = setmetatable({}, {__mode = "k"})
 
+local function stopFlame(state)
+	state.flameGeneration = (state.flameGeneration or 0) + 1
+	if state.flameEmitter then state.flameEmitter.Enabled = false end
+	state.flameTool = nil
+end
+
+local function startFlame(player, character, state)
+	local tool = character:FindFirstChild("WexFlamethrower") or character:FindFirstChild("Flamethrower")
+	if not tool or not tool:IsA("Tool") or state.flameTool or character:GetAttribute("ActionBlocked")
+		or character:GetAttribute("DamageDealingBlocked") then return end
+	if tool:GetAttribute("FlamerFuel") == nil then tool:SetAttribute("FlamerFuel", 900) end
+	if tool:GetAttribute("FlamerFuel") <= 0 then return end
+	state.flameTool = tool
+	state.flameGeneration = (state.flameGeneration or 0) + 1
+	local generation = state.flameGeneration
+	task.spawn(function()
+		if state.flameGeneration ~= generation then return end
+		local modelName = tool:FindFirstChild("model")
+		local data = character:FindFirstChild("CharacterData")
+		local equipment = data and data:FindFirstChild("Equipment")
+		local model = equipment and modelName and equipment:FindFirstChild(modelName.Value)
+		local hitbox = model and model:FindFirstChild("firehitbox", true)
+		local muzzle = model and model:FindFirstChild("muzzle", true)
+		if muzzle and muzzle:IsA("BasePart") then
+			local emitter = muzzle:FindFirstChild("FlameSpray")
+			if not emitter then
+				emitter = Instance.new("ParticleEmitter")
+				emitter.Name = "FlameSpray"
+				emitter.Texture = "rbxasset://textures/particles/fire_main.dds"
+				emitter.EmissionDirection = Enum.NormalId.Front
+				emitter.Rate = 150
+				emitter.Speed = NumberRange.new(40, 55)
+				emitter.Lifetime = NumberRange.new(0.2, 0.4)
+				emitter.SpreadAngle = Vector2.new(5, 5)
+				emitter.LightEmission = 1
+				emitter.Parent = muzzle
+			end
+			emitter.Enabled = true
+			state.flameEmitter = emitter
+		end
+		local overlap = OverlapParams.new()
+		overlap.FilterType = Enum.RaycastFilterType.Exclude
+		overlap.FilterDescendantsInstances = { character }
+		while state.flameGeneration == generation and state.flameTool == tool and tool.Parent == character do
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if not humanoid or humanoid.Health <= 0 or character:GetAttribute("CombatStunned")
+				or character:GetAttribute("DamageDealingBlocked") then break end
+			local fuel = tool:GetAttribute("FlamerFuel")
+			if fuel <= 0 then break end
+			tool:SetAttribute("FlamerFuel", fuel - 1)
+			local parts = if hitbox and hitbox:IsA("BasePart") then workspace:GetPartsInPart(hitbox, overlap) else {}
+			local seen = {}
+			for _, part in parts do
+				local target = part:FindFirstAncestorOfClass("Model")
+				local targetPlayer = target and Players:GetPlayerFromCharacter(target)
+				while target and not targetPlayer do
+					target = target.Parent and target.Parent:FindFirstAncestorOfClass("Model")
+					targetPlayer = target and Players:GetPlayerFromCharacter(target)
+				end
+				if targetPlayer and targetPlayer ~= player and targetPlayer.Team ~= player.Team
+					and not seen[target] and not target:GetAttribute("IsDreadnought") then
+					seen[target] = true
+					local root = character:FindFirstChild("HumanoidRootPart")
+					local targetRoot = target:FindFirstChild("HumanoidRootPart")
+					if root and targetRoot and (root.Position - targetRoot.Position).Magnitude <= 40 then
+						local params = RaycastParams.new()
+						params.FilterType = Enum.RaycastFilterType.Exclude
+						params.FilterDescendantsInstances = { character }
+						local obstruction = workspace:Raycast(root.Position, targetRoot.Position - root.Position, params)
+						if not obstruction or obstruction.Instance:IsDescendantOf(target) then
+							require(script.Parent.StatusService).GiveStatus(targetPlayer, "LethalBurningStatus")
+						end
+					end
+				end
+			end
+			task.wait(0.1)
+		end
+		if state.flameGeneration == generation and state.flameTool == tool then stopFlame(state) end
+	end)
+end
+
 local function stateFor(character)
 	local state = states[character]
 	if not state then state = {attack = 0, charge = 0, inspire = 0, axe = 0, axes = Rules.Axes.Count}; states[character] = state end
@@ -134,9 +215,10 @@ local function attack(player, character, state, mode, direction)
 	local shield = mode == "ShieldSwing"
 	local tool = character:FindFirstChild(shield and "shield" or "lance")
 	if not tool or not tool:IsA("Tool") or state.prepared or state.charging or os.clock() < state.attack then return end
-	state.attack = os.clock() + Rules.Lance.Interval
+	local swingSpeed = character:GetAttribute("ChemicalSwingMultiplier") or 1
+	state.attack = os.clock() + Rules.Lance.Interval / swingSpeed
 	if shield then character:SetAttribute("ShieldRaised", false) end
-	task.delay(Rules.Lance.Windup, function()
+	task.delay(Rules.Lance.Windup / swingSpeed, function()
 		if player.Character ~= character or tool.Parent ~= character or not living(character) then return end
 		if mode == "Stab" then stab(player, character, direction) else sweep(player, character, direction, shield) end
 	end)
@@ -144,8 +226,8 @@ end
 
 local function inspire(player, character, state)
 	if not character:FindFirstChild("lance") or state.charging or os.clock() < state.inspire then return end
-	state.inspire = os.clock() + 30
-	character:SetAttribute("InspireReadyAt", workspace:GetServerTimeNow() + 30)
+	state.inspire = os.clock() + 15
+	character:SetAttribute("InspireReadyAt", workspace:GetServerTimeNow() + 15)
 	remote:FireClient(player, "Inspire")
 	local statusService = require(script.Parent.StatusService)
 	local root = character:FindFirstChild("HumanoidRootPart")
@@ -384,7 +466,9 @@ function Service.start_module()
 		local character = player.Character
 		if not living(character) or character:GetAttribute("CombatStunned") then return end
 		local state = stateFor(character)
-		if action == "PrepareAxe" then prepareAxe(character, state)
+		if action == "StopFlame" then stopFlame(state)
+		elseif action == "StartFlame" then startFlame(player, character, state)
+		elseif action == "PrepareAxe" then prepareAxe(character, state)
 		elseif action == "CancelAxe" then
 			state.prepared = nil
 			local held = character:FindFirstChild("PreparedAxe"); if held then held:Destroy() end

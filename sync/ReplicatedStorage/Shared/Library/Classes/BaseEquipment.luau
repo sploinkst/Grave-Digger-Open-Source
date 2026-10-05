@@ -95,6 +95,19 @@ function BaseEquipment:Start(character)
 			or character:GetAttribute("Equipment") ~= self.className
 			or game.Players.LocalPlayer:GetAttribute("MenuOpen") then return end
 		if Pressed then
+			if self.TapTargetHoldDrop then
+				self._holding = true
+				self.Activated = false
+				local token = {}
+				self._holdToken = token
+				task.delay(0.5, function()
+					if not self.Stopped and self._holding and self._holdToken == token then
+						self.Activated = true
+						self:Activate(character, true)
+					end
+				end)
+				return
+			end
 
 			if self.InstantActivate then
 				if self.UnequipHeldToolsOnActivate then self:UnequipHeldTools(character) end
@@ -117,6 +130,13 @@ function BaseEquipment:Start(character)
 				end
 			end)
 		else
+			if self.TapTargetHoldDrop then
+				local wasHolding = self._holding
+				self._holding = false
+				if wasHolding and not self.Activated and self.PlayerTarget then self:Activate(character, false) end
+				self.Activated = false
+				return
+			end
 			HoldingG = false
 			self.Activated = false
 			print("Released G")

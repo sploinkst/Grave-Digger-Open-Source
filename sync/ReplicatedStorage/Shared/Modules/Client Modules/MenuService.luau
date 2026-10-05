@@ -324,7 +324,7 @@ end
 local function start_sub_modules()
 	-- MenuService remains the owner of the menu.  Children only bind behaviour to
 	-- GUI objects which are already present in Library/UI or StarterGui/main.
-	for _, name in {"LoadoutHandler", "SettingsHandler", "PresentationHandler", "CreditsHandler"} do
+	for _, name in {"HoverAudioHandler", "LoadoutHandler", "AppearanceHandler", "SettingsHandler", "PresentationHandler", "CreditsHandler"} do
         local child = script:FindFirstChild(name)
         if child then
             task.spawn(function()

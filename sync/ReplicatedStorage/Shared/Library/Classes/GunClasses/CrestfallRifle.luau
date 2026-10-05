@@ -16,8 +16,9 @@ local ToolFolder = GunAssets.ToolModels
 local FxFolder = GunAssets.Effects
 
 local crestfallAnimations = Assets.Animations.Tools.Guns:FindFirstChild("CrestfallRifle")
-local crestfallSounds = GunAssets.Sounds:FindFirstChild("lever") or GunAssets.Sounds:FindFirstChild("CrestfallRifle")
-local SoundFolder = crestfallSounds or GunAssets.Sounds.CrestfallRifle
+local crestfallSounds = Assets.Sounds.Guns:FindFirstChild("CrestfallRifle")
+	or Assets.Sounds.Guns:FindFirstChild("lever") or Assets.Sounds.Guns:FindFirstChild("CrestfallRifle")
+local SoundFolder = crestfallSounds or Assets.Sounds.Guns.CrestfallRifle
 
 local FIRE_INTERVAL = 60 / 86
 local BULLET_SPEED = 900
@@ -61,6 +62,11 @@ local WEAPON_STATS = {
 	reload_loop = 0.8,
 	reload_end = 0,
 	bullet_speed = BULLET_SPEED,
+	size = 2,
+	wallpen_distance = 50,
+	wallpen_studs = 3,
+	wound = 1,
+	length = 4.75,
 }
 local WALKING_FIRE_STATS = {
 	accuracy = 35,
@@ -218,7 +224,7 @@ function Crestfall.new(info: Types.BaseToolCreateInfo): Crestfall
 	self.BulletSpeed = WEAPON_STATS.bullet_speed
 	self.AmmoCheckPartName = "hitbox"
 	self.Can_Drop = true
-	self.Short_Distance = 3.5
+	self.Short_Distance = 4
 	self.Melee_Distance = WEAPON_STATS.melee_range
 	self.Melee_Damage = WEAPON_STATS.melee_damage
 	self.Accuracy = WEAPON_STATS.accuracy
@@ -471,5 +477,17 @@ Crestfall.ammo_give = WEAPON_STATS.ammo_give
 Crestfall.ammo_reserves = WEAPON_STATS.ammo_reserves
 Crestfall.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
 Crestfall.pen = WEAPON_STATS.pen
+
+-- Authored mount data from weapon_modules.lever (including inherited values).
+Crestfall.AuthoredWelds = {
+	equipc0 = CFrame.new(0.253814697, -1.70311737, -0.565979004, -0.0170763358, -0.000915539567, -0.99985379, 0.99842006, 0.0535294637, -0.0171008594, 0.0535372309, -0.998565853, -4.00225453e-9),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = true,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-0.843444824, -0.160831451, 0.563819885, -0.0857552588, 0.996316195, -2.14072588e-6, -0.996316195, -0.0857552588, 6.89330363e-6, 6.68433131e-6, 2.72397665e-6, 1),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(-0.0671386719, 0.0569257736, 0.563720703, -0.085755609, -0.996316195, 1.70646985e-7, -0.996320546, 0.0857559666, 8.59710667e-7, -2.90349675e-7, -2.8889346e-7, -1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return Crestfall

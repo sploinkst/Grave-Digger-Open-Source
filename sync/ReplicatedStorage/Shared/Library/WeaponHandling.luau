@@ -2,6 +2,7 @@
 -- Explicit membership keeps variants, elite kits and unverified controllers out.
 local WeaponIds = require(script.Parent.WeaponIds)
 local Classes = require(script.Parent.ClassDefinitions)
+local AnimationRules = require(script.Parent.MasterAnimationRules)
 local Handling = {}
 Handling.Baseline = {
 	AdjudicatorRifle = {draw = 0.8, aim = 0.4},
@@ -35,6 +36,7 @@ function Handling.Duration(player: Player, duration: number, kind: string): numb
 	if character then
 		modifier *= character:GetAttribute(kind == "draw" and "OrderDrawMultiplier" or "OrderAimMultiplier") or 1
 		modifier *= character:GetAttribute("RallyHandlingMultiplier") or 1
+		modifier *= character:GetAttribute("ChemicalHandlingMultiplier") or 1
 	end
 	if kind ~= "draw" and character then
 		modifier *= character:GetAttribute("DebuffAimSpeedMultiplier") or 1
@@ -47,6 +49,25 @@ function Handling.Duration(player: Player, duration: number, kind: string): numb
 end
 
 -- Reach 99% of a stationary target over the authored aim duration, independent of FPS.
+function Handling.CycleDuration(player: Player,duration: number,asset: string?): number
+	local character=player.Character
+	if not character then return duration end
+	local legacyClass=character:FindFirstChild("class")
+	local role=string.lower(tostring(legacyClass and legacyClass.Value or character:GetAttribute("Class") or ""))
+	local stuff=workspace:FindFirstChild("serverStuff")
+	local function mode(name)
+		local value=stuff and stuff:FindFirstChild(name)
+		return value and value.Value==true or false
+	end
+	return AnimationRules.CycleDuration(duration,{
+		rally=character:FindFirstChild("vanguardbuff")~=nil or character:GetAttribute("RallyHandlingMultiplier")~=nil,
+		eliteBuff=character:FindFirstChild("buff_elite")~=nil,
+		quickdraw=Classes.HasPerk(player,"Quickdraw") or Classes.HasPerk(player,"quickdraw"),
+		restoration=mode("restorationmode"),training=mode("trainingmode"),conscript=role=="conscript",
+		rookHeavy=asset=="pugsley" and role=="rook",
+	})
+end
+
 function Handling.Alpha(dt: number, duration: number): number
 	return 1 - math.exp(-math.log(100) * math.max(dt, 0) / math.max(duration, 0.001))
 end

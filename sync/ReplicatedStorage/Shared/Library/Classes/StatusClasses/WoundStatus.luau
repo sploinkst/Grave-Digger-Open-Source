@@ -105,14 +105,11 @@ function WoundStatus:_apply(player: Player, ...)
 	)
 end
 
-function WoundStatus:_un_apply(player)
+function WoundStatus:_un_apply(player, wound)
 	local wound_folder 				 = player.Character:FindFirstChild("CharacterData"):FindFirstChild("Wounds")
 	
-	-- // remove first child
-	for _, child in pairs(wound_folder:GetChildren()) do
-			child:Destroy()
-		break
-	end
+	local treated = wound and wound.Parent == wound_folder and wound or wound_folder:GetChildren()[1]
+	if treated then treated:Destroy() end
 	
 	if #wound_folder:GetChildren() == 0 then
 		player:SetAttribute(self.name, nil)

@@ -17,6 +17,8 @@ local BoundKeys = {}   -- [Enum.KeyCode] = {InputName1, InputName2, ...}
 local Hooks = {}       -- [InputName] = {Callbacks}
 
 local InputsLoaded = false
+local keyCodes = {}
+for _, key in Enum.KeyCode:GetEnumItems() do keyCodes[key.Name] = key end
 
 local function WaitForReplicatedChild(parent: Instance, name: string): Instance
 	local child = parent:FindFirstChild(name)
@@ -64,7 +66,7 @@ local function RegisterInputs()
 			continue
 		end
 
-		local keyCode = Enum.KeyCode[currentValue.Value]
+		local keyCode = keyCodes[currentValue.Value]
 
 		if not keyCode and currentValue.Value ~= "None" then
 			continue
@@ -74,7 +76,7 @@ local function RegisterInputs()
 
 		-- Update automatically when the player changes the binding
 		currentValue:GetPropertyChangedSignal("Value"):Connect(function()
-			local newKeyCode = Enum.KeyCode[currentValue.Value]
+			local newKeyCode = keyCodes[currentValue.Value]
 
 			if not newKeyCode and currentValue.Value ~= "None" then
 				return
@@ -130,6 +132,19 @@ function SettingsManager.UnhookInput(inputName: string, callback)
 	if #callbacks == 0 then
 		Hooks[inputName] = nil
 	end
+end
+
+function SettingsManager.IsInputHeld(inputName: string): boolean
+	if Players.LocalPlayer:GetAttribute("RebindingInput") or InputService:GetFocusedTextBox() then return false end
+	local key = Inputs[inputName]
+	if not key then return false end
+	if key.Name:sub(1, 6) == "Button" or key.Name:sub(1, 4) == "DPad" then
+		for _, gamepad in InputService:GetConnectedGamepads() do
+			if InputService:IsGamepadButtonDown(gamepad, key) then return true end
+		end
+		return false
+	end
+	return InputService:IsKeyDown(key)
 end
 
 function SettingsManager.start_module()

@@ -40,7 +40,7 @@ local function health_loop(humanoid)
 			if not regenerationBlocked and humanoid.Health >= 100 and humanoid.Health < humanoid.MaxHealth then
 				if os.clock() - lastDamageTime >= HEALTH_DELAY then
 					humanoid.Health = math.min(
-						humanoid.Health + HEALTH_TICK,
+						humanoid.Health + HEALTH_TICK * (humanoid.Parent:GetAttribute("ChemicalRegenerationMultiplier") or 1),
 						humanoid.MaxHealth
 					)
 				end

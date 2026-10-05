@@ -10,11 +10,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local ClientModules = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Modules"):WaitForChild("Client Modules")
 local SettingsManager = require(ClientModules:WaitForChild("SettingsManager"))
+local GameAudio = require(ReplicatedStorage.Shared.Library.GameAudio)
 
 local Service = {}
 local started = false
 local hudHidden = false
 local characterConnections: { RBXScriptConnection } = {}
+local lastSpawnCharacter: Model? = nil
+local respawnSound: Sound? = nil
 
 local function disconnectCharacterConnections()
 	for _, connection in characterConnections do
@@ -102,6 +105,11 @@ local function applyAutomaticFirstPerson(character: Model)
 end
 
 local function bindCharacter(character: Model)
+	if character ~= lastSpawnCharacter then
+		lastSpawnCharacter = character
+		if respawnSound and respawnSound.Parent then respawnSound:Destroy() end
+		respawnSound = GameAudio.Play("Game", "respawn" .. math.random(1, 3))
+	end
 	disconnectCharacterConnections()
 	resetCharacterHud(character)
 	applyAutomaticFirstPerson(character)

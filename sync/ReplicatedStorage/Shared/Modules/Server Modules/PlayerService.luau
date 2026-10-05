@@ -12,6 +12,7 @@ local UtilModule = require(game:GetService("ReplicatedStorage"):WaitForChild("Sh
 local AccessoryService = require(script.Parent.AccessoryService)
 local ClassService = require(script.Parent.ClassService)
 local ClassAppearance = require(ReplicatedStorage.Shared.Library.ClassAppearance)
+local CosmeticAppearance = require(ReplicatedStorage.Shared.Library.CosmeticAppearance)
 
 local function SetupGameData(player: Player)
 	local playerDataFolder = Instance.new("Folder")
@@ -250,6 +251,7 @@ local function ApplyFullAppearance(character: Model, player: Player)
 	-- failed or throttled avatar lookup cannot leave the character undressed.
 	ApplyUniform(character, player)
 	if player.Character ~= character then return end
+	CosmeticAppearance.Apply(character, CosmeticAppearance.Data(player))
 	character:SetAttribute("AppearanceReady", true)
 
 	local success, avatarDescription = pcall(function()
@@ -271,8 +273,13 @@ local function ApplyFullAppearance(character: Model, player: Player)
 	currentDescription.LeftLegColor = avatarDescription.LeftLegColor
 	currentDescription.RightLegColor = avatarDescription.RightLegColor
 	currentDescription.TorsoColor = avatarDescription.TorsoColor
+	for _, name in {"Head", "LeftArm", "RightArm", "LeftLeg", "RightLeg", "Torso"} do
+		character:SetAttribute("Avatar" .. name .. "Color3", avatarDescription[name .. "Color"])
+	end
 
-	currentDescription.Head = avatarDescription.Head
+	currentDescription.Head = 0
+	currentDescription.Face = 0
+	currentDescription.FaceAccessory = ""
 	-- Player avatar clothing must not compete with the faction uniform.
 	currentDescription.Shirt = 0
 	currentDescription.Pants = 0
@@ -316,32 +323,7 @@ local function ApplyFullAppearance(character: Model, player: Player)
 	task.wait()
 	ApplyUniform(character, player)
 
-	local hair = character:WaitForChild("Hair", 10)
-	if hair then
-		local handle = hair:FindFirstChildWhichIsA("MeshPart") or hair:FindFirstChildWhichIsA("Part")
-		if handle then
-			local mesh: SpecialMesh = handle:FindFirstChildWhichIsA("SpecialMesh") or handle:FindFirstChildWhichIsA("MeshPart")
-			if mesh then
-				mesh.TextureId = ""
-			end
-			handle.Material = Enum.Material.Sand
-			handle.BrickColor = BrickColor.new("Brown")
-		end
-	else
-		warn("[PLAYERSERVICE] Hair not found on character within timeout:", character.Name)
-	end
-
-	local head = character:FindFirstChild("Head")
-	if head then
-		local headMesh = head:FindFirstChild("Mesh")
-		if headMesh then
-			headMesh.TextureId = ""
-		end
-		local decal = head:FindFirstChildWhichIsA("Decal")
-		if decal then
-			decal:Destroy()
-		end
-	end
+	CosmeticAppearance.Apply(character, CosmeticAppearance.Data(player))
 
 	local accessorysFolder = player.GameData.Accessorys
 
@@ -452,8 +434,20 @@ local function HandleCharacter(player: Player, character: Model, ragdollObject)
 	end
 	updateInjuredState(humanoid.Health)
 	humanoid.HealthChanged:Connect(updateInjuredState)
+	local previousHealth = humanoid.Health
+	humanoid.HealthChanged:Connect(function(health)
+		local damage = previousHealth - health
+		previousHealth = health
+		if damage > 0 then require(script.Parent.ReplicantManager).play_damage_sound(character, damage, player) end
+	end)
 
 	SetupHitboxes(character)
+	character.DescendantAdded:Connect(function(item)
+		local head = character:FindFirstChild("Head")
+		if head and item:IsDescendantOf(head) and (item:IsA("Decal") or item:IsA("Texture") or item:IsA("SurfaceAppearance") or item:IsA("FaceControls")) then
+			task.defer(function() if item.Parent then item:Destroy() end end)
+		end
+	end)
 	task.defer(function()
 		ApplyFullAppearance(character, player)
 	end)
@@ -498,6 +492,11 @@ local function HandleCharacter(player: Player, character: Model, ragdollObject)
 end
 
 local function SetupPlayer(player: Player)
+	while player.Parent == Players and not player:GetAttribute("PlayerDataReady") do
+		task.wait(0.1)
+	end
+	if player.Parent ~= Players then return end
+
 	CopyUI(player)
 	SetupGameData(player)
 	-- Client modules require these replicated roots at module load time. Publish
@@ -561,19 +560,29 @@ local function SetupPlayer(player: Player)
 	end)
 
 	AccessoryService.GiveAccessory(player, "LightEffect", false)
+	player:SetAttribute("PlayerSetupReady", true)
+	if TestingBoolean.Value == true and not player.Character then
+		player:LoadCharacterAsync()
+	end
+end
+
+local function LoadPlayer(player: Player)
+	local success, err = pcall(SetupPlayer, player)
+	if not success then
+		warn("[PlayerService] Failed to initialize player", player.Name, err)
+		if player.Parent == Players then
+			player:Kick(" Data failed to load. ")
+		end
+	end
 end
 
 function Module.start_module()
-	if TestingBoolean.Value == true then
-		Players.CharacterAutoLoads = true
-	end
-
 	for _, player in ipairs(Players:GetPlayers()) do
-		SetupPlayer(player)
+		task.spawn(LoadPlayer, player)
 	end
 
 	Players.PlayerAdded:Connect(function(player: Player)
-		SetupPlayer(player)
+		LoadPlayer(player)
 	end)
 
 	Players.PlayerRemoving:Connect(function(player)

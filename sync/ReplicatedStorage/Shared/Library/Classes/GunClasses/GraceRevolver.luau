@@ -20,7 +20,7 @@ local Tool_Folder    = Assets.Guns.ToolModels
 local Anim_Folder    = Assets.Animations.Tools.Guns.GraceRevolver
 local FxFolder       = Assets.Guns.Effects
 
-local SoundFolder = Assets.Guns:WaitForChild("Sounds"):WaitForChild("GraceRevolver")
+local SoundFolder = Assets:WaitForChild("Sounds"):WaitForChild("Guns"):WaitForChild("GraceRevolver")
 local fire_sound  = SoundFolder.fire
 
 local function animation(name: string): Animation?
@@ -68,6 +68,11 @@ local WEAPON_STATS = {
 	reload_loop_after = 0.1,
 	reload_end = 0.65,
 	bullet_speed = BULLET_SPEED,
+	size = 1,
+	wallpen_distance = 50,
+	wallpen_studs = 3,
+	wound = 1,
+	length = 4,
 }
 
 -- // Animation layers
@@ -233,7 +238,7 @@ function GraceRevolver.new(info: Types.BaseToolCreateInfo): GraceRevolver
 	self.Armor_Penetration_Level = WEAPON_STATS.pen
 	self.KnockBack_Force         = 8
 	self.Aiming_Number           = 80
-	self.Short_Distance          = 3.5
+	self.Short_Distance          = 4
 	self.MuzzlePartName          = "GraceRevolver_Muzzle"
 	self.BulletSpeed             = BULLET_SPEED
 	self.FireSound               = fire_sound
@@ -387,19 +392,19 @@ function GraceRevolver:reload()
 	self._reloadCancelled = false
 
 	game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
-	self:_playAnim(startName).Stopped:Wait()
+	if not self:_waitReloadPhase(self:_playAnim(startName),self.reload_start) then return end
 	self.Capacity = 0
 
 	while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
-		self:_playAnim("Reload_Loop").Stopped:Wait()
+		if not self:_waitReloadPhase(self:_playAnim("Reload_Loop"),self.reload_loop) then return end
 		if self._reloadCancelled then break end
 		self.Capacity += 1
 		self:_fire_ammo(1)
-		self:_playAnim("Reload_Loop_After").Stopped:Wait()
+		if not self:_waitReloadPhase(self:_playAnim("Reload_Loop_After"),self.reload_loop_after) then return end
 	end
 
 	if not self._reloadCancelled then
-		self:_playAnim(endName).Stopped:Wait()
+		if not self:_waitReloadPhase(self:_playAnim(endName),self.reload_end) then return end
 
 		-- Reset cylinder rotation
 		local cylinder_motor: Motor6D =
@@ -502,5 +507,17 @@ GraceRevolver.ammo_give = WEAPON_STATS.ammo_give
 GraceRevolver.ammo_reserves = WEAPON_STATS.ammo_reserves
 GraceRevolver.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
 GraceRevolver.pen = WEAPON_STATS.pen
+
+-- Authored mount data from weapon_modules.scho (including inherited values).
+GraceRevolver.AuthoredWelds = {
+	equipc0 = CFrame.new(-0.257659912, -1.43795609, -0.50579834, 0, 0, -1, 0.99999994, 0, 0, 0, -1, 0),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = false,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-1.07449341, -0.18704772, -0.313476562, 0.338645965, -0.604027152, 0.721437454, 0.828506589, 0.554849684, 0.0756458044, -0.445981085, 0.572097838, 0.688336194),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(0.0736999512, -0.684338331, -0.582336426, 0.342020154, -0.939692616, 0, 0.939692616, 0.342020154, 0, 0, 0, 1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return GraceRevolver

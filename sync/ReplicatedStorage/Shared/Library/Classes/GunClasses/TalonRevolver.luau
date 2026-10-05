@@ -26,14 +26,14 @@ local Anim_Folder = Guns_Anim_Folder:FindFirstChild("TalonRevolver")
 local Legacy_Anim_Folder = Guns_Anim_Folder:FindFirstChild("saa")
 local FxFolder       = Assets.Guns.Effects
 
-local SoundFolder = Assets.Guns:WaitForChild("Sounds"):WaitForChild("TalonRevolver")
+local SoundFolder = Assets:WaitForChild("Sounds"):WaitForChild("Guns"):WaitForChild("TalonRevolver")
 local fire_sound  = SoundFolder.fire
 
 -- // Tuning
 
-local FIRE_RATE    = 60 / 86
-local BLACK_HAND_FIRE_RATE = 60 / 92
-local FAN_FIRE_RATE = 60 / 170
+local FIRE_RATE    = 0.7
+local BLACK_HAND_FIRE_RATE = 0.7 * 0.925
+local FAN_FIRE_RATE = 0.4
 local OCELOT_FIRE_RATE = 0.15
 local OCELOT_HIP_SPREAD = 25
 local BULLET_SPEED = 800
@@ -73,7 +73,7 @@ local WEAPON_STATS = {
     wallpen_studs = 3,
     accuracy = 18,
     moving_accuracy = 38,
-    fire_rate = FIRE_RATE,
+    fire_rate = 0.7,
     black_hand_fire_rate = BLACK_HAND_FIRE_RATE,
     fan_fire_rate = FAN_FIRE_RATE,
     cycle = 0,
@@ -349,7 +349,7 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	self.Armor_Penetration_Level = WEAPON_STATS.pen
 	self.KnockBack_Force         = 8
 	self.Aiming_Number           = 80
-	self.Short_Distance          = 3.5
+	self.Short_Distance          = 4
 	self.MuzzlePartName          = modelPartPrefix and (modelPartPrefix .. "_Muzzle") or "muzzle"
 	self.BulletSpeed             = BULLET_SPEED
 	self.FireSound               = fire_sound
@@ -411,8 +411,8 @@ function TalonRevolver.new(info: Types.BaseToolCreateInfo): TalonRevolver
 	self:_initShoulderTracking()
 	self:applyFirearmConfig(WEAPON_STATS)
 	if isOcelotTrooper then
-		self.FireInterval = OCELOT_FIRE_RATE
-		self.fire_rate = OCELOT_FIRE_RATE
+		self.FireInterval = 0.45
+		self.fire_rate = 0.45
 		self.fan_fire_rate = OCELOT_FIRE_RATE
 		self.IsOcelotTrooper = true
 		self.Accuracy = 0
@@ -665,6 +665,7 @@ function TalonRevolver:fire()
 end
 
 function TalonRevolver:reload()
+	if not self.Equipped then return end
 	if self.Reloading or self.Capacity >= self.Max_Capacity or self.Equipping then return end
 
 	if self.Spinning then self:_cancelSpin() end
@@ -673,6 +674,7 @@ function TalonRevolver:reload()
 	if not anims then return end
 	if self.Quickdrawing then self:_cancelQuickdraw() end
 
+	local generation = self._equipGeneration
 	if self.IsOcelotTrooper then
 		self:_set_sprint_arms(true)
 		self:_stopLayer(2)
@@ -703,22 +705,32 @@ function TalonRevolver:reload()
 		then "Reload_Start_Vet"
 		else "Reload_Start"
 	local startTrack = self:_playAnim(startName)
-	if startTrack then startTrack.Stopped:Wait() end
+	if not self:_waitReloadPhase(startTrack,self.reload_start) then return end
+	if not self.Equipped or self._equipGeneration ~= generation then return end
+	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
+	if not reserve or reserve.Value <= 0 then
+		self.Reloading = false
+		game.Players.LocalPlayer:SetAttribute("CantUnequip", nil)
+		self:_set_sprint_arms(false)
+		self:_restoreBaseDeferred()
+		return
+	end
 	self.Capacity = 0
 	self:_syncCylinderRounds()
 
-	while self.Capacity < self.Max_Capacity and not self._reloadCancelled do
+	while self.Capacity < self.Max_Capacity and reserve.Value > 0 and not self._reloadCancelled do
 		local rotationBefore = self.cylinder_rotation
 		local loopTrack = self:_playAnim("Reload_Loop")
-		if loopTrack then loopTrack.Stopped:Wait() end
-		if self._reloadCancelled then break end
+		if not self:_waitReloadPhase(loopTrack,self.reload_loop) then return end
+		if not self.Equipped or self._equipGeneration ~= generation then return end
 		self.Capacity += 1
 		self:_fire_ammo(1)
 		self:_syncCylinderRounds()
 		self._cylinderIndexOffset = (self._cylinderIndexOffset + 1) % self.Max_Capacity
 		if self.Capacity < self.Max_Capacity then
 			local afterTrack = self:_playAnim("Reload_Loop_After")
-			if afterTrack then afterTrack.Stopped:Wait() end
+			if not self:_waitReloadPhase(afterTrack,self.reload_loop_after) then return end
+			if not self.Equipped or self._equipGeneration ~= generation then return end
 		end
 		if self.cylinder_rotation == rotationBefore then
 			self:_rotateCylinder(1, self.reload_loop_after or WEAPON_STATS.reload_loop_after)
@@ -728,7 +740,9 @@ function TalonRevolver:reload()
 	end
 
 	if not self._reloadCancelled then
-		self:_playAnim("Reload_End").Stopped:Wait()
+		local actionTrack = self:_playAnim("Reload_End")
+		if not self:_waitReloadPhase(actionTrack,self.reload_end) then return end
+		if not self.Equipped or self._equipGeneration ~= generation then return end
 
 	else
 		if anims.Reload_Loop  and anims.Reload_Loop.IsPlaying  then anims.Reload_Loop:Stop(0)  end
@@ -737,7 +751,8 @@ function TalonRevolver:reload()
 		while missingIndexes >= 2 do
 			local rotationBefore = self.cylinder_rotation
 			local indexTrack = self:_playAnim("Reload_Loop_After_Twice")
-			if indexTrack then indexTrack.Stopped:Wait() else task.wait(self.reload_index_two_time or WEAPON_STATS.reload_index_two_time) end
+			if indexTrack then indexTrack.Stopped:Wait() elseif (self.reload_index_two_time or WEAPON_STATS.reload_index_two_time) > 0 then task.wait(self.reload_index_two_time or WEAPON_STATS.reload_index_two_time) end
+			if not self.Equipped or self._equipGeneration ~= generation then return end
 			if self.cylinder_rotation == rotationBefore then
 				self:_rotateCylinder(2, self.reload_index_two_time or WEAPON_STATS.reload_index_two_time)
 			end
@@ -746,7 +761,8 @@ function TalonRevolver:reload()
 		if missingIndexes == 1 then
 			local rotationBefore = self.cylinder_rotation
 			local indexTrack = self:_playAnim("Reload_Loop_After")
-			if indexTrack then indexTrack.Stopped:Wait() else task.wait(self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time) end
+			if indexTrack then indexTrack.Stopped:Wait() elseif (self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time) > 0 then task.wait(self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time) end
+			if not self.Equipped or self._equipGeneration ~= generation then return end
 			if self.cylinder_rotation == rotationBefore then
 				self:_rotateCylinder(1, self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time)
 			end
@@ -890,5 +906,17 @@ TalonRevolver.ammo_give = WEAPON_STATS.ammo_give
 TalonRevolver.ammo_reserves = WEAPON_STATS.ammo_reserves
 TalonRevolver.ammo_reserves_max = WEAPON_STATS.ammo_reserves_max
 TalonRevolver.pen = WEAPON_STATS.pen
+
+-- Authored mount data from weapon_modules.saa (including inherited values).
+TalonRevolver.AuthoredWelds = {
+	equipc0 = CFrame.new(-0.257659912, -1.43795609, -0.50579834, 0, 0, -1, 0.99999994, 0, 0, 0, -1, 0),
+	equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	lefthand = false,
+	holster_point = "Torso",
+	holsterc0 = CFrame.new(-1.07449341, -0.18704772, -0.313476562, 0.338645965, -0.604027152, 0.721437454, 0.828506589, 0.554849684, 0.0756458044, -0.445981085, 0.572097838, 0.688336194),
+	holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+	alt_holsterc0 = CFrame.new(0.0736999512, -0.684338331, -0.582336426, 0.342020154, -0.939692616, 0, 0.939692616, 0.342020154, 0, 0, 0, 1),
+	alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+}
 
 return TalonRevolver

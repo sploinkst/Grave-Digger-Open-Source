@@ -43,18 +43,6 @@ local function findTemplate(): Model?
 	end
 	return nil
 end
-local function fallbackBanner(color: Color3): Model
-	local m = Instance.new("Model"); m.Name = "Rally Banner"
-	local pole = Instance.new("Part"); pole.Name = "Pole"; pole.Size = Vector3.new(.24,6,.24)
-	pole.Material = Enum.Material.Metal; pole.Color = Color3.fromRGB(70,62,52); pole.Parent = m
-	local flag = Instance.new("Part"); flag.Name = "Banner"; flag.Size = Vector3.new(3.5,2.1,.12)
-	flag.Material = Enum.Material.Fabric; flag.Color = color; flag.CFrame = pole.CFrame*CFrame.new(1.8,1.5,0); flag.Parent = m
-	local marker = Instance.new("BillboardGui"); marker.Name = "flagicon"; marker.Size = UDim2.fromOffset(38,38)
-	marker.StudsOffsetWorldSpace = Vector3.new(0,4,0); marker.AlwaysOnTop = true; marker.Parent = pole
-	local icon = Instance.new("ImageLabel"); icon.Name = "bgicon"; icon.Size = UDim2.fromScale(1,1)
-	icon.BackgroundTransparency = 1; icon.Image = "rbxassetid://123209822347181"; icon.ImageColor3 = color; icon.Parent = marker
-	m.PrimaryPart = pole; return m
-end
 local function prepareBanner(m: Model, color: Color3)
 	for _, d in m:GetDescendants() do
 		if d:IsA("BasePart") then
@@ -81,7 +69,7 @@ local function deployBanner(p: Player)
 	local now=os.clock(); if now<(cooldowns[p] or 0) then return end
 	local cf=placement(c,r); if not cf then return end; destroyBanner(p)
 	local color=p.Team and p.Team.TeamColor.Color or Color3.fromRGB(220,170,70)
-	local template=findTemplate(); local banner=template and template:Clone() or fallbackBanner(color)
+	local template=findTemplate(); if not template then warn("[BuffService] Missing authored Rally Banner"); return end; local banner=template:Clone()
 	prepareBanner(banner,color); if not banner.PrimaryPart then banner:Destroy(); return end
 	banner:PivotTo(cf); banner:SetAttribute("OwnerUserId",p.UserId)
 	local oldOwner=banner:FindFirstChild("owner"); if oldOwner then oldOwner:Destroy() end
@@ -131,6 +119,10 @@ local function refreshBuffs()
 			if enemy~=source and not allied(source,enemy) and h and h.Health>0 and h.Health<100 and sr and er and (sr.Position-er.Position).Magnitude<=75 then Status.GiveStatus(source,"BloodlustStatus",STATUS_TIME); break end
 		end end
 	end
+end
+
+function Service.DeployBanner(player)
+	deployBanner(player)
 end
 
 function Service.start_module()
