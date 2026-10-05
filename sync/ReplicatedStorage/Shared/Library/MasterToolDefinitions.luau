@@ -9,7 +9,6 @@ return {
 		damage = 50,
 		capacity = 1,
 		fire_rate = 0.4,
-		aim_speed = 0.2,
 	},
 	["jaegerkit"] = {
 		icon = "78664710036907",
@@ -17,7 +16,6 @@ return {
 		damage = 90,
 		capacity = 0,
 		fire_rate = 0.75,
-		aim_speed = 0.5,
 	},
 	["binocs"] = {
 		icon = "18693337243",
@@ -25,7 +23,6 @@ return {
 		damage = 90,
 		capacity = 0,
 		fire_rate = 0.75,
-		aim_speed = 0.4,
 	},
 	["wrench"] = {
 		icon = "104580987009248",
@@ -33,7 +30,6 @@ return {
 		damage = 0,
 		capacity = 0,
 		fire_rate = 1,
-		aim_speed = 0.35,
 	},
 	["weldingtool"] = {
 		icon = "93837366987917",
@@ -41,27 +37,12 @@ return {
 		damage = 0,
 		capacity = 0,
 		fire_rate = 1,
-		aim_speed = 0.35,
 	},
 	["bottle"] = {
 		icon = "137193950943929",
-		melee_damage = 90,
-		melee_range = 5,
-		melee_swing_speed = 0.4,
-		draw_speed = 0.25,
-		damage = 90,
-		fire_rate = 0.4,
-		aim_speed = 0.1,
 	},
 	["machete"] = {
 		icon = "127393275221413",
-		melee_damage = 90,
-		melee_range = 5,
-		melee_swing_speed = 0.4,
-		draw_speed = 0.25,
-		damage = 90,
-		fire_rate = 0.4,
-		aim_speed = 0.1,
 	},
 	["lancerstim"] = {
 		icon = "71082473166138",
@@ -69,7 +50,6 @@ return {
 		damage = 90,
 		capacity = 0,
 		fire_rate = 0.75,
-		aim_speed = 0.35,
 	},
 	["atgrenade"] = {
 		icon = "88753919799127",
@@ -77,7 +57,6 @@ return {
 		damage = 0,
 		capacity = 0,
 		fire_rate = 1,
-		aim_speed = 0.35,
 	},
 	["nebel"] = {
 		icon = "18623178017",
@@ -85,7 +64,6 @@ return {
 		damage = 0,
 		capacity = 0,
 		fire_rate = 1,
-		aim_speed = 0.35,
 	},
 	["knife"] = {
 		icon = "17559491551",
@@ -95,17 +73,9 @@ return {
 		draw_speed = 0.25,
 		damage = 90,
 		fire_rate = 0.4,
-		aim_speed = 0.1,
 	},
 	["club"] = {
 		icon = "18910163361",
-		melee_damage = 90,
-		melee_range = 5,
-		melee_swing_speed = 0.4,
-		draw_speed = 0.25,
-		damage = 90,
-		fire_rate = 0.4,
-		aim_speed = 0.1,
 	},
 	["conscriptlantern"] = {
 		icon = "17778483663",
@@ -113,7 +83,6 @@ return {
 		damage = 90,
 		capacity = 0,
 		fire_rate = 0.75,
-		aim_speed = 0.5,
 	},
 	["stims"] = {
 		icon = "17778483374",
@@ -121,6 +90,5 @@ return {
 		damage = 90,
 		capacity = 0,
 		fire_rate = 0.75,
-		aim_speed = 0.35,
 	},
 }
