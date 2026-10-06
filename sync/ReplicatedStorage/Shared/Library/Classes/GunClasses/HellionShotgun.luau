@@ -379,7 +379,7 @@ function HellionShotgun:_on_equip()
 				local sfx = SoundFolder:FindFirstChild("sfx")
 				local sound = sfx and sfx:FindFirstChild(keyframe:sub(5))
 				local muzzle = self:_findModelPart(self.MuzzlePartName)
-				if sound and muzzle then self:_play_sfx(sound, muzzle, nil, 0.1) end
+				if sound and muzzle then self:_play_sfx(sound, muzzle, nil, nil, nil, 0.1) end
 			elseif keyframe == "vfx_eject_casing" then
 				local casing = findBasePartNamed(model, "casing")
 				if casing then

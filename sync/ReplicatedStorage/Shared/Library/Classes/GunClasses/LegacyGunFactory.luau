@@ -433,7 +433,7 @@ function Factory.create(config)
 		local origin = self:_findModelPart(self.MuzzlePartName or "muzzle")
 			or (self.actual_model and self.actual_model:FindFirstChildWhichIsA("BasePart", true))
 		if source and origin and origin:IsA("BasePart") then
-			self:_play_sfx(source, origin, nil, 0.1)
+			self:_play_sfx(source, origin, nil, nil, nil, 0.1)
 		end
 	end
 
@@ -491,6 +491,8 @@ function Factory.create(config)
 			bulletSpeed = self.BulletSpeed,
 			fireAnimation = fireAnimation,
 			sound = self.FireSound,
+			soundPitchVariation = config.auto and 0.05 or 0.1,
+			soundVolumeAdjustment = config.auto and -0.5 or nil,
 			-- Side-cycle weapons begin their cycling animation during the normal
 			-- shot cooldown, rather than waiting for that cooldown to finish.
 			fireDelay = if sideCycleAnimations then 0 else fireDelay,

@@ -3,6 +3,7 @@ local Players = game:GetService("Players")
 local Assets = require(RS.Shared.Library.AuthoredAssets)
 local Rules = require(RS.Shared.Library.MasterPortRules)
 local V = require(script.Parent.MasterActions.Validation)
+local Audio = require(RS.Shared.Library.ConstructAudio)
 local Service = {}
 local remote = V.Remote("ConstructionAction")
 local folder = workspace:FindFirstChild("constructions")
@@ -54,6 +55,7 @@ function Service.Damage(player, instance, amount)
 	local team = model:FindFirstChild("team")
 	if team and team.Value == player.Team then return false end
 	model.health.Value = math.max(0, model.health.Value - amount); setState(model)
+	Audio.Impact(model, instance, model.health.Value <= 0)
 	if model.health.Value <= 0 then
 		if model:GetAttribute("HunterTrap") then require(script.Parent.HunterKitService).TriggerHit(model)
 		else model:Destroy() end
@@ -119,6 +121,9 @@ function Service.Place(player, name, transform, options)
 		if supplies then supplies.Value -= cost else character:SetAttribute("ConstructionSupplies", balance - cost) end
 	end
 	if trap then require(script.Parent.HunterKitService).BindTrap(player, model) end
+	if name == "Telescope" then Audio.Play("telescope", model)
+	elseif name == "Vanguard Shield" or name == "Lewis Shield" then Audio.Play("shield_deploy", model)
+	else Audio.Play("set", model) end
 	return model
 end
 function Service.Repair(player, instance, amount)
@@ -126,12 +131,18 @@ function Service.Repair(player, instance, amount)
 	if not model or not model:FindFirstChild("team") or model.team.Value ~= player.Team then return false end
 	if not model:FindFirstChild("construction") or not model:FindFirstChild("health")
 		or not model.health:FindFirstChild("maxhealth") or not Rules.Finite(amount) or amount <= 0 then return false end
+	local progress, healthBefore = model.construction.Value, model.health.Value
 	if model.construction.Value < 100 then
 		local hits = model.construction:FindFirstChild("require_hits")
 		model.construction.Value = math.min(100, model.construction.Value + 100 / math.max(hits and hits.Value or 5, 1))
 	elseif not model:FindFirstChild("unrepairable") then model.health.Value = math.min(model.health.maxhealth.Value, model.health.Value + amount)
 	else return false end
-	setState(model); return true
+	setState(model)
+	if progress < 100 then
+		Audio.Impact(model, instance, false)
+		if model.construction.Value >= 100 then Audio.Play("construct", model) end
+	elseif model.health.Value > healthBefore then Audio.Play("repair", instance) end
+	return true
 end
 function Service.Restock(player)
 	local character = player.Character
@@ -155,7 +166,7 @@ function Service.start_module()
 		if action == "Place" and type(argument) == "table" and (table.find(choices, argument.name) or traps and argument.name == "Tripwire") then
 			Service.Place(player, argument.name, argument.cframe)
 		elseif action == "DestroyAll" and type(argument) == "string" and table.find(choices, argument) then
-			for _, model in ipairs(folder:GetChildren()) do if model.Name == argument and model:GetAttribute("OwnerUserId") == player.UserId then model:Destroy() end end
+			for _, model in ipairs(folder:GetChildren()) do if model.Name == argument and model:GetAttribute("OwnerUserId") == player.UserId then Audio.Play("destroy_subtle", model); model:Destroy() end end
 		elseif action == "Hammer" and not traps then
 			local hit = V.Ray(character, argument, 5)
 			if hit and not Service.Repair(player, hit.Instance, tool:GetAttribute("RepairAmount") or 10) then

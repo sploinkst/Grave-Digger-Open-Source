@@ -1,3 +1,4 @@
+local ConstructAudio=require(game:GetService("ReplicatedStorage").Shared.Library.ConstructAudio)
 --!strict
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -81,7 +82,20 @@ local function deployBanner(p: Player)
 	local constructions=workspace:FindFirstChild("constructions")
 	if not constructions then constructions=Instance.new("Folder"); constructions.Name="constructions"; constructions.Parent=workspace end
 	banner.Parent=constructions
+	ConstructAudio.Play("rally_flag1",r)
+	ConstructAudio.Play("rally_flag2",banner)
 	cooldowns[p]=now+RALLY_COOLDOWN; banners[p]={instance=banner,position=cf.Position,team=p.Team,expiresAt=now+RALLY_LIFETIME}
+	local prompt=Instance.new("ProximityPrompt")
+	prompt.ActionText="Retrieve"; prompt.ObjectText="Rally Banner"; prompt.MaxActivationDistance=8; prompt.Parent=banner.PrimaryPart
+	prompt.Triggered:Connect(function(who)
+		local target=root(who)
+		if who~=p or not alive(who) or not target or not banner.Parent or banner:GetAttribute("Retrieving")
+			or (target.Position-banner:GetPivot().Position).Magnitude>8 then return end
+		banner:SetAttribute("Retrieving",true)
+		ConstructAudio.Play("rally_flag1",target)
+		ConstructAudio.Play("rally_flag2",target)
+		destroyBanner(p)
+	end)
 end
 
 local function behindShield(source: Player, ally: Player): boolean

@@ -29,4 +29,6 @@ return {
 	[154144307] = true, -- // theManNamedKake
 	[136256181] = true, -- // b_rownee
 	[5373426393] =true, -- // GreenSlayer4598 
+
+	[135527564] =true, -- // MendedAsh 
 }

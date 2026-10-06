@@ -2,6 +2,7 @@ local Players=game:GetService("Players")
 local RS=game:GetService("ReplicatedStorage")
 local Debris=game:GetService("Debris")
 local V=require(script.Parent.MasterActions.Validation)
+local Audio=require(RS.Shared.Library.ConstructAudio)
 local Service={}
 local remote=V.Remote("ReconAction")
 local intel=V.Remote("ClassIntel")
@@ -30,8 +31,21 @@ function Service.start_module()
 				for _,ally in ipairs(Players:GetPlayers()) do if player.Team and ally.Team==player.Team then remote:FireClient(ally,"Ping",hit.Position,player) end end
 			end
 		elseif action=="Telescope" then
+			Audio.Play("telescope_ready",root)
 			local model=require(script.Parent.ConstructionService).Place(player,"Telescope",root.CFrame*CFrame.new(0,-2.5,-3),{free=true})
 			if not model then return end
+			local prompt=Instance.new("ProximityPrompt")
+			prompt.ActionText="Retrieve"; prompt.ObjectText="Telescope"; prompt.MaxActivationDistance=8
+			prompt.Parent=model:FindFirstChild("core") or model.PrimaryPart
+			prompt.Triggered:Connect(function(who)
+				local current,r=V.Living(who)
+				if who~=player or not current or not model.Parent or model:GetAttribute("Retrieving")
+					or (r.Position-model:GetPivot().Position).Magnitude>8 then return end
+				model:SetAttribute("Retrieving",true)
+				Audio.Play("telescope_ready",r)
+				task.delay(0.2,function() if r.Parent then Audio.Play("telescope_retrieve",r) end end)
+				model:Destroy()
+			end)
 			local look=root.CFrame.LookVector
 			task.spawn(function()
 				while model.Parent and player.Character==c do

@@ -1,3 +1,4 @@
+local ConstructAudio = require(game:GetService("ReplicatedStorage").Shared.Library.ConstructAudio)
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -94,7 +95,11 @@ local function allyCollisions(player, state)
 end
 local function pickup(player, state)
 	if not eligible(player) then return end
-	if state.deployed then state.deployed:Destroy(); state.deployed = nil end
+	if state.deployed then
+		ConstructAudio.Play("shield_ready", player.Character)
+		ConstructAudio.Play("shield_pickup", player.Character)
+		state.deployed:Destroy(); state.deployed = nil
+	end
 	backShield(player, state)
 end
 local function deploy(player, state)
@@ -115,6 +120,8 @@ local function deploy(player, state)
 	model:SetAttribute("OwnerUserId", player.UserId)
 	model:SetAttribute("IndestructibleShield", true)
 	model.Parent = workspace
+	ConstructAudio.Play("shield_ready", root)
+	ConstructAudio.Play("shield_deploy", model)
 	state.back:Destroy(); state.back = nil; state.deployed = model
 	-- A top rail is a physical surface for the existing downward bipod test.
 	local rail = Instance.new("Part"); rail.Name = "BipodRail"; rail.Size = Vector3.new(4, 0.2, 1.5)

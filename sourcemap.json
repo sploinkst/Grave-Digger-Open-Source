@@ -314333,6 +314333,265 @@
                               "guid": "256451"
                             }
                           ]
+                        },
+                        {
+                          "name": "bullets",
+                          "className": "Folder",
+                          "guid": "2201895",
+                          "children": [
+                            {
+                              "name": "snap1",
+                              "className": "Sound",
+                              "guid": "2212820"
+                            },
+                            {
+                              "name": "snap3",
+                              "className": "Sound",
+                              "guid": "2212818"
+                            },
+                            {
+                              "name": "snap2",
+                              "className": "Sound",
+                              "guid": "2212819"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "small",
+                          "className": "Folder",
+                          "guid": "2202025",
+                          "children": [
+                            {
+                              "name": "distant_2",
+                              "className": "Sound",
+                              "guid": "2212473"
+                            },
+                            {
+                              "name": "loud_2",
+                              "className": "Sound",
+                              "guid": "2212468"
+                            },
+                            {
+                              "name": "loud_1",
+                              "className": "Sound",
+                              "guid": "2212469"
+                            },
+                            {
+                              "name": "distant_3",
+                              "className": "Sound",
+                              "guid": "2212476"
+                            },
+                            {
+                              "name": "quiet_1",
+                              "className": "Sound",
+                              "guid": "2212472"
+                            },
+                            {
+                              "name": "loud_3",
+                              "className": "Sound",
+                              "guid": "2212471"
+                            },
+                            {
+                              "name": "distant_1",
+                              "className": "Sound",
+                              "guid": "2212475"
+                            },
+                            {
+                              "name": "quiet_2",
+                              "className": "Sound",
+                              "guid": "2212474"
+                            },
+                            {
+                              "name": "quiet_3",
+                              "className": "Sound",
+                              "guid": "2212470"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "explosion",
+                          "className": "Folder",
+                          "guid": "2202035",
+                          "children": [
+                            {
+                              "name": "debris3",
+                              "className": "Sound",
+                              "guid": "2211239"
+                            },
+                            {
+                              "name": "debris1",
+                              "className": "Sound",
+                              "guid": "2211244"
+                            },
+                            {
+                              "name": "distant3",
+                              "className": "Sound",
+                              "guid": "2211241"
+                            },
+                            {
+                              "name": "distant2",
+                              "className": "Sound",
+                              "guid": "2211243"
+                            },
+                            {
+                              "name": "distant1",
+                              "className": "Sound",
+                              "guid": "2211240"
+                            },
+                            {
+                              "name": "debris2",
+                              "className": "Sound",
+                              "guid": "2211242"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "large",
+                          "className": "Folder",
+                          "guid": "2202045",
+                          "children": [
+                            {
+                              "name": "loud_2",
+                              "className": "Sound",
+                              "guid": "2210759"
+                            },
+                            {
+                              "name": "loud_1",
+                              "className": "Sound",
+                              "guid": "2210760"
+                            },
+                            {
+                              "name": "loud_3",
+                              "className": "Sound",
+                              "guid": "2210763"
+                            },
+                            {
+                              "name": "distant_2",
+                              "className": "Sound",
+                              "guid": "2210762"
+                            },
+                            {
+                              "name": "distant_1",
+                              "className": "Sound",
+                              "guid": "2210761"
+                            },
+                            {
+                              "name": "distant_3",
+                              "className": "Sound",
+                              "guid": "2210758"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "medium",
+                          "className": "Folder",
+                          "guid": "2202055",
+                          "children": [
+                            {
+                              "name": "distant_3",
+                              "className": "Sound",
+                              "guid": "2210188"
+                            },
+                            {
+                              "name": "loud_3",
+                              "className": "Sound",
+                              "guid": "2210192"
+                            },
+                            {
+                              "name": "loud_2",
+                              "className": "Sound",
+                              "guid": "2210191"
+                            },
+                            {
+                              "name": "distant_2",
+                              "className": "Sound",
+                              "guid": "2210189"
+                            },
+                            {
+                              "name": "distant_1",
+                              "className": "Sound",
+                              "guid": "2210190"
+                            },
+                            {
+                              "name": "loud_1",
+                              "className": "Sound",
+                              "guid": "2210193"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "suppressor",
+                          "className": "Folder",
+                          "guid": "2202160",
+                          "children": [
+                            {
+                              "name": "distant_3",
+                              "className": "Sound",
+                              "guid": "2202603"
+                            },
+                            {
+                              "name": "distant_1",
+                              "className": "Sound",
+                              "guid": "2202600"
+                            },
+                            {
+                              "name": "loud_1",
+                              "className": "Sound",
+                              "guid": "2202605"
+                            },
+                            {
+                              "name": "loud_3",
+                              "className": "Sound",
+                              "guid": "2202604"
+                            },
+                            {
+                              "name": "loud_2",
+                              "className": "Sound",
+                              "guid": "2202601"
+                            },
+                            {
+                              "name": "distant_2",
+                              "className": "Sound",
+                              "guid": "2202602"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "shotgun",
+                          "className": "Folder",
+                          "guid": "2202066",
+                          "children": [
+                            {
+                              "name": "loud_1",
+                              "className": "Sound",
+                              "guid": "2209635"
+                            },
+                            {
+                              "name": "loud_2",
+                              "className": "Sound",
+                              "guid": "2209632"
+                            },
+                            {
+                              "name": "distant_3",
+                              "className": "Sound",
+                              "guid": "2209636"
+                            },
+                            {
+                              "name": "distant_2",
+                              "className": "Sound",
+                              "guid": "2209637"
+                            },
+                            {
+                              "name": "distant_1",
+                              "className": "Sound",
+                              "guid": "2209634"
+                            },
+                            {
+                              "name": "loud_3",
+                              "className": "Sound",
+                              "guid": "2209633"
+                            }
+                          ]
                         }
                       ]
                     },
@@ -315247,7 +315506,24 @@
                         {
                           "name": "AuclairPistol",
                           "className": "Folder",
-                          "guid": "16433"
+                          "guid": "16433",
+                          "children": [
+                            {
+                              "name": "fire",
+                              "className": "Sound",
+                              "guid": "1526523"
+                            },
+                            {
+                              "name": "aimed",
+                              "className": "Sound",
+                              "guid": "1526522"
+                            },
+                            {
+                              "name": "draw",
+                              "className": "Sound",
+                              "guid": "1526524"
+                            }
+                          ]
                         },
                         {
                           "name": "BrowningMachineGun",
@@ -318341,6 +318617,240 @@
                       "name": "Shared",
                       "className": "Folder",
                       "guid": "16408"
+                    },
+                    {
+                      "name": "Constructs",
+                      "className": "Folder",
+                      "guid": "2196872",
+                      "children": [
+                        {
+                          "name": "destroy3",
+                          "className": "Sound",
+                          "guid": "2199886"
+                        },
+                        {
+                          "name": "destroy1",
+                          "className": "Sound",
+                          "guid": "2199897"
+                        },
+                        {
+                          "name": "repair2",
+                          "className": "Sound",
+                          "guid": "2199864"
+                        },
+                        {
+                          "name": "rally_flag1",
+                          "className": "Sound",
+                          "guid": "2199894"
+                        },
+                        {
+                          "name": "shield_deploy",
+                          "className": "Sound",
+                          "guid": "2199872"
+                        },
+                        {
+                          "name": "telescope",
+                          "className": "Sound",
+                          "guid": "2199870"
+                        },
+                        {
+                          "name": "hit_sand2",
+                          "className": "Sound",
+                          "guid": "2199887"
+                        },
+                        {
+                          "name": "set1",
+                          "className": "Sound",
+                          "guid": "2199873"
+                        },
+                        {
+                          "name": "rally_flag2",
+                          "className": "Sound",
+                          "guid": "2199892"
+                        },
+                        {
+                          "name": "hit_metal1",
+                          "className": "Sound",
+                          "guid": "2199875"
+                        },
+                        {
+                          "name": "telescope_retrieve",
+                          "className": "Sound",
+                          "guid": "2199871"
+                        },
+                        {
+                          "name": "flag3",
+                          "className": "Sound",
+                          "guid": "2199881"
+                        },
+                        {
+                          "name": "destroy_subtle2",
+                          "className": "Sound",
+                          "guid": "2199869"
+                        },
+                        {
+                          "name": "repair3",
+                          "className": "Sound",
+                          "guid": "2199867"
+                        },
+                        {
+                          "name": "set3",
+                          "className": "Sound",
+                          "guid": "2199874"
+                        },
+                        {
+                          "name": "destroy2",
+                          "className": "Sound",
+                          "guid": "2199890"
+                        },
+                        {
+                          "name": "construct",
+                          "className": "Sound",
+                          "guid": "2199877"
+                        },
+                        {
+                          "name": "destroy_metal3",
+                          "className": "Sound",
+                          "guid": "2199893"
+                        },
+                        {
+                          "name": "repair1",
+                          "className": "Sound",
+                          "guid": "2199896"
+                        },
+                        {
+                          "name": "destroy_subtle3",
+                          "className": "Sound",
+                          "guid": "2199888"
+                        },
+                        {
+                          "name": "hit4",
+                          "className": "Sound",
+                          "guid": "2199879"
+                        },
+                        {
+                          "name": "hit2",
+                          "className": "Sound",
+                          "guid": "2199882"
+                        },
+                        {
+                          "name": "hit_metal2",
+                          "className": "Sound",
+                          "guid": "2199889"
+                        },
+                        {
+                          "name": "sand_destroy2",
+                          "className": "Sound",
+                          "guid": "2199895"
+                        },
+                        {
+                          "name": "flag1",
+                          "className": "Sound",
+                          "guid": "2199865"
+                        },
+                        {
+                          "name": "hit3",
+                          "className": "Sound",
+                          "guid": "2199884"
+                        },
+                        {
+                          "name": "set2",
+                          "className": "Sound",
+                          "guid": "2199885"
+                        },
+                        {
+                          "name": "destroy_subtle1",
+                          "className": "Sound",
+                          "guid": "2199868"
+                        },
+                        {
+                          "name": "destroy_metal2",
+                          "className": "Sound",
+                          "guid": "2199863"
+                        },
+                        {
+                          "name": "sand_destroy1",
+                          "className": "Sound",
+                          "guid": "2199880"
+                        },
+                        {
+                          "name": "shield_pickup",
+                          "className": "Sound",
+                          "guid": "2199883"
+                        },
+                        {
+                          "name": "telescope_ready",
+                          "className": "Sound",
+                          "guid": "2199876"
+                        },
+                        {
+                          "name": "hit_sand1",
+                          "className": "Sound",
+                          "guid": "2199866"
+                        },
+                        {
+                          "name": "shield_ready",
+                          "className": "Sound",
+                          "guid": "2199891"
+                        },
+                        {
+                          "name": "flag2",
+                          "className": "Sound",
+                          "guid": "2199878"
+                        }
+                      ]
+                    },
+                    {
+                      "name": "fire_fx",
+                      "className": "Folder",
+                      "guid": "2200324",
+                      "children": [
+                        {
+                          "name": "fire_ignite3",
+                          "className": "Sound",
+                          "guid": "2201395"
+                        },
+                        {
+                          "name": "fire_extra3",
+                          "className": "Sound",
+                          "guid": "2201396"
+                        },
+                        {
+                          "name": "fire_ignite5",
+                          "className": "Sound",
+                          "guid": "2201394"
+                        },
+                        {
+                          "name": "fire_ignite4",
+                          "className": "Sound",
+                          "guid": "2201400"
+                        },
+                        {
+                          "name": "fire_extra1",
+                          "className": "Sound",
+                          "guid": "2201393"
+                        },
+                        {
+                          "name": "fire_loop",
+                          "className": "Sound",
+                          "guid": "2201398"
+                        },
+                        {
+                          "name": "fire_extra2",
+                          "className": "Sound",
+                          "guid": "2201397"
+                        },
+                        {
+                          "name": "fire_ignite1",
+                          "className": "Sound",
+                          "guid": "2201401"
+                        },
+                        {
+                          "name": "fire_ignite2",
+                          "className": "Sound",
+                          "guid": "2201399"
+                        }
+                      ]
                     }
                   ]
                 },
@@ -331680,6 +332190,22 @@
                       "guid": "78044",
                       "filePaths": [
                         "sync/ReplicatedStorage/Shared/Modules/Server Modules/VoiceManager.luau"
+                      ]
+                    },
+                    {
+                      "name": "TrainingRigService",
+                      "className": "ModuleScript",
+                      "guid": "855484",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/Shared/Modules/Server Modules/TrainingRigService.luau"
+                      ]
+                    },
+                    {
+                      "name": "FireAudioService",
+                      "className": "ModuleScript",
+                      "guid": "2212914",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/Shared/Modules/Server Modules/FireAudioService.luau"
                       ]
                     }
                   ]
@@ -401337,16 +401863,6 @@
               ]
             },
             {
-              "name": "EmpirePants",
-              "className": "Pants",
-              "guid": "78917"
-            },
-            {
-              "name": "EmpireShirt",
-              "className": "Shirt",
-              "guid": "256104"
-            },
-            {
               "name": "FootstepsManager",
               "className": "Script",
               "guid": "256062",
@@ -402298,6 +402814,688 @@
           "guid": "50355",
           "filePaths": [
             "sync/Workspace/toolScript.client.luau"
+          ]
+        },
+        {
+          "name": "Rig",
+          "className": "Folder",
+          "guid": "855254"
+        },
+        {
+          "name": "NationRig",
+          "className": "Model",
+          "guid": "853432",
+          "children": [
+            {
+              "name": "NationPants",
+              "className": "Pants",
+              "guid": "854344"
+            },
+            {
+              "name": "NationShirt",
+              "className": "Shirt",
+              "guid": "854345"
+            },
+            {
+              "name": "Right Leg",
+              "className": "Part",
+              "guid": "853458",
+              "children": [
+                {
+                  "name": "RightFootAttachment",
+                  "className": "Attachment",
+                  "guid": "855343"
+                }
+              ]
+            },
+            {
+              "name": "Animate",
+              "className": "Folder",
+              "children": [
+                {
+                  "name": "fall",
+                  "className": "Folder",
+                  "children": [
+                    {
+                      "name": "FallAnim",
+                      "className": "Animation",
+                      "guid": "855323"
+                    }
+                  ]
+                },
+                {
+                  "name": "toolnone",
+                  "className": "StringValue",
+                  "guid": "855382",
+                  "children": [
+                    {
+                      "name": "ToolNoneAnim",
+                      "className": "Animation",
+                      "guid": "855322"
+                    }
+                  ]
+                },
+                {
+                  "name": "idle",
+                  "className": "Folder",
+                  "children": [
+                    {
+                      "name": "Animation1",
+                      "className": "Folder",
+                      "children": [
+                        {
+                          "name": "Weight",
+                          "className": "NumberValue",
+                          "guid": "855364"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "sit",
+                  "className": "Folder",
+                  "children": [
+                    {
+                      "name": "SitAnim",
+                      "className": "Animation",
+                      "guid": "855324"
+                    }
+                  ]
+                },
+                {
+                  "name": "run",
+                  "className": "StringValue",
+                  "guid": "855379"
+                },
+                {
+                  "name": "idle",
+                  "className": "StringValue",
+                  "guid": "855377"
+                },
+                {
+                  "name": "ScaleDampeningPercent",
+                  "className": "NumberValue",
+                  "guid": "855366"
+                },
+                {
+                  "name": "PlayEmote",
+                  "className": "BindableFunction",
+                  "guid": "855345"
+                }
+              ]
+            },
+            {
+              "name": "HumanoidRootPart",
+              "className": "Folder",
+              "children": [
+                {
+                  "name": "RootJoint",
+                  "className": "Motor6D",
+                  "guid": "855363"
+                }
+              ]
+            },
+            {
+              "name": "Left Arm",
+              "className": "Part",
+              "guid": "855370",
+              "children": [
+                {
+                  "name": "LeftShoulderAttachment",
+                  "className": "Attachment",
+                  "guid": "855338"
+                },
+                {
+                  "name": "LeftGripAttachment",
+                  "className": "Attachment",
+                  "guid": "855339"
+                }
+              ]
+            },
+            {
+              "name": "Torso",
+              "className": "Folder",
+              "children": [
+                {
+                  "name": "BodyBackAttachment",
+                  "className": "Attachment",
+                  "guid": "855332"
+                },
+                {
+                  "name": "WaistFrontAttachment",
+                  "className": "Attachment",
+                  "guid": "855335"
+                },
+                {
+                  "name": "Left Hip",
+                  "className": "Motor6D",
+                  "guid": "855361"
+                },
+                {
+                  "name": "WaistBackAttachment",
+                  "className": "Attachment",
+                  "guid": "855337"
+                },
+                {
+                  "name": "Neck",
+                  "className": "Motor6D",
+                  "guid": "855362"
+                },
+                {
+                  "name": "WaistCenterAttachment",
+                  "className": "Attachment",
+                  "guid": "855336"
+                },
+                {
+                  "name": "NeckAttachment",
+                  "className": "Attachment",
+                  "guid": "855330"
+                },
+                {
+                  "name": "roblox",
+                  "className": "Decal",
+                  "guid": "855353"
+                }
+              ]
+            },
+            {
+              "name": "Right Leg",
+              "className": "Part",
+              "guid": "855373"
+            },
+            {
+              "name": "Humanoid",
+              "className": "Folder",
+              "children": [
+                {
+                  "name": "HumanoidDescription",
+                  "className": "HumanoidDescription",
+                  "guid": "855355",
+                  "children": [
+                    {
+                      "name": "BodyPartDescription",
+                      "className": "BodyPartDescription",
+                      "guid": "855352"
+                    },
+                    {
+                      "name": "BodyPartDescription",
+                      "className": "BodyPartDescription",
+                      "guid": "855348"
+                    },
+                    {
+                      "name": "BodyPartDescription",
+                      "className": "BodyPartDescription",
+                      "guid": "855349"
+                    },
+                    {
+                      "name": "BodyPartDescription",
+                      "className": "BodyPartDescription",
+                      "guid": "855350"
+                    },
+                    {
+                      "name": "BodyPartDescription",
+                      "className": "BodyPartDescription",
+                      "guid": "855347"
+                    }
+                  ]
+                },
+                {
+                  "name": "Animator",
+                  "className": "Animator",
+                  "guid": "855325"
+                }
+              ]
+            },
+            {
+              "name": "Left Leg",
+              "className": "Folder",
+              "children": [
+                {
+                  "name": "LeftFootAttachment",
+                  "className": "Attachment",
+                  "guid": "855342"
+                }
+              ]
+            },
+            {
+              "name": "Head",
+              "className": "Folder",
+              "children": [
+                {
+                  "name": "HatAttachment",
+                  "className": "Attachment",
+                  "guid": "855327"
+                },
+                {
+                  "name": "Mesh",
+                  "className": "SpecialMesh",
+                  "guid": "855376"
+                }
+              ]
+            },
+            {
+              "name": "Right Arm",
+              "className": "Folder",
+              "children": [
+                {
+                  "name": "RightShoulderAttachment",
+                  "className": "Attachment",
+                  "guid": "855340"
+                }
+              ]
+            },
+            {
+              "name": "NationPants",
+              "className": "Pants",
+              "guid": "855367"
+            },
+            {
+              "name": "Animate",
+              "className": "LocalScript",
+              "guid": "855356",
+              "filePaths": [
+                "sync/Workspace/NationRig/Animate.client.luau"
+              ],
+              "children": [
+                {
+                  "name": "jump",
+                  "className": "StringValue",
+                  "guid": "855380",
+                  "children": [
+                    {
+                      "name": "JumpAnim",
+                      "className": "Animation",
+                      "guid": "855320"
+                    }
+                  ]
+                },
+                {
+                  "name": "run",
+                  "className": "StringValue",
+                  "guid": "855379",
+                  "children": [
+                    {
+                      "name": "RunAnim",
+                      "className": "Animation",
+                      "guid": "855319"
+                    }
+                  ]
+                },
+                {
+                  "name": "sit",
+                  "className": "StringValue",
+                  "guid": "855384"
+                },
+                {
+                  "name": "idle",
+                  "className": "StringValue",
+                  "guid": "855377",
+                  "children": [
+                    {
+                      "name": "Animation2",
+                      "className": "Animation",
+                      "guid": "855317",
+                      "children": [
+                        {
+                          "name": "Weight",
+                          "className": "NumberValue",
+                          "guid": "855365"
+                        }
+                      ]
+                    },
+                    {
+                      "name": "Animation1",
+                      "className": "Animation",
+                      "guid": "855316"
+                    }
+                  ]
+                },
+                {
+                  "name": "climb",
+                  "className": "StringValue",
+                  "guid": "855381",
+                  "children": [
+                    {
+                      "name": "ClimbAnim",
+                      "className": "Animation",
+                      "guid": "855321"
+                    }
+                  ]
+                },
+                {
+                  "name": "walk",
+                  "className": "Folder",
+                  "children": [
+                    {
+                      "name": "WalkAnim",
+                      "className": "Animation",
+                      "guid": "855318"
+                    }
+                  ]
+                },
+                {
+                  "name": "walk",
+                  "className": "StringValue",
+                  "guid": "855378"
+                },
+                {
+                  "name": "fall",
+                  "className": "StringValue",
+                  "guid": "855383"
+                }
+              ]
+            },
+            {
+              "name": "Head",
+              "className": "Part",
+              "guid": "855368",
+              "children": [
+                {
+                  "name": "HairAttachment",
+                  "className": "Attachment",
+                  "guid": "855326"
+                },
+                {
+                  "name": "FaceFrontAttachment",
+                  "className": "Attachment",
+                  "guid": "855328"
+                },
+                {
+                  "name": "FaceCenterAttachment",
+                  "className": "Attachment",
+                  "guid": "855329"
+                }
+              ]
+            },
+            {
+              "name": "Body Colors",
+              "className": "BodyColors",
+              "guid": "855346"
+            },
+            {
+              "name": "Right Arm",
+              "className": "Part",
+              "guid": "855371",
+              "children": [
+                {
+                  "name": "RightGripAttachment",
+                  "className": "Attachment",
+                  "guid": "855341"
+                }
+              ]
+            },
+            {
+              "name": "Torso",
+              "className": "Part",
+              "guid": "855369",
+              "children": [
+                {
+                  "name": "Right Hip",
+                  "className": "Motor6D",
+                  "guid": "855360"
+                },
+                {
+                  "name": "BodyFrontAttachment",
+                  "className": "Attachment",
+                  "guid": "855331"
+                },
+                {
+                  "name": "Left Shoulder",
+                  "className": "Motor6D",
+                  "guid": "855359"
+                },
+                {
+                  "name": "Right Shoulder",
+                  "className": "Motor6D",
+                  "guid": "855358"
+                },
+                {
+                  "name": "LeftCollarAttachment",
+                  "className": "Attachment",
+                  "guid": "855333"
+                },
+                {
+                  "name": "RightCollarAttachment",
+                  "className": "Attachment",
+                  "guid": "855334"
+                }
+              ]
+            },
+            {
+              "name": "HumanoidRootPart",
+              "className": "Part",
+              "guid": "855374",
+              "children": [
+                {
+                  "name": "RootAttachment",
+                  "className": "Attachment",
+                  "guid": "855344"
+                }
+              ]
+            },
+            {
+              "name": "Left Leg",
+              "className": "Part",
+              "guid": "855372"
+            },
+            {
+              "name": "NationShirt",
+              "className": "Shirt",
+              "guid": "855375"
+            },
+            {
+              "name": "Humanoid",
+              "className": "Humanoid",
+              "guid": "855354",
+              "children": [
+                {
+                  "name": "HumanoidDescription",
+                  "className": "HumanoidDescription",
+                  "guid": "855355",
+                  "children": [
+                    {
+                      "name": "BodyPartDescription",
+                      "className": "BodyPartDescription",
+                      "guid": "855351"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "EmpireRig",
+          "className": "Model",
+          "guid": "855357",
+          "children": [
+            {
+              "name": "Animate",
+              "className": "LocalScript",
+              "guid": "855356",
+              "filePaths": [
+                "sync/Workspace/EmpireRig/Animate.client.luau"
+              ],
+              "children": [
+                {
+                  "name": "climb",
+                  "className": "StringValue",
+                  "guid": "855381",
+                  "children": [
+                    {
+                      "name": "ClimbAnim",
+                      "className": "Animation",
+                      "guid": "855321"
+                    }
+                  ]
+                },
+                {
+                  "name": "fall",
+                  "className": "StringValue",
+                  "guid": "855383"
+                },
+                {
+                  "name": "jump",
+                  "className": "StringValue",
+                  "guid": "855380",
+                  "children": [
+                    {
+                      "name": "JumpAnim",
+                      "className": "Animation",
+                      "guid": "855320"
+                    }
+                  ]
+                },
+                {
+                  "name": "sit",
+                  "className": "StringValue",
+                  "guid": "855384"
+                },
+                {
+                  "name": "walk",
+                  "className": "StringValue",
+                  "guid": "855378"
+                }
+              ]
+            },
+            {
+              "name": "Body Colors",
+              "className": "BodyColors",
+              "guid": "855346"
+            },
+            {
+              "name": "Head",
+              "className": "Part",
+              "guid": "855368",
+              "children": [
+                {
+                  "name": "FaceCenterAttachment",
+                  "className": "Attachment",
+                  "guid": "855329"
+                },
+                {
+                  "name": "FaceFrontAttachment",
+                  "className": "Attachment",
+                  "guid": "855328"
+                },
+                {
+                  "name": "HairAttachment",
+                  "className": "Attachment",
+                  "guid": "855326"
+                }
+              ]
+            },
+            {
+              "name": "Humanoid",
+              "className": "Humanoid",
+              "guid": "855354"
+            },
+            {
+              "name": "HumanoidRootPart",
+              "className": "Part",
+              "guid": "855374",
+              "children": [
+                {
+                  "name": "RootAttachment",
+                  "className": "Attachment",
+                  "guid": "855344"
+                }
+              ]
+            },
+            {
+              "name": "Left Arm",
+              "className": "Part",
+              "guid": "855370",
+              "children": [
+                {
+                  "name": "LeftGripAttachment",
+                  "className": "Attachment",
+                  "guid": "855339"
+                },
+                {
+                  "name": "LeftShoulderAttachment",
+                  "className": "Attachment",
+                  "guid": "855338"
+                }
+              ]
+            },
+            {
+              "name": "Left Leg",
+              "className": "Part",
+              "guid": "855372"
+            },
+            {
+              "name": "NationPants",
+              "className": "Pants",
+              "guid": "855367"
+            },
+            {
+              "name": "NationShirt",
+              "className": "Shirt",
+              "guid": "855375"
+            },
+            {
+              "name": "Right Arm",
+              "className": "Part",
+              "guid": "855371",
+              "children": [
+                {
+                  "name": "RightGripAttachment",
+                  "className": "Attachment",
+                  "guid": "855341"
+                }
+              ]
+            },
+            {
+              "name": "Right Leg",
+              "className": "Part",
+              "guid": "855373",
+              "children": [
+                {
+                  "name": "RightFootAttachment",
+                  "className": "Attachment",
+                  "guid": "855343"
+                }
+              ]
+            },
+            {
+              "name": "Torso",
+              "className": "Part",
+              "guid": "855369",
+              "children": [
+                {
+                  "name": "BodyFrontAttachment",
+                  "className": "Attachment",
+                  "guid": "855331"
+                },
+                {
+                  "name": "Left Shoulder",
+                  "className": "Motor6D",
+                  "guid": "855359"
+                },
+                {
+                  "name": "LeftCollarAttachment",
+                  "className": "Attachment",
+                  "guid": "855333"
+                },
+                {
+                  "name": "Right Hip",
+                  "className": "Motor6D",
+                  "guid": "855360"
+                },
+                {
+                  "name": "Right Shoulder",
+                  "className": "Motor6D",
+                  "guid": "855358"
+                },
+                {
+                  "name": "RightCollarAttachment",
+                  "className": "Attachment",
+                  "guid": "855334"
+                }
+              ]
+            }
           ]
         }
       ]

@@ -1249,11 +1249,11 @@ function BaseTool:equip()
 						or (self.SoundFolder and self.SoundFolder:FindFirstChild(soundName, true))
 				if not sound or not sound:IsA("Sound") then sound = GunloadingSounds.Find(soundName) end
 				if sound then
-					local origin = (general and LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:FindFirstChild("HumanoidRootPart"))
+					local origin = (LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:FindFirstChild("HumanoidRootPart"))
 						or self:_findModelPart(self.MuzzlePartName)
 						or (self.actual_model and self.actual_model:FindFirstChildWhichIsA("BasePart", true))
 						or (LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:FindFirstChild("HumanoidRootPart"))
-					if origin then self:_play_sfx(sound, origin, nil, 0.1) end
+					if origin then self:_play_sfx(sound, origin, nil, nil, nil, 0.1) end
 				else
 					warn("Sound not found for keyframe: " .. keyframe)
 				end

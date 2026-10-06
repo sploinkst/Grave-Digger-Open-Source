@@ -107,7 +107,7 @@ function BaseShotgun:_fireShotgunBlast(options): boolean
 	local animation = options and options.fireAnimation
 	if not animation then animation = self.current_shoulder == "Right" and "Fire" or "Fire_Left" end
 	self:_playFireAnimation(animation)
-	self:_playShotFeedback(muzzle, options and options.sound or self.FireSound, options and options.soundPitchVariation)
+	self:_playShotFeedback(muzzle, options and options.sound or self.FireSound, options and options.soundPitchVariation, options and options.soundVolumeAdjustment)
 
 	local fireDelay = options and options.fireDelay
 	if fireDelay and fireDelay > 0 then

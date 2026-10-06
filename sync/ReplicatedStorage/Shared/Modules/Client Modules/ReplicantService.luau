@@ -1233,15 +1233,35 @@ local function StartConcussionEffect()
 	end)
 end
 
+local injuryBorder: ScreenGui? = nil
 local function UpdateConcussionState()
 	local character = LocalPlayer.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local injured = humanoid ~= nil
-		and humanoid.Health > 0
-		and humanoid.Health < LowHealthThreshold
-	local state = LocalPlayer:GetAttribute("Concussion") == true or injured
-
-	if state then
+	local injured = humanoid ~= nil and humanoid.Health > 0 and humanoid.Health < 100
+	if not injuryBorder then
+		local gui = Instance.new("ScreenGui")
+		gui.Name = "InjuryBorder"
+		gui.IgnoreGuiInset = true
+		gui.ResetOnSpawn = false
+		gui.DisplayOrder = 20
+		for _, edge in ipairs({
+			{UDim2.fromScale(0, 0), UDim2.fromScale(1, 0.06)},
+			{UDim2.fromScale(0, 0.94), UDim2.fromScale(1, 0.06)},
+			{UDim2.fromScale(0, 0.06), UDim2.fromScale(0.04, 0.88)},
+			{UDim2.fromScale(0.96, 0.06), UDim2.fromScale(0.04, 0.88)},
+		}) do
+			local frame = Instance.new("Frame")
+			frame.Position = edge[1]
+			frame.Size = edge[2]
+			frame.BackgroundColor3 = Color3.new(0, 0, 0)
+			frame.BorderSizePixel = 0
+			frame.Parent = gui
+		end
+		gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+		injuryBorder = gui
+	end
+	injuryBorder.Enabled = injured
+	if LocalPlayer:GetAttribute("Concussion") == true and humanoid and humanoid.Health > 0 then
 		StartConcussionEffect()
 	else
 		StopConcussionEffect()
@@ -1308,7 +1328,6 @@ local function HandleFastCastReplication(...)
 
 	caster.LengthChanged:Connect(function(cast, position, segmentVelocity, segmentTravelDistance, segmentIndex)
 		local bulletPos = position + segmentVelocity.Unit * segmentTravelDistance
-
 		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
 			if (bulletPos - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude < 18 then
 				Module.FlinchLocalPlayer(direction)
@@ -1464,6 +1483,10 @@ function Module.HandleSfxReplication(...)
 			volume *= 0.5
 			maxDistance = 65
 		end
+		-- Master client_volume applies only to the player who fired the shot.
+		if player == LocalPlayer and type(args[10]) == "number" then
+			volume = math.max(args[10], 0)
+		end
 		SoundPlayback.Play(soundInstance, parent, {
 			PlaybackSpeed = playbackSpeed,
 			Volume = volume,
@@ -1531,7 +1554,10 @@ end
 
 function Module.ConnectSfx(...)
 	local args = { ... }
-	Module.HandleSfxReplication(...)
+	local played, playError = pcall(Module.HandleSfxReplication, ...)
+	if not played then
+		warn("[ReplicantService] Local sound playback failed:", playError)
+	end
 
 	-- // remove player from the args
 	local player = args[1]
@@ -1600,7 +1626,7 @@ function Module.start_module()
 		local args = { ... }
 		local player = args[1]
 
-		if player == LocalPlayer then
+		if player == LocalPlayer and args[9] ~= true then
 			return
 		end
 

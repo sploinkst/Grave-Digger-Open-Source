@@ -27,7 +27,13 @@ function GunloadingSounds.Find(name)
 	if sound then return sound end
 	local gameSounds = sounds and sounds:FindFirstChild("Game")
 	local loading = gameSounds and gameSounds:FindFirstChild("Gunloading")
-	return choose(loading, name) or choose(shared, name)
+	local loadingSound = choose(loading, name) or choose(shared, name)
+	if loadingSound then return loadingSound end
+	-- These lever cues are shared by Crestfall and Auclair's authored clips.
+	if name:match("^lever_") then
+		return choose(gunSounds and gunSounds:FindFirstChild("CrestfallRifle"), name)
+	end
+	return nil
 end
 
 return GunloadingSounds

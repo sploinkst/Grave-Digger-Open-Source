@@ -1,4 +1,4 @@
--- Playback ratios from toolScript, independent of Roblox track lengths.
+	-- Playback ratios from toolScript, independent of Roblox track lengths.
 -- Gameplay readiness and animation blend times are separate clocks in the master.
 local Rules = {}
 local durations = {

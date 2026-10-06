@@ -1,5 +1,6 @@
 local RS=game:GetService("ReplicatedStorage")
 local V=require(script.Parent.MasterActions.Validation)
+local Audio=require(RS.Shared.Library.ConstructAudio)
 local Service={}
 local remote=V.Remote("ShieldAction")
 local names={"shield","Shield","VanguardShield","vanguardshield"}
@@ -47,6 +48,7 @@ function Service.Damage(player,part,amount)
 	if not owner or owner.Team==player.Team or not (segment.Name=="leftshield" or segment.Name=="rightshield" or segment.Name=="topshield" or segment.Name=="mainshield") then return false end
 	local health=segmentHealth(segment)
 	health.Value=math.max(0,health.Value-amount)
+	Audio.Impact(segment,part,health.Value<=0)
 	if health.Value<=0 then
 		showBroken(segment)
 	end
@@ -66,6 +68,7 @@ function Service.start_module()
 		if not c or not V.Cooldown(player,"Shield:"..tostring(action),1) then return end
 		local model=modelFor(c,tool)
 		if action=="Plant" then
+			Audio.Play("shield_ready",root)
 			local captured=c
 			task.delay(1,function()
 				if player.Character~=captured or tool.Parent~=captured or h.Health<=0 then return end
@@ -83,6 +86,8 @@ function Service.start_module()
 					if owner~=player or not current or not deployment.Parent or deployment:GetAttribute("Retrieving")
 						or not backpack or (r.Position-deployment.core.Position).Magnitude>8 then return end
 					deployment:SetAttribute("Retrieving",true)
+					Audio.Play("shield_ready",r)
+					Audio.Play("shield_pickup",r)
 					tool.Parent=backpack
 					deployment:Destroy()
 				end)
@@ -93,6 +98,7 @@ function Service.start_module()
 			local damagepart=segment and segment:FindFirstChild("damagepart")
 			if not health or not damagepart or damagepart.Transparency~=0 then return end
 			if segmentName~="topshield" and health.Value>0 then return end
+			Audio.Play("destroy_subtle",segment)
 			damagepart.Transparency=1; damagepart.CanQuery=false
 		elseif action=="Replace" and model and table.find({"leftshield","rightshield","topshield"},segmentName) then
 			local segment=model:FindFirstChild(segmentName,true)
@@ -100,6 +106,7 @@ function Service.start_module()
 			if segment then health,maximum=segmentHealth(segment) end
 			local supplies=tool:GetAttribute("ShieldSupplies") or 2
 			if not health or not maximum or health.Value>=maximum.Value or supplies<=0 then return end
+			Audio.Play("repair",root)
 			tool:SetAttribute("ShieldSupplies",supplies-1); health.Value=maximum.Value
 			for _,part in ipairs(segment:GetDescendants()) do
 				if part:IsA("BasePart") then part.Transparency=part.Name=="damagepart" and 1 or 0; part.CanQuery=part.Name~="damagepart" end

@@ -5,7 +5,6 @@ local Players = game:GetService("Players")
 local HEALTH_WAIT = 0.15
 local HEALTH_TICK = 1
 local HEALTH_DELAY = 5
-local HEALTH_GATE = 99
 
 local ActiveHumanoids = {}
 
@@ -18,12 +17,18 @@ local function health_loop(humanoid)
 
 	local lastDamageTime = os.clock()
 	local lastHealth = humanoid.Health
+	if lastHealth > 0 and lastHealth < 100 then
+		humanoid.Parent:SetAttribute("InjuryRegenerationBlocked", true)
+	end
 
 	humanoid.HealthChanged:Connect(function(newHealth)
 		if newHealth < lastHealth then
 			lastDamageTime = os.clock()
 		end
 
+		if newHealth > 0 and newHealth < 100 then
+			humanoid.Parent:SetAttribute("InjuryRegenerationBlocked", true)
+		end
 		lastHealth = newHealth
 	end)
 
@@ -36,7 +41,8 @@ local function health_loop(humanoid)
 			task.wait(HEALTH_WAIT)
 
 			local player = Players:GetPlayerFromCharacter(humanoid.Parent)
-			local regenerationBlocked = player and (player:GetAttribute("Clotting") or player:GetAttribute("Sickness"))
+			local regenerationBlocked = humanoid.Parent:GetAttribute("InjuryRegenerationBlocked") == true
+			or (player and (player:GetAttribute("Clotting") or player:GetAttribute("Sickness")))
 			if not regenerationBlocked and humanoid.Health >= 100 and humanoid.Health < humanoid.MaxHealth then
 				if os.clock() - lastDamageTime >= HEALTH_DELAY then
 					humanoid.Health = math.min(
@@ -63,6 +69,8 @@ local function onPlayerAdded(player)
 		onCharacterAdded(player.Character)
 	end
 end
+
+module.TrackHumanoid = health_loop
 
 function module.start_module()
 	Players.PlayerAdded:Connect(onPlayerAdded)

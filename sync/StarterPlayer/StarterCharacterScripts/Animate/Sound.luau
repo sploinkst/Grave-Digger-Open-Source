@@ -31,8 +31,20 @@ module.Play_WalkSFX = function()
 	local sound = get_sound()
 	
 	if not sound then return end
-	SoundPlayback.Play(sound, script.Parent.Parent.HumanoidRootPart, { Volume = 1 })
-	sfx_replicant:FireServer(sound, script.Parent.Parent.HumanoidRootPart, sound.PlaybackSpeed, 1, 0, 0)
+	local character = script.Parent.Parent
+	local adjustment, maxDistance = 0, nil
+	if character:GetAttribute("charging") ~= true then
+		local quiet = character:GetAttribute("TunnelRat") == true or character:GetAttribute("Crouching") == true
+		if quiet then maxDistance = 10; adjustment = -0.25 end
+		if character:GetAttribute("Sprinting") == true then
+			adjustment = math.clamp(character:GetAttribute("SprintProgress") or 0, 0, 1) - (quiet and 0.25 or 0)
+		end
+		if character:FindFirstChild("dreadnought") or character:GetAttribute("Dreadnought") == true then adjustment = 0.4 end
+		if character.Humanoid:GetState() == Enum.HumanoidStateType.Climbing then adjustment = -0.2 end
+	end
+	local volume = math.max(sound.Volume + adjustment, 0)
+	SoundPlayback.Play(sound, character.HumanoidRootPart, { Volume = volume, RollOffMaxDistance = maxDistance })
+	sfx_replicant:FireServer(sound, character.HumanoidRootPart, sound.PlaybackSpeed, volume, 0, 0, maxDistance)
 end
 
 return module

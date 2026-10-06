@@ -2,6 +2,7 @@ local RS=game:GetService("ReplicatedStorage")
 local Players=game:GetService("Players")
 local V=require(script.Parent.MasterActions.Validation)
 local Definitions=require(RS.Shared.Library.MasterToolDefinitions)
+local Audio=require(RS.Shared.Library.ConstructAudio)
 local Service={}
 local remote=V.Remote("UtilityAction")
 local actions={
@@ -54,10 +55,15 @@ function Service.start_module()
 			local stuff=workspace:FindFirstChild("serverStuff"); local values=stuff and stuff:FindFirstChild("values")
 			local specific=values and values:FindFirstChild("gamemode_specific"); local train=specific and specific:FindFirstChild("train_track_on")
 			local health=train and train:FindFirstChild("trainhealth"); local maximum=train and train:FindFirstChild("trainhealthmax")
-			if carriage and carriage.Parent and health and maximum and not c:GetAttribute("InsideTrain") then health.Value=math.min(maximum.Value,health.Value+(tool:GetAttribute("RepairAmount") or 10)) end
+			if carriage and carriage.Parent and health and maximum and not c:GetAttribute("InsideTrain") then
+				local previous=health.Value
+				health.Value=math.min(maximum.Value,health.Value+(tool:GetAttribute("RepairAmount") or 10))
+				if health.Value>previous then Audio.Play("repair",root) end
+			end
 		elseif action=="FlagPlace" then
 			require(script.Parent.BuffService).DeployBanner(player)
 		elseif action=="FlagWave" then
+			Audio.Play("flag",root)
 			for _,ally in ipairs(Players:GetPlayers()) do
 				local r=ally.Character and ally.Character:FindFirstChild("HumanoidRootPart")
 				if player.Team and ally.Team==player.Team and r and (r.Position-root.Position).Magnitude<=35 then require(script.Parent.StatusService).GiveStatus(ally,"MoraleStatus",5) end

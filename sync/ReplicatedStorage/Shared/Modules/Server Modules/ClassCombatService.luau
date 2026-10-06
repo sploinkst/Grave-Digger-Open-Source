@@ -108,6 +108,9 @@ end
 local function enemy(player, character)
 	if character == player.Character then return false end
 	local target = Players:GetPlayerFromCharacter(character)
+	if character:GetAttribute("IsTrainingRig") and player.Team then
+		return character:GetAttribute("Team") ~= player.Team.Name
+	end
 	return not target or player.Team == nil or target.Team ~= player.Team
 end
 
@@ -159,7 +162,10 @@ local function damage(player, target, amount, instant)
 	local finalDamage = instant and humanoid.Health or amount
 		* (target:GetAttribute("MeleeDamageMultiplier") or 1)
 		* (target:GetAttribute("DamageTakenMultiplier") or 1)
-	require(script.Parent.ReplicantManager).play_damage_sound(target, finalDamage, player)
+	-- PlayerService voices player damage once from the actual health loss.
+	if not targetPlayer and not target:GetAttribute("IsTrainingRig") then
+		require(script.Parent.ReplicantManager).play_damage_sound(target, finalDamage, player)
+	end
 	humanoid:TakeDamage(finalDamage)
 end
 
@@ -229,6 +235,7 @@ local function inspire(player, character, state)
 	state.inspire = os.clock() + 15
 	character:SetAttribute("InspireReadyAt", workspace:GetServerTimeNow() + 15)
 	remote:FireClient(player, "Inspire")
+	require(game:GetService("ReplicatedStorage").Shared.Library.ConstructAudio).Play("flag", character)
 	local statusService = require(script.Parent.StatusService)
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if not root then return end

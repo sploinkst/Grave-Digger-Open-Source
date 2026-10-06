@@ -204,18 +204,18 @@ local function playCharacterSound(character: Model?, soundName: string, playerHi
 	local playerSounds = soundsFolder and soundsFolder:FindFirstChild("PlayerSounds")
 	local sound = playerSounds and playerSounds:FindFirstChild(soundName)
 	if not parent or not sound or not sound:IsA("Sound") then return end
-	local sourcePlayer = playerHint
-		or (character and player_service:GetPlayerFromCharacter(character))
-		or player_service:GetPlayers()[1]
-	if not sourcePlayer then return end
-	sfx_replicant:FireAllClients(sourcePlayer, sound, parent, sound.PlaybackSpeed, sound.Volume, 0, 0.08)
+	-- Server playback replicates to everyone, including the injured player.
+	-- This must not depend on the client echo filter used by weapon sounds.
+	SoundPlayback.Play(sound, parent, {
+		PitchVariation = 0.08,
+		RollOffMaxDistance = 75,
+	})
 end
 
 function module.play_damage_sound(character: Model?, amount: number?, playerHint: Player?)
 	local targetPlayer = character and player_service:GetPlayerFromCharacter(character)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not amount or amount <= 0 or not humanoid then return end
-	if amount <= 100 and humanoid.Health < 100 then return end
 	local weight = ((amount or 0) > 100) and "heavy" or "hurt"
 	local sound = require(ReplicatedStorage.Shared.Library.CharacterVoice).Choose(character, weight)
 	if sound then playCharacterSound(character, sound.Name, targetPlayer or playerHint) end
@@ -518,8 +518,8 @@ function module.start_module()
 		local sound = WhistleSounds and WhistleSounds:FindFirstChild("whistle_" .. string.lower(order))
 		if sound and sound:IsA("Sound") then
 			SoundPlayback.Play(sound, root, {
-				PlaybackSpeed = 1.15,
-				Volume = sound.Volume * 5,
+				PlaybackSpeed = sound.PlaybackSpeed,
+				Volume = sound.Volume,
 			})
 		end
 	end)
@@ -721,6 +721,8 @@ function module.start_module()
 
 		-- Prevent self-damage
 		if hitPlayer and player.Team ~= nil and hitPlayer.Team ~= nil and player.Team == hitPlayer.Team then return end
+		if hitCharacter:GetAttribute("IsTrainingRig") and player.Team
+			and hitCharacter:GetAttribute("Team") == player.Team.Name then return end
 		if hitPlayer and hitPlayer == player then return end
 
 		if hitPlayer then
@@ -824,6 +826,9 @@ function module.start_module()
 		-- Normal damage
 		damage = (damage or 0) * (hitCharacter:GetAttribute("DamageTakenMultiplier") or 1)
 		humanoid:TakeDamage(damage)
+		if hitCharacter:GetAttribute("IsTrainingRig") then
+			require(script.Parent.TrainingRigService).ApplyDamageStatus(hitCharacter, instance.Name, weaponName)
+		end
 		hitCharacter:SetAttribute("Injured", if humanoid.Health > 0 and humanoid.Health < 100 then true else nil)
 		if hitPlayer then
 			status_service.GiveStatus(hitPlayer, "ClottingStatus", 5)

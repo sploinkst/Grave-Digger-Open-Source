@@ -38,6 +38,7 @@ function Service.Complete(sender, target, wound)
 	if character:GetAttribute("Hippocratic") then Status.GiveStatus(recipient, "MoraleStatus", 40) end
 	local health = sender ~= recipient and (character:GetAttribute("AllyHealHealth") or 100) or 100
 	humanoid.Health = math.max(humanoid.Health, math.min(humanoid.MaxHealth, health))
+	patient:SetAttribute("InjuryRegenerationBlocked", nil)
 	Aid.Record(recipient, sender, character)
 	return true
 end

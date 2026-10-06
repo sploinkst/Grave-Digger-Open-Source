@@ -1037,18 +1037,22 @@ local function StartIntermission()
 	SetBaseColours(nationSpawn, true)
 	SetWallCollision(true) -- lock players inside their spawn for the new intermission
 
-	for _, player in ipairs(Players:GetPlayers()) do
-		local spawnRoom = GetSpawnRoomFor(player)
-		if spawnRoom then
-			SpawnAndEquipPlayer(player, spawnRoom)
-		end
-	end
-
-	local playerAddedConnection
-	playerAddedConnection = Players.PlayerAdded:Connect(function(player)
-		local spawnRoom = GetSpawnRoomFor(player)
-		if spawnRoom then
-			SpawnAndEquipPlayer(player, spawnRoom)
+	-- Profile loading can finish after PlayerAdded. Retry throughout intermission.
+	local generation = roundGeneration
+	local spawning = true
+	local scheduled = {}
+	task.spawn(function()
+		while spawning and generation == roundGeneration do
+			for _, player in ipairs(Players:GetPlayers()) do
+				local spawnRoom = GetSpawnRoomFor(player)
+				if not scheduled[player] and spawnRoom
+					and player:GetAttribute("PlayerDataReady")
+					and player:GetAttribute("PlayerSetupReady") then
+					scheduled[player] = true
+					task.spawn(SpawnAndEquipPlayer, player, spawnRoom)
+				end
+			end
+			task.wait(0.1)
 		end
 	end)
 
@@ -1064,7 +1068,7 @@ local function StartIntermission()
 		task.wait(1)
 	end
 
-	playerAddedConnection:Disconnect()
+	spawning = false
 
 	print("[GameManager] Intermission complete.")
 

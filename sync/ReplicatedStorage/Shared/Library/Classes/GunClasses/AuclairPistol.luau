@@ -11,6 +11,7 @@ local AuclairPistol = require(script.Parent.LegacyGunFactory).create({
 		alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
 	},
 	assetName = "mares",
+	soundNames = {"AuclairPistol", "mares"},
 	AnimationGunType = "AuclairPistol",
 	StrictAnimations = true,
 	AnimationMap = {
@@ -75,6 +76,44 @@ local AuclairPistol = require(script.Parent.LegacyGunFactory).create({
 	sideCycleSpeed = 2,
 	sideCycleRequiresAltMode = true,
 })
+
+local Assets = game:GetService("ReplicatedStorage").Shared.Assets
+local GunloadingSounds = require(script.Parent.Parent.Parent.GunloadingSounds)
+
+function AuclairPistol:_findAnimationSound(name)
+	-- Auclair owns its action sounds; lever and loading cues use the same
+	-- shared clips and authored cue names as Crestfall.
+	if name:match("^lever_") then
+		local shared = GunloadingSounds.Find(name)
+		if shared then return shared end
+		local crestfall = Assets.Sounds.Guns:FindFirstChild("CrestfallRifle")
+		return crestfall and crestfall:FindFirstChild(name, true)
+	end
+	return self.SoundFolder and self.SoundFolder:FindFirstChild(name, true)
+end
+
+function AuclairPistol:_shouldPlayAnimationSound(name)
+	return name ~= "draw" and name ~= "aimed" and name ~= "fire"
+end
+
+local onEquip = AuclairPistol._on_equip
+function AuclairPistol:_on_equip()
+	onEquip(self)
+	self:_playConfiguredSound("draw")
+end
+
+local aim = AuclairPistol.aim
+function AuclairPistol:aim()
+	local wasAiming = self.Aiming
+	aim(self)
+	if wasAiming or not self.Aiming then return end
+	local generation, version = self._equipGeneration, self._aimVersion
+	task.delay(self:_aimDuration(), function()
+		if self.Equipped and self.Aiming and self._equipGeneration == generation and self._aimVersion == version then
+			self:_playConfiguredSound("aimed")
+		end
+	end)
+end
 
 function AuclairPistol:setAltMode()
 	if self:_isBusyForActivation() or not self.RegisteredAnimations then return end

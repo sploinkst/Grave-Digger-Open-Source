@@ -36,7 +36,7 @@ local function SetupGameData(player: Player)
 	hatsFolder.Parent = accessorysFolder
 end
 
-local function SetupCharacterData(character: Model, player: Player)
+local function SetupCharacterData(character: Model, teamName: string)
 	-- Runtime values live on the character rather than in the saved profile.  They
 	-- are deliberately ordinary Value objects: perk/equipment code can inspect
 	-- them, and they remain visible while debugging a live character.
@@ -81,7 +81,7 @@ local function SetupCharacterData(character: Model, player: Player)
 	value("StringValue", "spawnanim", "")
 	value("BoolValue", "tools_loaded", false)
 	value("BoolValue", "turret_mounted", false)
-	value("StringValue", "team", player.Team and player.Team.Name or "")
+	value("StringValue", "team", teamName)
 	folder("wounds")
 	
 	local animSaves = character:FindFirstChild("AnimSaves")
@@ -368,6 +368,7 @@ end
 
 local function CopyUI(player)
 	for _, child in pairs(game:GetService("ReplicatedStorage").Shared:WaitForChild("Library"):WaitForChild("UI"):GetChildren()) do
+		if child.Name == "Intro" then continue end
 		local existing = player.PlayerGui:FindFirstChild(child.Name)
 		if existing then
 			if child.Name == "Menu" or child.Name == "Menu_Scenes" then
@@ -392,6 +393,7 @@ end
 
 local function CopyRespawnUI(player)
 	for _, child: ScreenGui in pairs(game:GetService("ReplicatedStorage").Shared:WaitForChild("Library"):WaitForChild("UI"):GetChildren()) do
+		if child.Name == "Intro" then continue end
 		if child.Name == "Menu" or child.Name == "Menu_Scenes" then
 			-- These are normally persistent, but Roblox can still remove their
 			-- ScreenGui descendants during a respawn. Restore the authored tree
@@ -418,7 +420,7 @@ end
 
 local function HandleCharacter(player: Player, character: Model, ragdollObject)
 	CopyRespawnUI(player)
-	SetupCharacterData(character, player)
+	SetupCharacterData(character, player.Team and player.Team.Name or "")
 	ClassService.ApplySpawn(player, character)
 
 	local humanoid: Humanoid = character:WaitForChild("Humanoid")
@@ -574,6 +576,23 @@ local function LoadPlayer(player: Player)
 			player:Kick(" Data failed to load. ")
 		end
 	end
+end
+
+-- Passive training rigs share the player data, hitboxes and faction appearance.
+function Module.SetupTrainingCharacter(character: Model, teamName: string)
+	SetupCharacterData(character, teamName)
+	SetupHitboxes(character)
+	for _, child in character:GetChildren() do
+		if child:IsA("Shirt") or child:IsA("Pants") or child:IsA("ShirtGraphic") then child:Destroy() end
+	end
+	local faction = if teamName == "Golden Empire" then "Empire" else "Nation"
+	for _, suffix in {"Shirt", "Pants"} do
+		local source = script:FindFirstChild(faction .. suffix)
+		if source then source:Clone().Parent = character
+		else warn("[TrainingRigs] Missing uniform: " .. faction .. suffix) end
+	end
+	ClassAppearance.Apply(character, teamName, character:GetAttribute("Class") or "Soldat")
+	character:SetAttribute("AppearanceReady", true)
 end
 
 function Module.start_module()

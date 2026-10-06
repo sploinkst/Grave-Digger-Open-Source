@@ -451,7 +451,7 @@ function BaseFirearm:_dryFire(): boolean
 	local origin = self:_findModelPart(self.MuzzlePartName or "muzzle")
 		or (self.actual_model and self.actual_model:FindFirstChildWhichIsA("BasePart", true))
 	if sound and origin and origin:IsA("BasePart") then
-		self:_play_sfx(sound, origin, nil, 0.1)
+		self:_play_sfx(sound, origin, nil, nil, nil, 0.1)
 	elseif not self._warnedMissingEmptySound then
 		self._warnedMissingEmptySound = true
 		warn(("[%s] Missing empty/dry-fire sound in its SoundFolder"):format(self.className))
@@ -678,16 +678,21 @@ function BaseFirearm:_fireCastFromMuzzle(muzzle: BasePart, direction: Vector3, b
 	return activeCast
 end
 
-function BaseFirearm:_playShotFeedback(muzzle: BasePart, sound: Sound?, soundPitchVariation: number?)
-	if sound then
-		self:_play_sfx(sound, muzzle, nil, soundPitchVariation)
-	end
+function BaseFirearm:_playShotFeedback(muzzle: BasePart, sound: Sound?, soundPitchVariation: number?, soundVolumeAdjustment: number?)
 	self:_bounce_scoped_ui()
 	self:_fireMuzzleFlash()
 	local recoil = self.recoil
 	if self.IsOcelotTrooper then recoil *= 0.25 end
 	if self._isBipodActive and self:_isBipodActive() then recoil = 1 end
 	utilities_module.applyRecoil(recoil, self.recoil_count, 10, true, 1)
+	-- Sound failures must not interrupt ammo, cycling, or clearing Firing.
+	if sound then
+		local played, playError = pcall(function()
+			self:_play_sfx(sound, muzzle, sound.PlaybackSpeed, math.max(sound.Volume + (soundVolumeAdjustment or 0), 0), 0, soundPitchVariation or 0.1, nil, false, 0.3)
+		end)
+		if not played then warn("[BaseFirearm] Gunshot audio failed:", playError) end
+	end
+
 end
 
 function BaseFirearm:_fireSingleShot(options): boolean
@@ -727,7 +732,7 @@ function BaseFirearm:_fireSingleShot(options): boolean
 		fireAnim = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 	end
 	local fireTrack = self:_playFireAnimation(fireAnim)
-	self:_playShotFeedback(muzzle, options and options.sound or self.FireSound, options and options.soundPitchVariation)
+	self:_playShotFeedback(muzzle, options and options.sound or self.FireSound, options and options.soundPitchVariation, options and options.soundVolumeAdjustment)
 
 	if fireTrack then
 		fireTrack.Stopped:Once(function()
@@ -958,8 +963,16 @@ function BaseFirearm:_connect_FastCast(...)
 	fast_cast_replication:FireServer(...)
 end
 
-function BaseFirearm:_play_sfx(...)
-	replicant_service.ConnectSfx(LOCAL_PLAYER, ...)
+function BaseFirearm:_play_sfx(sound, origin, ...)
+	-- The master tool script uses the character root for weapon and loading SFX.
+	-- Impact sounds retain the struck part supplied by their caller.
+	local path = sound and string.lower(sound:GetFullName()) or ""
+	if string.find(path, ".sounds.guns.", 1, true)
+		or string.find(path, ".gunloading.", 1, true) then
+		local character = LOCAL_PLAYER.Character
+		origin = (character and character:FindFirstChild("HumanoidRootPart")) or origin
+	end
+	replicant_service.ConnectSfx(LOCAL_PLAYER, sound, origin, ...)
 end
 
 function BaseFirearm:_fire_ammo(count, reserveName: string?)

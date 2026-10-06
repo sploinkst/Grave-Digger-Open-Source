@@ -229,7 +229,10 @@ local function HandleDeleteTerrain(player, direction)
 	params.FilterDescendantsInstances = {character}
 	local unit = direction.Unit
 	local hit = workspace:Raycast(head.Position, unit * MINING_REACH, params)
-	if not hit or hit.Instance ~= workspace.Terrain or hit.Material ~= Enum.Material.Rock then return end
+	if not hit or hit.Instance ~= workspace.Terrain then return end
+	if hit.Material ~= Enum.Material.Rock then
+		return
+	end
 	local center = hit.Position + unit * (TUNNEL_SIZE.Z / 2 - 2)
 	TerrainService:FillBlock(CFrame.lookAt(center, center + unit), TUNNEL_SIZE, Enum.Material.Air)
 	playRockImpact(hit.Position, hit.Normal)

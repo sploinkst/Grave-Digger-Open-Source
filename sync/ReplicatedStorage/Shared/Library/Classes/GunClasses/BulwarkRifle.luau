@@ -102,7 +102,7 @@ function BulwarkRifle:_playConfiguredSound(name)
 	local source = self.SoundFolder and self.SoundFolder:FindFirstChild(name, true)
 	local character = Players.LocalPlayer.Character
 	local origin = character and character:FindFirstChild("HumanoidRootPart")
-	if source and source:IsA("Sound") and origin then self:_play_sfx(source, origin, nil, 0.1) end
+	if source and source:IsA("Sound") and origin then self:_play_sfx(source, origin, nil, nil, nil, 0.1) end
 end
 
 function BulwarkRifle:_shouldPlayAnimationSound(name)
@@ -123,8 +123,8 @@ function BulwarkRifle:aim()
 	end)
 end
 
-function BulwarkRifle:_playShotFeedback(muzzle, sound, variation)
-	BaseFirearm._playShotFeedback(self, muzzle, sound, variation)
+function BulwarkRifle:_playShotFeedback(muzzle, sound, variation, volumeAdjustment)
+	BaseFirearm._playShotFeedback(self, muzzle, sound, variation, volumeAdjustment)
 	if self.Capacity == 0 then self:_playConfiguredSound("last") end
 end
 

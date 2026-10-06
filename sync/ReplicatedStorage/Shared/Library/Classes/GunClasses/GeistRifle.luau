@@ -215,7 +215,7 @@ end
 function GeistRifle:_playConfiguredSound(name)
 	local sound = self:_findAnimationSound(name)
 	local origin = self:_findModelPart(self.MuzzlePartName)
-	if sound and origin then self:_play_sfx(sound, origin, nil, 0.1) end
+	if sound and origin then self:_play_sfx(sound, origin, nil, nil, nil, 0.1) end
 end
 
 function GeistRifle:_shouldPlayAnimationSound(name)
