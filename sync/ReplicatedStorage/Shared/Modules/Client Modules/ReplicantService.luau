@@ -19,20 +19,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Library = Shared:WaitForChild("Library")
 local Utilities = require(Library:WaitForChild("Util"))
 local SoundPlayback = require(Library:WaitForChild("SoundPlayback"))
-
-local concussionBlur = Lighting:FindFirstChild("ConcussionBlur", true)
-if not concussionBlur or not concussionBlur:IsA("BlurEffect") then
-	concussionBlur = Instance.new("BlurEffect")
-	concussionBlur.Name = "ConcussionBlur"
-	concussionBlur.Size = 0
-	concussionBlur.Enabled = false
-	concussionBlur.Parent = Lighting
-end
-local concussionActive = false
-local concussionConnection: RBXScriptConnection? = nil
-local injuryHealthConnection: RBXScriptConnection? = nil
-local heartbeatSound: Sound? = nil
-local lastHeartbeatTime = 0
+local CombatEffects = require(script.Parent.CombatEffectsService)
 
 -- Prevent remote listeners from being connected more than once.
 local moduleStarted = false
@@ -93,7 +80,6 @@ local FastCastModule = require(Shared.Library.Externals.FastCast)
 -- // Constants
 local MaxRein = 500
 local LowHealthThreshold = 100
-local HeartbeatInterval = 1.5
 
 local Icons = {
 	Golden_Empire_Background = "rbxassetid://17519166341",
@@ -103,8 +89,6 @@ local Icons = {
 local FlashTweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 local FlashColor = Color3.fromRGB(220, 50, 50)
 
-local flinchCooldown = 0.35
-local lastFlinched = 0
 -- // Replicants
 local ReplicantFolder = ReplicatedStorage.Shared.Library.Events
 local FastCastReplicant = ReplicantFolder.FastCast
@@ -1091,215 +1075,9 @@ local function WatchAllPoints()
 	end
 end
 
--- // concussion effects
-local function StopConcussionEffect()
-	if not concussionActive then
-		return
-	end
-	
-	concussionActive = false
-
-	local concussionUi = LocalPlayer.PlayerGui:WaitForChild("Status"):WaitForChild("Concussion")
-	local lowHealthImageLabel = concussionUi.Low_Overlay
-	local painOverlayImageLabel = concussionUi.Pain_Overlay
-
-	-- // fade-out control
-	local startTime = tick()
-	local fadeOutDuration = 0.5
-
-	-- // keep existing connection running, but switch it into "fade-out mode"
-	if concussionConnection and concussionConnection.Connected then
-		concussionConnection:Disconnect()
-	end
-
-	concussionConnection = RunService.RenderStepped:Connect(function()
-		local t = tick()
-		local elapsed = t - startTime
-
-		-- // 1 → 0
-		local fadeAlpha = 1 - math.clamp(elapsed / fadeOutDuration, 0, 1)
-
-		-- // smoothstep easing
-		fadeAlpha = fadeAlpha * fadeAlpha * (3 - 2 * fadeAlpha)
-
-		local pulse = math.sin(t * 1.5) / 10
-
-		-- // drive everything toward zero
-		local targetIntensity = (5 + math.abs(pulse * 50)) * fadeAlpha
-		Blur.Size = Blur.Size + (targetIntensity - Blur.Size) * 0.15
-
-		if concussionBlur then
-			local targetConcussionBlur = (10 + math.abs(pulse * 60)) * fadeAlpha
-			concussionBlur.Size = concussionBlur.Size + (targetConcussionBlur - concussionBlur.Size) * 0.15
-		end
-
-		-- // UI scale collapses back to normal
-		local scale = 1 + ((1.1 - pulse) - 1) * fadeAlpha
-		painOverlayImageLabel.Size = painOverlayImageLabel.Size:Lerp(
-			UDim2.fromScale(scale, scale),
-			0.15
-		)
-
-		-- // fade to invisible
-		lowHealthImageLabel.ImageTransparency = 1 - fadeAlpha
-		painOverlayImageLabel.ImageTransparency = 1 - fadeAlpha
-
-		-- // fully done → cleanup
-		if elapsed >= fadeOutDuration then
-			lowHealthImageLabel.ImageTransparency = 1
-			painOverlayImageLabel.ImageTransparency = 1
-
-			Blur.Size = 0
-
-			if concussionBlur then
-				concussionBlur.Size = 0
-				concussionBlur.Enabled = false
-			end
-
-			if heartbeatSound then
-				heartbeatSound:Stop()
-				heartbeatSound:Destroy()
-				heartbeatSound = nil
-			end
-
-			if concussionConnection then
-				concussionConnection:Disconnect()
-				concussionConnection = nil
-			end
-		end
-	end)
-end
-
-local function StartConcussionEffect()
-	if concussionActive then
-		return
-	end
-	concussionActive = true
-
-	if concussionBlur then
-		concussionBlur.Enabled = true
-	end
-
-	local concussionUi = LocalPlayer.PlayerGui.Status.Concussion
-	local lowHealthImageLabel = concussionUi.Low_Overlay
-	local painOverlayImageLabel = concussionUi.Pain_Overlay
-
-	lowHealthImageLabel.ImageTransparency = 1
-	painOverlayImageLabel.ImageTransparency = 1
-
-	-- // fade-in control
-	local startTime = tick()
-	local fadeInDuration = 0.6 -- seconds
-
-	concussionConnection = RunService.RenderStepped:Connect(function()
-		local t = tick()
-		local elapsed = t - startTime
-
-		-- // smooth ramp from 0 → 1
-		local fadeAlpha = math.clamp(elapsed / fadeInDuration, 0, 1)
-
-		-- // easing (optional but recommended)
-		fadeAlpha = fadeAlpha * fadeAlpha * (3 - 2 * fadeAlpha) -- smoothstep
-
-		local pulse = math.sin(t * 1.5) / 10
-
-		-- // blend pulse intensity with fade-in
-		local targetIntensity = (5 + math.abs(pulse * 50)) * fadeAlpha
-		Blur.Size = Blur.Size + (targetIntensity - Blur.Size) * 0.1
-
-		if concussionBlur then
-			local targetConcussionBlur = (10 + math.abs(pulse * 60)) * fadeAlpha
-			concussionBlur.Size = concussionBlur.Size + (targetConcussionBlur - concussionBlur.Size) * 0.1
-		end
-
-		-- // UI fade-in + pulse scaling
-		local scale = 1 + ((1.1 - pulse) - 1) * fadeAlpha
-		painOverlayImageLabel.Size = painOverlayImageLabel.Size:Lerp(
-			UDim2.fromScale(scale, scale),
-			0.1
-		)
-
-		-- // transparency fades OUT (since 1 = invisible)
-		lowHealthImageLabel.ImageTransparency = 1 - fadeAlpha
-		painOverlayImageLabel.ImageTransparency = 1 - fadeAlpha
-
-		-- // Heartbeat timing
-		if t - lastHeartbeatTime >= HeartbeatInterval then
-			lastHeartbeatTime = t
-			if heartbeatSound then
-				heartbeatSound:Play()
-			end
-		end
-	end)
-end
-
-local injuryBorder: ScreenGui? = nil
-local function UpdateConcussionState()
-	local character = LocalPlayer.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local injured = humanoid ~= nil and humanoid.Health > 0 and humanoid.Health < 100
-	if not injuryBorder then
-		local gui = Instance.new("ScreenGui")
-		gui.Name = "InjuryBorder"
-		gui.IgnoreGuiInset = true
-		gui.ResetOnSpawn = false
-		gui.DisplayOrder = 20
-		for _, edge in ipairs({
-			{UDim2.fromScale(0, 0), UDim2.fromScale(1, 0.06)},
-			{UDim2.fromScale(0, 0.94), UDim2.fromScale(1, 0.06)},
-			{UDim2.fromScale(0, 0.06), UDim2.fromScale(0.04, 0.88)},
-			{UDim2.fromScale(0.96, 0.06), UDim2.fromScale(0.04, 0.88)},
-		}) do
-			local frame = Instance.new("Frame")
-			frame.Position = edge[1]
-			frame.Size = edge[2]
-			frame.BackgroundColor3 = Color3.new(0, 0, 0)
-			frame.BorderSizePixel = 0
-			frame.Parent = gui
-		end
-		gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-		injuryBorder = gui
-	end
-	injuryBorder.Enabled = injured
-	if LocalPlayer:GetAttribute("Concussion") == true and humanoid and humanoid.Health > 0 then
-		StartConcussionEffect()
-	else
-		StopConcussionEffect()
-	end
-end
-
-local function BindInjuryEffect(character: Model)
-	if injuryHealthConnection then
-		injuryHealthConnection:Disconnect()
-		injuryHealthConnection = nil
-	end
-
-	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
-	injuryHealthConnection = humanoid.HealthChanged:Connect(UpdateConcussionState)
-	UpdateConcussionState()
-end
-
+-- Combat overlays use the authored main/core_game assets.
 Module.FlinchLocalPlayer = function(direction)
-	if LocalPlayer:GetAttribute("CantFlinch") or (LocalPlayer.Character
-		and (LocalPlayer.Character:GetAttribute("SuppressionImmune")
-			or LocalPlayer.Character:GetAttribute("DamageFlinchImmune"))) then
-		return
-	end
-	if tick() - lastFlinched < flinchCooldown then
-		return
-	end
-
-	lastFlinched = tick()
-	local flinchingImageLabelClone = LocalPlayer.PlayerGui.Flinching.flinch:Clone()
-	flinchingImageLabelClone.Visible = true
-	flinchingImageLabelClone.Parent = LocalPlayer.PlayerGui.Flinching
-
-	local tween1 = TweenService:Create(flinchingImageLabelClone, TweenInfo.new(0.6), { ImageTransparency = 1 })
-	tween1:Play()
-	game.Debris:AddItem(flinchingImageLabelClone, 1.6)
-
-	LocalPlayer:SetAttribute("Flinch", direction)
-	print("[ReplicantService] Local player is Flinching!", direction)
+    CombatEffects.Flinch(direction)
 end
 
 local function HandleFastCastReplication(...)
@@ -1610,10 +1388,7 @@ function Module.start_module()
 
 	-- // Rebind UI on character respawn
 	LocalPlayer.CharacterAdded:Connect(RebindUI)
-	LocalPlayer.CharacterAdded:Connect(BindInjuryEffect)
-	if LocalPlayer.Character then
-		BindInjuryEffect(LocalPlayer.Character)
-	end
+	CombatEffects.start_module()
 
 	-- // Watch capture points
 	WatchAllPoints()
@@ -1646,8 +1421,6 @@ function Module.start_module()
 	end)
 
 	-- // Listen for changes
-	LocalPlayer:GetAttributeChangedSignal("Concussion"):Connect(UpdateConcussionState)
-	UpdateConcussionState()
 
 	LocalPlayer:GetAttributeChangedSignal("Force_Flinch"):Connect(function()
 		print("FLINCHING")

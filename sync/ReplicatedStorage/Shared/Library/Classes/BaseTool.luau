@@ -1688,6 +1688,14 @@ function BaseTool:_playRecoilAnimation(): AnimationTrack?
 	return recoil
 end
 
+function BaseTool:_stopFireAnimations()
+	for name, track in pairs(self.RegisteredAnimations or {}) do
+		if (name:find("Fire", 1, true) or name:find("Recoil", 1, true)) and track.IsPlaying then
+			track:Stop(0)
+		end
+	end
+end
+
 function BaseTool:_playFireAnimation(animationName: string, playRecoil: boolean?): AnimationTrack?
 	local anims = self.RegisteredAnimations
 	if not anims then return nil end
@@ -1705,6 +1713,7 @@ function BaseTool:_playFireAnimation(animationName: string, playRecoil: boolean?
 	if not anims[resolvedName] then
 		resolvedName = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
 	end
+	self:_stopFireAnimations()
 	local fireTrack = anims[resolvedName] and self:_playAnim(resolvedName) or nil
 	if playRecoil ~= false then self:_playRecoilAnimation() end
 
@@ -1944,6 +1953,13 @@ end
 -- // Shoulder tracking
 
 function BaseTool:_onShoulderChanged()
+	if self.Equipped and self.Aiming and self.Firing then
+		self:_killAimTracks()
+		self:_stopFireAnimations()
+		local aimTrack = self:_aimTrack()
+		if aimTrack and not aimTrack.IsPlaying then self:_blendAim(aimTrack) end
+		return
+	end
 	if self:_isBusy() or not self.Aiming then return end
 
 	task.defer(function()
@@ -1957,6 +1973,7 @@ function BaseTool:_onShoulderChanged()
 		if anims.Aim_Left and anims.Aim_Left.IsPlaying then oldAimTrack = anims.Aim_Left end
 
 		local newAimTrack = self:_aimTrack()
+		self:_stopFireAnimations()
 		if not newAimTrack or oldAimTrack == newAimTrack then return end
 
 		if oldAimTrack and oldAimTrack.IsPlaying then oldAimTrack:Stop(CUT) end
