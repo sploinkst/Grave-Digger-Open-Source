@@ -1,3 +1,5 @@
+local DeathAudio = require(script.Parent.DeathAudioService)
+local ProjectileFlight = require(script.Parent.MasterActions.Projectile)
 local module = {}
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -191,34 +193,40 @@ end
 
 local function soundParent(character: Model?): BasePart?
 	if not character then return nil end
-	local root = character:FindFirstChild("HumanoidRootPart")
-	if root and root:IsA("BasePart") then return root end
-	local head = character:FindFirstChild("Head")
-	if head and head:IsA("BasePart") then return head end
-	return nil
+	return require(ReplicatedStorage.Shared.Library.CharacterVoice).Origin(character)
 end
 
 local function playCharacterSound(character: Model?, soundName: string, playerHint: Player?)
 	local parent = soundParent(character)
 	local soundsFolder = ReplicatedStorage.Shared.Assets:FindFirstChild("Sounds")
 	local playerSounds = soundsFolder and soundsFolder:FindFirstChild("PlayerSounds")
-	local sound = playerSounds and playerSounds:FindFirstChild(soundName)
+	local sound = playerSounds and playerSounds:FindFirstChild(soundName, true)
+	if playerSounds and not sound then
+		local choices = {}
+		for _, clip in ipairs(playerSounds:GetDescendants()) do
+			if clip:IsA("Sound") and clip.Name:match("^" .. soundName .. "%d+$") then table.insert(choices, clip) end
+		end
+		if #choices > 0 then sound = choices[math.random(1, #choices)] end
+	end
 	if not parent or not sound or not sound:IsA("Sound") then return end
 	-- Server playback replicates to everyone, including the injured player.
 	-- This must not depend on the client echo filter used by weapon sounds.
 	SoundPlayback.Play(sound, parent, {
-		PitchVariation = 0.08,
-		RollOffMaxDistance = 75,
+		Volume = math.max(sound.Volume * 1.5, 1),
+		FollowParent = true,
+		RollOffMinDistance = 15,
+		RollOffMaxDistance = 100,
 	})
 end
 
-function module.play_damage_sound(character: Model?, amount: number?, playerHint: Player?)
-	local targetPlayer = character and player_service:GetPlayerFromCharacter(character)
+function module.play_damage_sound(character: Model?, amount: number?, _playerHint: Player?)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not amount or amount <= 0 or not humanoid then return end
-	local weight = ((amount or 0) > 100) and "heavy" or "hurt"
-	local sound = require(ReplicatedStorage.Shared.Library.CharacterVoice).Choose(character, weight)
-	if sound then playCharacterSound(character, sound.Name, targetPlayer or playerHint) end
+	local parent = soundParent(character)
+	if not humanoid or not parent then return end
+	local voice = require(ReplicatedStorage.Shared.Library.CharacterVoice)
+	local kind = voice.DamageKind(amount, humanoid.Health, character)
+	if not kind then return end
+	voice.Play(character, kind)
 end
 
 function module.play_headshot_sound(character: Model?, playerHint: Player?)
@@ -272,6 +280,14 @@ end
 function module.pop_helmet(character, helmet_model, knockable: boolean, shooter: Player?)
 	print("[POP_HELMET] Attempting to pop helmet for character:", character.Name, helmet_model.Name, knockable)
 
+	if helmet_model:GetAttribute("Knocked") then return end
+	local function applyHelmetConcussion()
+		local target = player_service:GetPlayerFromCharacter(character)
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if target and humanoid and humanoid.Health > 0 then
+			status_service.GiveStatus(target,"ConcussionStatus",2.5,"HelmetKnockoff")
+		end
+	end
 	if knockable then
 		if shooter then shooter:SetAttribute("LastHelmetPopSound", HELMET_POP_SOUND_ID) end
 		module.play_headshot_sound(character, shooter)
@@ -292,9 +308,11 @@ function module.pop_helmet(character, helmet_model, knockable: boolean, shooter:
 		end
 		if not head_part and classWeld then
 			classWeld:Destroy()
-			helmet_model:PivotTo(CFrame.new(character.Head.Position))
-			helmet_model.Parent = workspace.Game_Details.Debris
 			helmet_model:SetAttribute("Knocked", true)
+			applyHelmetConcussion()
+			ProjectileFlight.Launch(character, helmet_model, Vector3.yAxis, 15, nil,
+				{origin = character.Head.Position, retain = true, spin = 8})
+			helmet_model:Destroy()
 			for _, part in character:GetDescendants() do
 				if part:IsA("BasePart") then
 					local original = part:GetAttribute("ClassHairTransparency")
@@ -305,6 +323,7 @@ function module.pop_helmet(character, helmet_model, knockable: boolean, shooter:
 		end
 		if not head_part then warn("Helmet head part missing"); return end
 
+		local detached = false
 		for _, child in helmet_model:GetChildren() do
 			if not child:GetAttribute("Knock") then
 				continue
@@ -324,41 +343,19 @@ function module.pop_helmet(character, helmet_model, knockable: boolean, shooter:
 			end
 
 			reference_weld:Destroy()
+			detached = true
 
 			print("Weld destroyed for:", child.Name)
 
-			child.CanCollide = true
-			child.Anchored = false
-
-			-- Randomized pop direction
-			local randomDirection = Vector3.new(
-				math.random(-100, 100) / 100,
-				1,
-				math.random(-100, 100) / 100
-			).Unit
-
-			-- Apply instant velocity
-			local velocity = Instance.new("LinearVelocity")
-			velocity.Attachment0 = child:FindFirstChildOfClass("Attachment") or Instance.new("Attachment", child)
-			velocity.MaxForce = math.huge
-			velocity.VectorVelocity = randomDirection * 15
-			velocity.RelativeTo = Enum.ActuatorRelativeTo.World
-			velocity.Parent = child
-
-			-- Add some spin
-			child.AssemblyAngularVelocity = Vector3.new(
-				math.random(-20, 20),
-				math.random(-20, 20),
-				math.random(-20, 20)
-			)
-
-			-- Remove velocity object shortly after
-			Debris:AddItem(velocity, 0.15)
-			
-			child.Parent = workspace.Game_Details.Debris
+			local direction = Vector3.new(math.random(-100, 100) / 100, 1, math.random(-100, 100) / 100).Unit
+			ProjectileFlight.Launch(character, child, direction, 15, nil,
+				{origin = child.Position, retain = true, spin = math.random(-20, 20)})
+			child:Destroy()
 		end
 		
+		if not detached then return end
 		helmet_model:SetAttribute("Knocked", true)
+		applyHelmetConcussion()
 		-- ClassAppearance hides hair only while the helmet is actually worn.
 		for _, part in character:GetDescendants() do
 			if part:IsA("BasePart") then
@@ -606,30 +603,13 @@ function module.start_module()
 			end
 		end
 	end)
-	jesseGrenadeEvent.OnServerEvent:Connect(function(player,origin,direction)
-		if typeof(origin)~="Vector3" or typeof(direction)~="Vector3" or direction.Magnitude<.9 then return end
-		local character=player.Character; local root=character and character:FindFirstChild("HumanoidRootPart")
-		local tool=character and character:FindFirstChild("JesseRifle"); local grenades=tool and tool:FindFirstChild("Grenades")
-		if not root or not grenades or not grenades:IsA("NumberValue") or grenades.Value<=0 or (root.Position-origin).Magnitude>15 then return end
-		grenades.Value-=1; local params=RaycastParams.new(); params.FilterType=Enum.RaycastFilterType.Exclude; params.FilterDescendantsInstances={character}
-		local result=workspace:Raycast(origin,direction.Unit*1000,params); local position=result and result.Position or origin+direction.Unit*1000
-		local distance=(position-origin).Magnitude
-		task.delay(distance/180,function()
-			if distance<30 then local model=result and getModelFromInstance(result.Instance); local humanoid=model and getHumanoid(model); if humanoid then humanoid:TakeDamage(199) end; return end
-			for _,target in player_service:GetPlayers() do
-				if target~=player and target.Team~=player.Team then
-					local c=target.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); local r=c and c:FindFirstChild("HumanoidRootPart")
-					if h and r and h.Health>0 and (r.Position-position).Magnitude<=18 then
-						h:TakeDamage(99*(c:GetAttribute("ExplosiveDamageMultiplier") or 1))
-						status_service.GiveStatus(target, "ConcussionStatus", 3)
-						if result and result.Instance:IsDescendantOf(c) then
-							h:TakeDamage(5)
-							status_service.GiveStatus(target, "KnockdownStatus", 2)
-						end
-					end
-				end
-			end
-		end)
+	jesseGrenadeEvent.OnServerEvent:Connect(function(player, origin, direction)
+		local V = require(script.Parent.MasterActions.Validation)
+		if not V.Vector(origin) or not V.Direction(direction) then return end
+		local character, root = V.Living(player)
+		local tool = character and character:FindFirstChild("JesseRifle")
+		if not root or not tool or (root.Position - origin).Magnitude > 15 then return end
+		require(script.Parent.OrdnanceService).Fire(player, "RifleGrenade", direction, tool)
 	end)
 
 	fastcast_replicant.OnServerEvent:Connect(function(...)
@@ -678,6 +658,11 @@ function module.start_module()
 		local validation=require(script.Parent.MasterActions.Validation)
 		local equipped=player.Character and player.Character:FindFirstChildOfClass("Tool")
 		local validCharacter=type(hitData.WeaponName)=="string" and validation.Tool(player,equipped,{hitData.WeaponName})
+		if hitData.WeaponName == "KingslayerRevolver" then
+			local factor = require(script.Parent.KingslayerService).ResolveHit(equipped, hitData.KingslayerShotToken)
+			if not factor then return end
+			damage = math.min(tonumber(damage) or 0, 180) * factor
+		end
 		local head=validCharacter and validCharacter:FindFirstChild("Head")
 		if head and validation.Vector(position) and type(damage)=="number" and damage==damage and damage>0 and damage<math.huge then
 			local delta=position-head.Position
@@ -770,9 +755,6 @@ function module.start_module()
 				end
 				local action = HelmetRules.ResolveBullet(penetration, rangeBand, hitCharacter, helmet)
 
-				if hitPlayer then
-					status_service.GiveStatus(hitPlayer, "ConcussionStatus")
-				end
 				markHelmetProtectedShot(hitCharacter, player, hitData)
 
 				if isHellion and type(hitData.ShotId) == "string" then
@@ -794,6 +776,7 @@ function module.start_module()
 				if action == HelmetRules.Action.Obliterate then
 					module.pop_helmet(hitCharacter, helmet, true, player)
 					if canDamageThroughHelmet(weaponName, character) then
+						DeathAudio.RecordDamage(hitCharacter, humanoid, "Head", humanoid.MaxHealth)
 						humanoid:TakeDamage(humanoid.MaxHealth)
 						awardKillMorale(player, hitCharacter, true)
 						player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
@@ -804,9 +787,10 @@ function module.start_module()
 					end
 				end
 				return
-			elseif isHellion then
-				local finalDamage = (damage or 0) * 1.2
+			elseif isHellion or weaponName == "KingslayerRevolver" then
+				local finalDamage = (damage or 0) * (isHellion and 1.2 or 2)
 					* (hitCharacter:GetAttribute("DamageTakenMultiplier") or 1)
+				DeathAudio.RecordDamage(hitCharacter, humanoid, "Head", finalDamage)
 				humanoid:TakeDamage(finalDamage)
 				if humanoid.Health <= 0 then
 					awardKillMorale(player, hitCharacter, true)
@@ -816,7 +800,8 @@ function module.start_module()
 				return
 			else
 				handleLethalHipfireHeadshot(player, character, hitPlayer, weaponName, hitData, position)
-				humanoid.Health = 0
+				DeathAudio.RecordDamage(hitCharacter, humanoid, "Head", humanoid.Health)
+			humanoid.Health = 0
 				awardKillMorale(player, hitCharacter, true)
 				player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
 				return
@@ -825,6 +810,7 @@ function module.start_module()
 
 		-- Normal damage
 		damage = (damage or 0) * (hitCharacter:GetAttribute("DamageTakenMultiplier") or 1)
+		DeathAudio.RecordDamage(hitCharacter, humanoid, instance.Name, damage)
 		humanoid:TakeDamage(damage)
 		if hitCharacter:GetAttribute("IsTrainingRig") then
 			require(script.Parent.TrainingRigService).ApplyDamageStatus(hitCharacter, instance.Name, weaponName)
@@ -833,9 +819,7 @@ function module.start_module()
 		if hitPlayer then
 			status_service.GiveStatus(hitPlayer, "ClottingStatus", 5)
 			status_service.GiveStatus(hitPlayer, "HitstunStatus", 1)
-			if weaponName == "AntiMaterialRifle" then
-				status_service.GiveStatus(hitPlayer, "ConcussionStatus")
-			elseif weaponName == "JudgementIncendiaryRifle" then
+			if weaponName == "JudgementIncendiaryRifle" then
 				status_service.GiveStatus(hitPlayer, "MinorBurnStatus", 5)
 			elseif weaponName == "WexFlamethrower" or weaponName == "Flamethrower" then
 				status_service.GiveStatus(hitPlayer, "LethalBurningStatus")
@@ -872,6 +856,7 @@ function module.start_module()
 			return
 		end
 		local character = player.Character
+		if character and character:GetAttribute("IsShockTrooper") == true then return end
 		local backpack = player:FindFirstChild("Backpack")
 		if tool.Parent ~= character and tool.Parent ~= backpack then return end
 		print("Received drop_connection from", player.Name, "for tool:", tool.Name, "model:", model.Name, "remove_tool:", remove_tool)
@@ -881,33 +866,11 @@ function module.start_module()
 			print("Removed tool from player:", player.Name)
 		end
 		
-		local model_clone = model:Clone()
-		model_clone.Parent = workspace
-		
-		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-
-		if root and model_clone.PrimaryPart then
-			-- Move the clone slightly in front of the player
-			local spawnOffset = root.CFrame.LookVector * 3 -- distance in studs
-			local spawnCFrame = root.CFrame + spawnOffset
-
-			model_clone:PivotTo(spawnCFrame)
-
-			model_clone.PrimaryPart.CanCollide = true
-
-			local forward = root.CFrame.LookVector
-			local upward = root.CFrame.UpVector
-
-			local force = (forward * 10) + (upward * 5)
-
-			local velocity = Instance.new("BodyVelocity")
-			velocity.Velocity = force
-			velocity.MaxForce = Vector3.new(100, 100, 100)
-			velocity.Parent = model_clone.PrimaryPart
-
-			task.delay(0.1, function()
-				velocity:Destroy()
-			end)
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if root then
+			local velocity = root.CFrame.LookVector * 10 + root.CFrame.UpVector * 5
+			ProjectileFlight.Launch(character, model, velocity.Unit, velocity.Magnitude, nil,
+				{origin = root.Position + root.CFrame.LookVector * 3, velocity = velocity, retain = true})
 		end
 	end)
 	
@@ -954,6 +917,7 @@ function module.start_module()
 			appliedDamage *= targetCharacter:GetAttribute("MeleeDamageMultiplier") or 1
 			appliedDamage *= targetCharacter:GetAttribute("DamageTakenMultiplier") or 1
 		end
+		DeathAudio.RecordDamage(targetCharacter, humanoid, "Torso", fromBehind and humanoid.MaxHealth or appliedDamage)
 		humanoid:TakeDamage(fromBehind and humanoid.MaxHealth or appliedDamage)
 		if targetPlayer and humanoid.Health > 0 then
 			status_service.GiveStatus(targetPlayer, "ClottingStatus", 5)
@@ -1050,15 +1014,12 @@ function module.start_module()
 		end
 		local slotValue = tool:FindFirstChild("slot")
 		local inventoryDesignation = slotValue and slotValue:IsA("StringValue") and slotValue.Value or nil
-		local thrownModel = model:Clone()
-		thrownModel.Parent = workspace
 		local root = character:FindFirstChild("HumanoidRootPart")
-		if root and thrownModel.PrimaryPart then
-			thrownModel:PivotTo(root.CFrame + root.CFrame.LookVector * 3)
-			thrownModel.PrimaryPart.CanCollide = true
-			thrownModel.PrimaryPart.AssemblyLinearVelocity = root.CFrame.LookVector * 35 + root.CFrame.UpVector * 12
+		if root then
+			local velocity = root.CFrame.LookVector * 35 + root.CFrame.UpVector * 12
+			ProjectileFlight.Launch(character, model, velocity.Unit, velocity.Magnitude, nil,
+				{origin = root.Position + root.CFrame.LookVector * 3, velocity = velocity, retain = true})
 		end
-		Debris:AddItem(thrownModel, 30)
 
 		humanoid:UnequipTools()
 		if tool.Parent then
@@ -1117,7 +1078,8 @@ function module.start_module()
 			local targetHumanoid = target:FindFirstChildOfClass("Humanoid")
 			if not recipient or recipient.Team ~= player.Team or not targetRoot
 				or not targetHumanoid or targetHumanoid.Health <= 0
-				or (root.Position - targetRoot.Position).Magnitude > 30 or Util.hasfullammo(recipient) then return end
+				or (root.Position - targetRoot.Position).Magnitude > 30
+				or (Util.hasfullammo(recipient) and not require(script.Parent.PickaxeService).NeedsRestock(recipient)) then return end
 		end
 		local now = os.clock()
 		local state = ammoCharges[character]
@@ -1127,13 +1089,31 @@ function module.start_module()
 		if state.count <= 0 then return end
 		if state.count == 2 then state.time = now end
 		state.count -= 1
-		if recipient then Util.setammo(recipient); return end
+		if recipient then
+			Util.setammo(recipient)
+			require(script.Parent.PickaxeService).Restock(recipient)
+			return
+		end
 		-- Untargeted pouch can be collected by its owner or any living ally.
-		local clone = AmmoPack:Clone()
-		clone.CFrame = root.CFrame * CFrame.new(0, 0, -4)
-		clone.Anchored = false; clone.CanCollide = true; clone.CanTouch = true
-		clone.Parent = workspace
-		clone.AssemblyLinearVelocity = root.CFrame.LookVector * 20 + Vector3.new(0, 8, 0)
+		local consumed = false
+		local team = player.Team
+		local function collect(hit, pouch)
+			if consumed then return end
+			local targetCharacter = hit:FindFirstAncestorOfClass("Model")
+			local ally = targetCharacter and player_service:GetPlayerFromCharacter(targetCharacter)
+			local health = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+			if not ally or ally.Team ~= team or not health or health.Health <= 0
+				or (Util.hasfullammo(ally) and not require(script.Parent.PickaxeService).NeedsRestock(ally)) then return end
+			consumed = true
+			Util.setammo(ally)
+			require(script.Parent.PickaxeService).Restock(ally)
+			pouch:Destroy()
+		end
+		local velocity = root.CFrame.LookVector * 20 + Vector3.new(0, 8, 0)
+		local launched, clone = ProjectileFlight.Launch(character, AmmoPack, velocity.Unit, velocity.Magnitude,
+			function(hit, pouch) pouch.CanTouch = true; collect(hit.Instance, pouch) end,
+			{origin = (root.CFrame * CFrame.new(0, 0, -4)).Position, velocity = velocity, retain = true})
+		if not launched then state.count += 1; return end
 		-- Soldat's thrown pouch gets one of the authored ammo-pouch throw sounds.
 		local choices = {}
 		if AmmoPouchSounds then
@@ -1146,18 +1126,7 @@ function module.start_module()
 		else
 			warn("[AmmoPack] Missing Assets.Sounds.Equipment.ammopouch ammo1/ammo2/ammo3")
 		end
-		local consumed = false
-		local team = player.Team
-		clone.Touched:Connect(function(hit)
-			if consumed then return end
-			local targetCharacter = hit:FindFirstAncestorOfClass("Model")
-			local ally = targetCharacter and player_service:GetPlayerFromCharacter(targetCharacter)
-			local health = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
-			if not ally or ally.Team ~= team or not health or health.Health <= 0 or Util.hasfullammo(ally) then return end
-			consumed = true
-			Util.setammo(ally)
-			clone:Destroy()
-		end)
+		clone.Touched:Connect(function(hit) collect(hit, clone) end)
 		Debris:AddItem(clone, 30)
 	end)
 

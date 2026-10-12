@@ -550,7 +550,7 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 		)
 
 		-- Maximum rotation speed while charging.
-		local maxRate = math.rad(15)
+		local maxRate = character:GetAttribute("ImprovedCharge") and 6 or 2
 
 		-- Rotate toward the camera at a fixed maximum speed.
 		local step = math.clamp(

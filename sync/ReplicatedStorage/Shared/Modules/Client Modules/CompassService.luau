@@ -19,6 +19,8 @@ local active = false
 local activeTrack: AnimationTrack? = nil
 local activeArm: string? = nil
 local activationToken = 0
+local Debounce = false
+local DebounceCooldown = 1
 
 local function objectivePoints(): Instance?
 	local details = Workspace:FindFirstChild("Game_Details")
@@ -65,6 +67,9 @@ local function openCompass()
 		or character:GetAttribute("Aiming") == true
 		or character:GetAttribute("CompassDenied") == true then return end
 
+	if Debounce then return end
+	Debounce = true
+	
 	active = true
 	activationToken += 1
 	local token = activationToken
@@ -80,6 +85,10 @@ local function openCompass()
 		if active and token == activationToken and activeTrack then
 			activeTrack:AdjustSpeed(0)
 		end
+	end)
+	
+	task.delay(DebounceCooldown, function()
+		Debounce = false
 	end)
 end
 

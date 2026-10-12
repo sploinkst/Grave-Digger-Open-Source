@@ -14,6 +14,9 @@ local TweenService      = game:GetService("TweenService")
 
 local Types            = require(script.Parent.Parent.Types)
 local WeaponHandling = require(script.Parent.Parent.WeaponHandling)
+local WeaponModelState = require(script.Parent.Parent.WeaponModelState)
+local WeaponIds = require(script.Parent.Parent.WeaponIds)
+local WeaponSounds = require(script.Parent.Parent.WeaponSounds)
 local utilities_module = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 
 local LOCAL_PLAYER = Players.LocalPlayer
@@ -361,7 +364,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 			warn(string.format(
 				"[WeaponAnimation][%s] rejected right-fire alias in Fire_Left; using PrinceRifle.fire_left",
 				tostring(self.className)
-			))
+				))
 			self.animations.Fire_Left = nil
 		end
 		self.RegisteredAnimations = utilities_module.register_animations(LOCAL_PLAYER, self.animations, self.AnimationGunType)
@@ -435,7 +438,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 							tostring(self.className),
 							aimName,
 							tostring(track.Name)
-						))
+							))
 					end
 				end
 			end
@@ -458,7 +461,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 					{ "Stock_Aim", "Stock_Aim_Left" },
 					{ "Long_Aim", "Long_Aim_Left" },
 					{ "Alt_Changeaim", "Alt_Changeaim_Left" },
-				} do
+					} do
 					local modeExists = self.RegisteredAnimations[pair[1]]
 						or self.animations[pair[1]]
 						or self.animations[pair[2]]
@@ -481,7 +484,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 								tostring(self.className),
 								aimName,
 								tostring(track.Name)
-							))
+								))
 						end
 					end
 				end
@@ -489,7 +492,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 				warn(string.format(
 					"[WeaponAnimation][%s] cannot provide left stance: PrinceRifle.aim_left is missing",
 					tostring(self.className)
-				))
+					))
 			end
 		end
 
@@ -515,7 +518,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 					{ "Stock_Fire", "Stock_Fire_Left" },
 					{ "Long_Fire", "Long_Fire_Left" },
 					{ "Alt_Changefire", "Alt_Changefire_Left" },
-				} do
+					} do
 					local modeExists = self.RegisteredAnimations[pair[1]]
 						or self.animations[pair[1]]
 						or self.animations[pair[2]]
@@ -538,7 +541,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 								tostring(self.className),
 								fireName,
 								tostring(track.Name)
-							))
+								))
 						end
 					end
 				end
@@ -546,7 +549,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 				warn(string.format(
 					"[WeaponAnimation][%s] cannot provide left fire: PrinceRifle.fire_left is missing",
 					tostring(self.className)
-				))
+					))
 			end
 		end
 
@@ -556,7 +559,11 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 		if self.RegisteredAnimations then
 			for animName, track in pairs(self.RegisteredAnimations) do
 				local persistent = animName == "Hold" or animName == "Aim" or animName == "Aim_Left"
+					or animName == "Bipod_Aim"
 					or animName == "Aim_Dual" or animName == "Aim_Normal"
+					or animName == "Stock_Aim" or animName == "Stock_Aim_Left"
+					or animName == "Long_Aim" or animName == "Long_Aim_Left"
+					or animName == "Alt_Changeaim" or animName == "Alt_Changeaim_Left"
 					or animName == "Hip_Hold" or animName == "Hip_Aim" or animName == "Hip_Aim_Left"
 					or animName == "Shoulder_Hold" or animName == "Shoulder_Aim" or animName == "Shoulder_Aim_Left"
 					or animName == "Sprint"
@@ -740,7 +747,7 @@ function BaseTool:_clearCombatPose()
 		"Short", "Short_Alt", "Aim", "Aim_Left", "Bipod_Aim", "Aim_Dual", "Aim_Normal",
 		"Hip_Aim", "Hip_Aim_Left", "Shoulder_Aim", "Shoulder_Aim_Left",
 		"Stock_Aim", "Stock_Aim_Left", "Long_Aim", "Long_Aim_Left",
-	} do
+		} do
 		local track = self.RegisteredAnimations and self.RegisteredAnimations[name]
 		if track and track.IsPlaying then track:Stop(0) end
 	end
@@ -857,7 +864,8 @@ function BaseTool:init_short_mechanic()
 	end
 
 	self.short_connection = RunService.RenderStepped:Connect(function(dt)
-		if not self.Equipped then
+
+		if not self.Equipped or not self.Aimed then
 			self.IsShorted = false
 			self.ForceBlockFire = false
 			self._obstructionClearSince = nil
@@ -1001,6 +1009,7 @@ function BaseTool:_blendAim(track: AnimationTrack)
 end
 
 function BaseTool:equip()
+	self.MasterAssetName = self.MasterAssetName or WeaponIds.MasterSourceName(self.className)
 	print("Equipping tool:", self.tool.Name)
 	if not self.tool then return end
 
@@ -1016,8 +1025,11 @@ function BaseTool:equip()
 	local lastEquip = character:FindFirstChild("last_equip")
 	if lastEquip and lastEquip:IsA("StringValue") then lastEquip.Value = self.className end
 
-	if not self.actual_holster and self.holster_reference then
-		self.actual_holster = utilities_module.reverse_search_holster(LOCAL_PLAYER, self.holster_reference.Name)
+	if not self.actual_holster then
+		local reference = self.holster_reference or (self.AuthoredWelds and self.model_reference)
+		if reference then
+			self.actual_holster = utilities_module.reverse_search_holster(LOCAL_PLAYER, reference.Name, self.tool)
+		end
 	end
 
 	character:SetAttribute("GunEquipped", self.IsFirearm == true)
@@ -1029,9 +1041,15 @@ function BaseTool:equip()
 		self.aim_speed = baseline.aim
 	end
 	character:SetAttribute("WeaponAimDuration", if self.IsFirearm then self:_aimDuration() else nil)
-	humanoid:EquipTool(self.tool)
+	-- Server-equipped class tools reach this method from Tool.Equipped.
+	-- Transferring an already held tool again re-enters the equip callbacks.
+	if self.tool.Parent ~= character then humanoid:EquipTool(self.tool) end
 
 	if self._on_equip then self:_on_equip() end
+
+	local drawSound = WeaponSounds.Find(self, "draw")
+	local soundOrigin = character:FindFirstChild("HumanoidRootPart")
+	if drawSound and soundOrigin then self:_play_sfx(drawSound, soundOrigin) end
 
 	if self.CompassRight then
 		character:SetAttribute("CompassRight", true)
@@ -1090,6 +1108,7 @@ function BaseTool:equip()
 		if not self.actual_model then warn("[" .. self.className .. "] Failed to find model") end
 	end
 
+	WeaponModelState.Start(self)
 	self:_startAimTracking()
 	self:_initShoulderTracking()
 
@@ -1109,6 +1128,7 @@ function BaseTool:equip()
 
 		table.insert(self.keyframe_connections, track.KeyframeReached:Connect(function(keyframe)
 
+			if WeaponModelState.Keyframe(self, keyframe) then return end
 			if keyframe == "vfx_hand_shell_visible" then
 				local target = self.Round_Target_Part
 					and LOCAL_PLAYER.Character:FindFirstChild(self.Round_Target_Part)
@@ -1154,8 +1174,8 @@ function BaseTool:equip()
 				for _, descendant in self.actual_model:GetDescendants() do
 					if descendant:IsA("BasePart") and (
 						descendant.Name == self.className .. "_Cylinder"
-						or string.lower(descendant.Name) == "cylinder"
-					) then
+							or string.lower(descendant.Name) == "cylinder"
+						) then
 						cylinder = descendant
 						break
 					end
@@ -1165,8 +1185,8 @@ function BaseTool:equip()
 					for _, descendant in self.actual_model:GetDescendants() do
 						if (descendant:IsA("Motor6D") or descendant:IsA("Weld")) and (
 							string.find(string.lower(descendant.Name), "cylinder", 1, true)
-							or descendant.Part1 == cylinder
-						) then
+								or descendant.Part1 == cylinder
+							) then
 							cylinder_motor = descendant
 							break
 						end
@@ -1195,8 +1215,8 @@ function BaseTool:equip()
 				for _, descendant in self.actual_model:GetDescendants() do
 					if descendant:IsA("BasePart") and (
 						descendant.Name == self.className .. "_Cylinder"
-						or string.lower(descendant.Name) == "cylinder"
-					) then
+							or string.lower(descendant.Name) == "cylinder"
+						) then
 						cylinder = descendant
 						break
 					end
@@ -1220,8 +1240,8 @@ function BaseTool:equip()
 				for _, descendant in self.actual_model:GetDescendants() do
 					if descendant:IsA("BasePart") and (
 						descendant.Name == self.className .. "_Cylinder"
-						or string.lower(descendant.Name) == "cylinder"
-					) then
+							or string.lower(descendant.Name) == "cylinder"
+						) then
 						cylinder = descendant
 						break
 					end
@@ -1243,10 +1263,12 @@ function BaseTool:equip()
 			elseif keyframe:sub(1, 4) == "sfx_" or keyframe:sub(1, 5) == "gsfx_" then
 				local general = keyframe:sub(1, 5) == "gsfx_"
 				local soundName = keyframe:sub(general and 6 or 5)
+				-- Draw audio is emitted once by the shared equip lifecycle.
+				if soundName == "draw" then return end
 				if not general and self._shouldPlayAnimationSound and not self:_shouldPlayAnimationSound(soundName) then return end
 				local sound = if general then GunloadingSounds.Find(soundName)
 					else (self._findAnimationSound and self:_findAnimationSound(soundName))
-						or (self.SoundFolder and self.SoundFolder:FindFirstChild(soundName, true))
+					or (self.SoundFolder and self.SoundFolder:FindFirstChild(soundName, true))
 				if not sound or not sound:IsA("Sound") then sound = GunloadingSounds.Find(soundName) end
 				if sound then
 					local origin = (LOCAL_PLAYER.Character and LOCAL_PLAYER.Character:FindFirstChild("HumanoidRootPart"))
@@ -1306,6 +1328,8 @@ function BaseTool:equip()
 end
 
 function BaseTool:unequip()
+	WeaponModelState.Stop(self)
+	if self._stopModFeedback then self:_stopModFeedback() end
 	self.Check_Delayed = false
 	self._equipGeneration = (self._equipGeneration or 0) + 1
 	if not self.tool then return end
@@ -1352,7 +1376,9 @@ function BaseTool:unequip()
 	self:_stopItemAnimations()
 
 	self:_disable_aiming_ui()
-	humanoid:UnequipTools()
+	-- Tool.Unequipped also invokes controller cleanup. Do not unequip the
+	-- replacement weapon after this tool has already left the character.
+	if self.tool and self.tool.Parent == character then humanoid:UnequipTools() end
 
 	if self.sprint_connection then
 		self.sprint_connection:Disconnect()
@@ -1524,7 +1550,8 @@ function BaseTool:_reloadSpeedMultiplier(): number
 	local character = LOCAL_PLAYER.Character
 	if not character then return 1 end
 	local multiplier = character:GetAttribute("OrderReloadMultiplier") or 1
-	if self.MasterAssetName ~= "rooklauncher" then multiplier *= character:GetAttribute("MoraleReloadMultiplier") or 1 end
+	if self.IsVeteran then multiplier *= self.VeteranReloadSpeed or (1 / 0.7) end
+	if not self.IsVeteran and self.MasterAssetName ~= "rooklauncher" then multiplier *= character:GetAttribute("MoraleReloadMultiplier") or 1 end
 	local elite = character:FindFirstChild("elitekit")
 	local class = character:FindFirstChild("class")
 	if elite and class and elite.Value == class.Value then multiplier /= 0.8 end
@@ -1739,7 +1766,7 @@ function BaseTool:_killAimTracks()
 		"Aim", "Aim_Left", "Bipod_Aim", "Aim_Dual", "Aim_Normal",
 		"Hip_Aim", "Hip_Aim_Left", "Shoulder_Aim", "Shoulder_Aim_Left",
 		"Stock_Aim", "Stock_Aim_Left", "Long_Aim", "Long_Aim_Left",
-	} do
+		} do
 		local track = anims[name]
 		if track and track.IsPlaying then track:Stop(self:_aimDuration()) end
 	end
@@ -1993,7 +2020,7 @@ function BaseTool:aim()
 		return
 	end
 	if LOCAL_PLAYER:GetAttribute("FreeLook") then return end
-	if self.Equipping or self.IsShorted then return end
+	if self.Equipping then return end
 	if self:_if_jumping() then return end
 
 	self._smoothedYaw = nil
@@ -2765,6 +2792,8 @@ end
 
 function BaseTool:drop()
 	if not self.Equipped then return end
+	local ownerCharacter = LOCAL_PLAYER.Character
+	if ownerCharacter and ownerCharacter:GetAttribute("IsShockTrooper") == true then return end
 
 	self.Equipped = false
 	self:_refreshAnimationPriorities()
@@ -2798,6 +2827,8 @@ function BaseTool:reload() end
 -- // Cleanup
 
 function BaseTool:destroy()
+	WeaponModelState.Stop(self)
+	if self._stopModFeedback then self:_stopModFeedback() end
 	self._autoFireHeld = false
 	self.Equipped = false
 	self:_refreshAnimationPriorities()

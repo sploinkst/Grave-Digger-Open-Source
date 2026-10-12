@@ -9,7 +9,7 @@ local Module = {}
 local ReplicatedStorageService = game:GetService("ReplicatedStorage")
 local PlayerService = game:GetService("Players")
 local WorkspaceService = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
+local DeathScreen = require(ReplicatedStorageService.Shared.Library.UI.DeathScreen)
 
 -- // Constants
 local LibraryFolder = ReplicatedStorageService.Shared.Library
@@ -19,8 +19,6 @@ local CameraClass = require(LibraryFolder.Classes.Miscellanous.CameraClass)
 
 -- // Stack (LIFO)
 local CamerasStack = {}
-local hasSpawned = false
-local respawnTransitionToken = 0
 
 local function NormalizeGameplayCamera(character: Model)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -29,42 +27,6 @@ local function NormalizeGameplayCamera(character: Model)
 	PlayerService.LocalPlayer.CameraMaxZoomDistance = 10
 	camera.FieldOfView = 90
 	if humanoid then camera.CameraSubject = humanoid end
-end
-
-local function PlayRespawnTransition()
-	respawnTransitionToken += 1
-	local token = respawnTransitionToken
-	local playerGui = PlayerService.LocalPlayer:FindFirstChildOfClass("PlayerGui")
-	local main = playerGui and playerGui:FindFirstChild("main")
-	local coreGame = main and main:FindFirstChild("core_game")
-	local screen = main and main:FindFirstChild("deathscreen")
-		or (coreGame and coreGame:FindFirstChild("deathscreen"))
-	if not screen or not screen:IsA("GuiObject") then return end
-
-	for _, name in ipairs({"topframe", "bottomframe", "spawnframe"}) do
-		local frame = screen:FindFirstChild(name)
-		if frame and frame:IsA("GuiObject") then frame.Visible = false end
-	end
-	local blackout = screen:FindFirstChild("totalblackout")
-	if not blackout or not blackout:IsA("GuiObject") then return end
-
-	screen.Visible = true
-	blackout.Visible = true
-	blackout.BackgroundTransparency = 0
-	-- BaseCamera is started in the same CharacterAdded turn. Reveal that normal
-	-- camera immediately afterward through a very short respawn fade.
-	task.defer(function()
-		if token ~= respawnTransitionToken or not blackout.Parent then return end
-		local tween = TweenService:Create(blackout, TweenInfo.new(0.125, Enum.EasingStyle.Linear), {
-			BackgroundTransparency = 1,
-		})
-		tween:Play()
-		tween.Completed:Once(function()
-			if token ~= respawnTransitionToken then return end
-			blackout.Visible = false
-			screen.Visible = false
-		end)
-	end)
 end
 
 -- // Internal Helpers
@@ -90,15 +52,6 @@ local function FindCameraIndex(name: string)
 	return nil
 end
 
-local function RemoveCameraByName(name: string)
-	local index = FindCameraIndex(name)
-	if not index then
-		return nil, nil
-	end
-	local camera = table.remove(CamerasStack, index)
-	return camera, index
-end
-
 local function CheckCameras()
 	for childName, child in pairs(script:GetChildren()) do
 		if not TypeCheckerModule.new(CameraClass.Camera_Type)(child) then
@@ -121,7 +74,6 @@ local function HandleDeath(character)
 	Module.EndCameraByName("SpectateCamera", true)
 
 	humanoid.Died:Connect(function()
-		print("[DEATHCAMERA] Died Fired!")
 		Module.SwitchCamera("DeathCamera", true)
 	end)
 end
@@ -134,12 +86,10 @@ function Module.start_module()
 	Module.SwitchCamera("SpectateCamera", true)
 
 	local function OnCharacterAdded(character)
-		local isRespawn = hasSpawned
-		hasSpawned = true
 		Module.EndCameraByName("DeathCamera", true)
 		Module.EndCameraByName("SpectateCamera", true)
 		NormalizeGameplayCamera(character)
-		if isRespawn then PlayRespawnTransition() end
+		DeathScreen.Hide()
 		Module.SwitchCamera("BaseCamera", true)
 		HandleDeath(character)
 	end
