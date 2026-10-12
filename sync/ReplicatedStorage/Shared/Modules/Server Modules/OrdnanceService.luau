@@ -5,14 +5,15 @@ local V=require(script.Parent.MasterActions.Validation)
 local Flight=require(script.Parent.MasterActions.Projectile)
 local Assets=require(RS.Shared.Library.AuthoredAssets)
 local ChargeState=require(RS.Shared.Library.OrdnanceState)
+local LauncherRules=require(RS.Shared.Library.RookLauncherRules)
 local Service={}
 local remote=V.Remote("OrdnanceAction")
+local SmokeEquipment=require(RS.Shared.Library.EquipmentRules).Get("SmokescreenBombs")
 local configs={
-	SmokescreenBombs={asset="nebel",speed=65,reload=30,count=2,smoke=true},
-	MiningBombLauncher={asset="rooklauncher",part="bomb",speed=450,reload=30,count=2,mining=true},
+	SmokescreenBombs={asset="nebel",speed=65,reload=SmokeEquipment.cd,count=SmokeEquipment.ammo,smoke=true},
+	MiningBombLauncher={asset="rooklauncher",part="bomb",speed=LauncherRules.ProjectileSpeed,reload=LauncherRules.EquipmentRecharge,count=LauncherRules.EquipmentCapacity,mining=true},
 	AntiArmourGrenades={asset="atgrenade",speed=65,reload=0,count=1},
 	NebelGrenade={asset="nebel",speed=65,reload=0,count=1,smoke=true},
-	RookLauncher={asset="rooklauncher",part="bomb",speed=450,reload=2.5,count=1,mining=true},
 	RifleGrenade={asset="enfield",part="riflegrenade",speed=100,reload=0,count=2},
 	ThrownNegotiator={asset="remington",speed=65,reload=0,count=1,direct=true},
 }
@@ -24,13 +25,19 @@ local function stock(character,name,config)
 	character:SetAttribute(name.."Charges",state.count)
 	return state
 end
-function Service.Blast(player,character,position,damage,radius)
+function Service.GetCount(player,name)
+	local c=player.Character; local config=configs[name]
+	return c and config and stock(c,name,config).count or 0
+end
+function Service.Blast(player,character,position,damage,radius,concussion,cause)
 	for _,target in ipairs(Players:GetPlayers()) do
 		local c=target.Character; local root=c and c:FindFirstChild("HumanoidRootPart"); local h=c and c:FindFirstChildOfClass("Humanoid")
-		if root and h and h.Health>0 and target~=player and player.Team and target.Team~=player.Team and (root.Position-position).Magnitude<=radius then
+		if root and h and h.Health>0 and (root.Position-position).Magnitude<=radius then
 			local params=RaycastParams.new(); params.FilterType=Enum.RaycastFilterType.Exclude; params.FilterDescendantsInstances={character}
 			local hit=workspace:Raycast(position,root.Position-position,params)
-			if not hit or hit.Instance:IsDescendantOf(c) then h:TakeDamage(damage) end
+			if not hit or hit.Instance:IsDescendantOf(c) then
+				if target~=player and player.Team and target.Team~=player.Team then require(script.Parent.DeathAudioService).RecordDamage(c,h,"Torso",damage,true,cause); h:TakeDamage(damage) end
+			end
 		end
 	end
 	local folder=workspace:FindFirstChild("constructions")
@@ -43,6 +50,17 @@ function Service.Fire(player,name,direction,tool,underhand)
 	local config=configs[name]; local character=V.Living(player)
 	if not config or not character or not V.Direction(direction) then return false end
 	local source=Assets.Find(config.asset,{RS.Shared.Assets},"Model")
+	local origin
+	if config.mining then
+		if not V.Tool(player,tool,{"RookLauncher"}) then return false end
+		source=RS.Shared.Assets.Equipment:FindFirstChild("rooklauncher")
+		local data=character:FindFirstChild("CharacterData")
+		local equipment=data and data:FindFirstChild("Equipment")
+		local model=equipment and equipment:FindFirstChild("rooklauncher")
+		local muzzle=model and model:FindFirstChild("muzzle",true)
+		if not muzzle or not muzzle:IsA("BasePart") then return false end
+		origin=muzzle.Position
+	end
 	if source and config.part then source=source:FindFirstChild(config.part,true) end
 	if not source then warn("[Ordnance] Missing authored projectile: "..name); return false end
 	local state=stock(character,name,config)
@@ -61,12 +79,18 @@ function Service.Fire(player,name,direction,tool,underhand)
 			local c=hit.Instance:FindFirstAncestorOfClass("Model"); local target=c and Players:GetPlayerFromCharacter(c)
 			if target and player.Team and target.Team~=player.Team then local h=c:FindFirstChildOfClass("Humanoid"); if h then h:TakeDamage(source:GetAttribute("Damage") or 80) end end
 		else
-			Service.Blast(player,character,hit.Position+hit.Normal*0.1,source:GetAttribute("Damage") or 50,source:GetAttribute("Radius") or 12)
+			Service.Blast(player,character,hit.Position+hit.Normal*0.1,source:GetAttribute("Damage") or 50,source:GetAttribute("Radius") or 12,config.mining and LauncherRules.ConcussionDuration,config.asset)
+			if config.mining then
+				local explosion=Instance.new("Explosion")
+				explosion.BlastPressure=0; explosion.DestroyJointRadiusPercent=0
+				explosion.BlastRadius=LauncherRules.BlastRadius; explosion.Position=hit.Position; explosion.Parent=workspace
+				Debris:AddItem(explosion,2)
+			end
 			if config.mining and hit.Instance==workspace.Terrain and hit.Material==Enum.Material.Rock then
 				require(script.Parent.GameManager.TerrainService).MineImpact(player,hit.Position,direction,source:GetAttribute("MiningRadius") or 6)
 			end
 		end
-	end,{retain=config.smoke})
+	end,{retain=config.smoke,origin=origin})
 	if not launched then return false end
 	ChargeState.Consume(state,config.count,config.reload,os.clock())
 	character:SetAttribute(name.."Charges",state.count)
@@ -94,11 +118,9 @@ end
 function Service.start_module()
 	if Service.started then return end; Service.started=true
 	remote.OnServerEvent:Connect(function(player,tool,name,direction)
-		if name=="SmokescreenBombs" or name=="MiningBombLauncher" then
+		if name=="SmokescreenBombs" then
 			local c=V.Living(player)
 			if not c or V.State(c,"Equipment")~=name then return end
-		elseif name=="RookLauncher" then
-			if not V.Tool(player,tool,{"RookLauncher","rooklauncher"}) then return end
 		elseif name=="RifleGrenade" then
 			if not V.Tool(player,tool,{"JesseRifle","JessePrecisionRifle","enfield","enfieldvariant"}) then return end
 		elseif name=="ThrownNegotiator" then

@@ -1,3 +1,5 @@
+local ModelConnections = require(game:GetService("ReplicatedStorage").Shared.Library.ModelConnections)
+local MasterCosmetics = require(game:GetService("ReplicatedStorage").Shared.Library.MasterCosmetics)
 -- // @Praxitos
 
 local Module = {}
@@ -20,6 +22,7 @@ local Library = Shared:WaitForChild("Library")
 local Utilities = require(Library:WaitForChild("Util"))
 local SoundPlayback = require(Library:WaitForChild("SoundPlayback"))
 local CombatEffects = require(script.Parent.CombatEffectsService)
+local FeedbackRules = require(Library.CombatFeedbackRules)
 
 -- Prevent remote listeners from being connected more than once.
 local moduleStarted = false
@@ -61,6 +64,7 @@ end
 
 -- // Asset folders
 local HolstersRoot = ReplicatedStorage.Shared.Assets.Guns.Holsters
+local ModAppearance = require(ReplicatedStorage.Shared.Library.WeaponModAppearance)
 
 -- // Configuration
 local Config = Library.Configuration.Scoring_Variables
@@ -196,7 +200,7 @@ local function UpdateObjective(value: string)
 	if target then
 		target.Visible = true
 	else
-		warn("[ScoringClient] Unknown objective type:", value, "— falling back to 'control'")
+		warn("[ScoringClient] Unknown objective type:", value, "â€” falling back to 'control'")
 		local control = objectiveUis:FindFirstChild("control")
 		if control then
 			control.Visible = true
@@ -344,15 +348,29 @@ end
 
 local function SetupHolster(player: Player, child: BoolValue)
 	local fromToolModel = child:GetAttribute("FromToolModel") == true
-	local reference = if fromToolModel then ReplicatedStorage.Shared.Assets.Guns.ToolModels:FindFirstChild(child.Name)
-		else HolstersRoot:FindFirstChild(child.Name)
+	local modelName = child:GetAttribute("ModelName") or child.Name
+	local referenceValue = child:FindFirstChild("ModelReference")
+	local reference = referenceValue and referenceValue:IsA("ObjectValue") and referenceValue.Value
+	if not reference then
+		reference = if fromToolModel then ReplicatedStorage.Shared.Assets.Guns.ToolModels:FindFirstChild(modelName, true)
+			or ReplicatedStorage.Shared.Assets.Equipment:FindFirstChild(modelName, true)
+			else HolstersRoot:FindFirstChild(modelName, true)
+	end
 
 	if not reference then
 		warn("[ScoringClient] No holster reference found for:", child.Name)
 		return
 	end
 
-	local primary = reference:FindFirstChild("hitbox", true) or reference.PrimaryPart
+	-- A weapon model reused as a holster has no dedicated Hide_On_Equip markers.
+	-- Recognize its source as well as the flag for already-registered inventory.
+	local toolModels = ReplicatedStorage.Shared.Assets.Guns:FindFirstChild("ToolModels")
+	local equipmentModels = ReplicatedStorage.Shared.Assets:FindFirstChild("Equipment")
+	fromToolModel = fromToolModel
+		or (toolModels ~= nil and reference:IsDescendantOf(toolModels))
+		or (equipmentModels ~= nil and reference:IsDescendantOf(equipmentModels))
+
+	local primary = ModAppearance.Root(reference)
 	if not primary then
 		warn("[ScoringClient] No PrimaryPart on holster:", child.Name)
 		return
@@ -365,10 +383,24 @@ local function SetupHolster(player: Player, child: BoolValue)
 		return
 	end
 
-	local clone = reference:Clone()
-	local mount = clone:FindFirstChild("hitbox", true) or clone.PrimaryPart
+	local weapon=child:GetAttribute("WeaponId") or child.Name
+	local skin=MasterCosmetics.SelectedSkin(player,weapon,child:GetAttribute("SkinSlot"))
+	local clone = ModAppearance.Clone(reference,weapon,skin)
+	clone.Name = child.Name
+	clone:SetAttribute("InventoryId", child:GetAttribute("InventoryId"))
+	clone:SetAttribute("ModelName", modelName)
+	ModAppearance.Apply(clone, weapon,skin,char)
+	MasterCosmetics:add_sheath(char,require(ReplicatedStorage.Shared.Library.WeaponIds).AssetName(weapon),skin,child:GetAttribute("SkinSlot"),player.Team)
+	for _, joint in clone:GetDescendants() do
+		if joint:IsA("JointInstance") or joint:IsA("WeldConstraint") then
+			local external0 = joint.Part0 and not joint.Part0:IsDescendantOf(clone)
+			local external1 = joint.Part1 and not joint.Part1:IsDescendantOf(clone)
+			if external0 or external1 then joint:Destroy() end
+		end
+	end
+	local mount = ModAppearance.Root(clone)
 	if not mount or not mount:IsA("BasePart") then clone:Destroy(); return end
-	clone.PrimaryPart = mount
+	if clone:IsA("Model") then clone.PrimaryPart = mount end
 	local holsterC0 = child:GetAttribute("HolsterC0")
 	local holsterC1 = child:GetAttribute("HolsterC1")
 	local weld
@@ -379,18 +411,17 @@ local function SetupHolster(player: Player, child: BoolValue)
 			holsterC0 = child:GetAttribute("AltHolsterC0") or holsterC0
 			holsterC1 = child:GetAttribute("AltHolsterC1") or holsterC1
 		end
-		weld = Utilities.quick_weld(char[bodyPartName], clone.PrimaryPart, clone, child.Name .. "_Weld")
+		weld = Utilities.quick_weld(char[bodyPartName], mount, clone, child.Name .. "_Weld")
 		weld.C0 = holsterC0
 		weld.C1 = holsterC1
 	else
-		weld = Utilities.quick_weld(clone.PrimaryPart, char[bodyPartName], clone, child.Name .. "_Weld")
+		weld = Utilities.quick_weld(mount, char[bodyPartName], clone, child.Name .. "_Weld")
 		local authoredC0 = reference:GetAttribute("HolsterC0")
 		if typeof(authoredC0) == "CFrame" then weld.C0 = authoredC0 end
 	end
 	local transparency = {}
-	local connected = {[mount] = true}
-	for _, part in mount:GetConnectedParts(true) do connected[part] = true end
-	for _, part in clone:GetDescendants() do
+	local connected = ModelConnections.From(clone,mount)
+	for _, part in ModelConnections.Parts(clone) do
 		if part:IsA("BasePart") then
 			transparency[part] = part.Transparency
 			part.Anchored = false
@@ -452,7 +483,11 @@ local function HandleAccessory(player, child)
 		return
 	end
 
-	local clone = Utilities.quick_give_accessory(player, accessory, true, false, false)
+	local character=player.Character
+ if not character or not character.Parent then return end
+ local clone = Utilities.quick_give_accessory(player, accessory, true, false, false)
+ if not clone then return end
+ if player.Character~=character or not character.Parent then clone:Destroy();return end
 	print("Gave accessory:", child.Name)
 	child:SetAttribute("Given", true)
 
@@ -504,7 +539,9 @@ local function OnCharacterAdded(char: Model, player: Player)
 	end
 
 	-- // Handle accessories for the respawned player
-	for _, child in pairs(player.GameData.Accessorys:GetChildren()) do
+	local data=player:FindFirstChild("GameData")
+ local accessories=data and data:FindFirstChild("Accessorys")
+ for _, child in pairs(accessories and accessories:GetChildren() or {}) do
 		if child:GetAttribute("ServerHandled") then
 			print("[REPLICANTSERVICE] Skipping", child.Name, "handled by the server")
 			continue
@@ -524,7 +561,8 @@ local function OnCharacterAdded(char: Model, player: Player)
 
 		local clone = NameBillboard:Clone()
 		clone.Parent = hrp
-		clone.playername.Text = "ARM " .. player.Name
+        clone.Enabled=true;clone.Adornee=hrp;clone.AlwaysOnTop=true;clone.MaxDistance=0
+		clone.playername.Text = "ARM " .. player.DisplayName
 	end
 end
 
@@ -550,7 +588,8 @@ local function RefreshAllBillboards()
 		if p.Team == LocalPlayer.Team then
 			local clone = NameBillboard:Clone()
 			clone.Parent = hrp
-			clone.playername.Text = "ARM " .. p.Name
+            clone.Enabled=true;clone.Adornee=hrp;clone.AlwaysOnTop=true;clone.MaxDistance=0
+			clone.playername.Text = "ARM " .. p.DisplayName
 		end
 	end
 end
@@ -693,16 +732,17 @@ local function HandlePlayerList(player: Player)
 end
 
 local function SetupPlayer(player: Player)
-	local char = player.Character or player.CharacterAdded:Wait()
-	OnCharacterAdded(char, player)
+	local char = player.Character
+ if char then task.spawn(OnCharacterAdded,char,player) end
 
 	player.CharacterAdded:Connect(function(character)
-		OnCharacterAdded(character, player)
+		task.spawn(OnCharacterAdded,character,player)
 	end)
 
 	-- // Refresh all billboards whenever any player switches teams
 	player:GetPropertyChangedSignal("Team"):Connect(RefreshAllBillboards)
 
+	task.spawn(HandlePlayerList,player)
 	local gameData = player:WaitForChild("GameData")
 	local accessories = gameData:WaitForChild("Accessorys")
 	local holsters = accessories:WaitForChild("Holsters")
@@ -726,7 +766,6 @@ local function SetupPlayer(player: Player)
 		HandleAccessory(player, child)
 	end)
 
-	HandlePlayerList(player)
 end
 
 local function ClearOverheadConnections()
@@ -743,7 +782,7 @@ local function GetCapColor(teamName: string?): Color3
 	elseif teamName == "Royal Nation" then
 		return Color3.fromRGB(167, 83, 170)
 	end
-	-- // Neutral fallback — progress should be 0 at this point anyway
+	-- // Neutral fallback â€” progress should be 0 at this point anyway
 	return Color3.fromRGB(167, 83, 170)
 end
 
@@ -1092,6 +1131,7 @@ local function HandleFastCastReplication(...)
 	local direction = args[3]
 	local speed = args[4]
 	local castData = args[5]
+	if player.Team and LocalPlayer.Team and player.Team ~= LocalPlayer.Team then require(script.Parent.TrackerFeedbackService).Sonar(origin) end
 
 	-- // Track event
 	PushReplicationEvent("FastCast", {
@@ -1102,16 +1142,27 @@ local function HandleFastCastReplication(...)
 	})
 
 	local caster, casterData = Utilities.setupFastCast(castData)
-	caster:Fire(origin, direction, speed, casterData)
-
+	local heard, hitLocalCharacter = false, false
 	caster.LengthChanged:Connect(function(cast, position, segmentVelocity, segmentTravelDistance, segmentIndex)
+		if segmentVelocity.Magnitude <= 0 then return end
 		local bulletPos = position + segmentVelocity.Unit * segmentTravelDistance
 		if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-			if (bulletPos - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude < 18 then
-				Module.FlinchLocalPlayer(direction)
+			if not heard and FeedbackRules.SegmentDistance(LocalPlayer.Character.HumanoidRootPart.Position, position, bulletPos) < 18 then
+				heard = true
 			end
 		end
 	end)
+	caster.RayHit:Connect(function(_, result)
+		local character = LocalPlayer.Character
+		if character and result.Instance:IsDescendantOf(character) then hitLocalCharacter = true end
+	end)
+	caster.CastTerminating:Connect(function()
+		-- A close trajectory is only a miss once its final hit is known.
+		task.defer(function()
+			if heard and not hitLocalCharacter then CombatEffects.NearMiss(direction) end
+		end)
+	end)
+	caster:Fire(origin, direction, speed, casterData)
 end
 
 local function HandleVfxReplication(...)
@@ -1265,12 +1316,23 @@ function Module.HandleSfxReplication(...)
 		if player == LocalPlayer and type(args[10]) == "number" then
 			volume = math.max(args[10], 0)
 		end
+		local isWeaponAudio = string.find(soundPath, ".sounds.guns.", 1, true) ~= nil
+			or string.find(soundPath, ".gunloading.", 1, true) ~= nil
+		if isWeaponAudio and sourceCharacter then
+			parent = sourceCharacter:FindFirstChild("HumanoidRootPart") or parent
+		end
+		local followsCharacter = sourceCharacter and typeof(parent) == "Instance"
+			and parent:IsDescendantOf(sourceCharacter)
+		local isVoice = soundInstance.Name:match("^[mf]_") ~= nil
+		if isVoice and sourceCharacter then parent = require(Library.CharacterVoice).Origin(sourceCharacter) or parent end
 		SoundPlayback.Play(soundInstance, parent, {
 			PlaybackSpeed = playbackSpeed,
 			Volume = volume,
 			PitchShift = pitchShift,
 			PitchVariation = pitchVariation,
-			RollOffMaxDistance = maxDistance,
+			RollOffMaxDistance = isVoice and 100 or maxDistance,
+			RollOffMinDistance = isVoice and 15 or nil,
+			FollowParent = isVoice or isWeaponAudio or followsCharacter or player == "OcelotTheme",
 		})
 	end
 end
@@ -1286,46 +1348,27 @@ function Module.HandleCasingReplication(...)
 	if typeof(casing) ~= "Instance" or not casing:IsA("BasePart") or typeof(origin) ~= "CFrame" then return end
 	local CasingAudio = require(ReplicatedStorage.Shared.Library.CasingAudio)
 
-	local clone = casing:Clone()
-	clone.CanCollide = false
-	clone.CanQuery = false
-	-- A dropped part must not retain the weapon's motors or welded neighbors.
-	for _, descendant in clone:GetDescendants() do
-		if descendant:IsA("BasePart") then
-			descendant.CanCollide = false
-			descendant.CanQuery = false
-		end
-		if descendant:IsA("JointInstance") or descendant:IsA("WeldConstraint") then
-			local p0, p1 = descendant.Part0, descendant.Part1
-			if not p0 or not p1 or not (p0 == clone or p0:IsDescendantOf(clone))
-				or not (p1 == clone or p1:IsDescendantOf(clone)) then descendant:Destroy() end
-		end
-	end
-	local declared = casing:GetAttribute("CasingSoundFamily")
-	local family = CasingAudio.Family(casing.Name, weaponName, declared)
-	CasingAudio.Bind(clone, family, player)
-	clone.Parent = workspace
-	clone.CFrame = origin
-	clone.Anchored = false
-	clone.CanTouch = true
-	clone.CanQuery = false
-	clone.Transparency = 0
-
-	local vel = direction or origin.LookVector * math.random(10, 15) + Vector3.new(0, math.random(10, 15), 0)
-
-	local bv = Instance.new("BodyVelocity")
-	bv.Velocity = vel
-	bv.Parent = clone
-
-	clone.AssemblyAngularVelocity = Vector3.new(math.random(-10, 10), math.random(-10, 10), math.random(-10, 10))
-
-	task.delay(0.1, function()
-		bv:Destroy()
-	end)
-
-	task.delay(3, function()
-		clone:Destroy()
-	end)
+	local character = player and player.Character
+	if not character then return end
+	local Flight = require(ReplicatedStorage.Shared.Library.ProjectileFlight)
+	local Playback = require(ReplicatedStorage.Shared.Library.SoundPlayback)
+	local source = casing:Clone()
+	source.Transparency = 0
+	local family = CasingAudio.Family(casing.Name, weaponName, casing:GetAttribute("CasingSoundFamily"))
+	local velocity = direction or origin.LookVector * math.random(10, 15) + Vector3.new(0, math.random(10, 15), 0)
+	Flight.Launch(character, source, velocity.Unit, velocity.Magnitude, function(hit, clone)
+		local sound = CasingAudio.Find(family, hit.Material)
+		if sound then Playback.Play(sound, clone, {PitchVariation = 0.1}) end
+	end, {
+		origin = origin.Position, velocity = velocity, retain = true, lifetime = 3, visualLifetime = 3,
+		spin = math.random(-10, 10),
+		canPierce = function(_, hit)
+			local model = hit.Instance:FindFirstAncestorOfClass("Model")
+			return (model and model:FindFirstChildOfClass("Humanoid")) ~= nil
+				or (hit.Instance:IsA("BasePart") and not hit.Instance.CanCollide)
+		end,
+	})
+	source:Destroy()
 
 	print("Casing replicated for player:", player.Name)
 end
@@ -1362,9 +1405,9 @@ function Module.start_module()
 
 	-- // Setup existing players
 	for _, player in pairs(Players:GetPlayers()) do
-		SetupPlayer(player)
+		task.spawn(SetupPlayer,player)
 	end
-	Players.PlayerAdded:Connect(SetupPlayer)
+	Players.PlayerAdded:Connect(function(player) task.spawn(SetupPlayer,player) end)
 
 	-- // Bind reinforcement count updates
 	NationReinCount:GetPropertyChangedSignal("Value"):Connect(function()
@@ -1458,38 +1501,10 @@ function Module.start_module()
 		end
 	end)
 
-	InputService.InputBegan:Connect(function(input, gps)
-		if gps then
-			return
-		end
+	-- The authored player list is owned by MenuService/PresentationHandler.
 
-		if input.KeyCode == Enum.KeyCode.Tab then
-			game.Players.LocalPlayer.PlayerGui.Playerlist.Enabled = true
-		end
-	end)
+	-- Spawn fading is owned by GameplayPresentationService/MasterHud.
 
-	InputService.InputEnded:Connect(function(input, gps)
-		if gps then
-			return
-		end
-
-		if input.KeyCode == Enum.KeyCode.Tab then
-			game.Players.LocalPlayer.PlayerGui.Playerlist.Enabled = false
-		end
-	end)
-
-	LocalPlayer.CharacterAdded:Connect(function()
-		LocalPlayer.PlayerGui:WaitForChild("Black"):WaitForChild("fadetoblack").BackgroundTransparency = 0
-		
-		local tween = TweenService:Create(LocalPlayer.PlayerGui:WaitForChild("Black"):WaitForChild("fadetoblack"), TweenInfo.new(1), { BackgroundTransparency = 1 })
-		tween:Play()
-	end)
-
-	if LocalPlayer.Character then
-		local tween = TweenService:Create(LocalPlayer.PlayerGui:WaitForChild("Black"):WaitForChild("fadetoblack"), TweenInfo.new(1), { BackgroundTransparency = 1 })
-		tween:Play()
-	end
-	
 	FinalStandEvent.OnClientEvent:Connect(function(losingTeam)
 		print("[FinalStandEvent] Received for team:", losingTeam)
 

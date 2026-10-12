@@ -69,6 +69,7 @@ local Helmet_RemoteEvent        = ReplicatedStorage.Shared.Library.Events.Helmet
 local Util = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
 local HelmetRules = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("HelmetRules"))
 local hellionHelmetHits = {}
+local woundedShots = setmetatable({}, {__mode = "k"})
 -- Replace this asset when the final helmet-pop sound is uploaded.  The shooter
 -- is recorded now so the client-only sound can be played for them later.
 local HELMET_POP_SOUND_ID = "rbxassetid://0"
@@ -737,8 +738,20 @@ function module.start_module()
 		-- Support both layouts so a shell impact cannot fall through to body damage.
 		local helmet, knockable = Util.check_for_helmet(hitCharacter)
 		local hitHelmet = helmet ~= nil and (instance == helmet or instance:IsDescendantOf(helmet))
-		local isHeadshot = hitHelmet or (instance.Name == "Head") or
-			(instance.Parent and instance.Parent.Name == "Hitboxes" and instance.Name == "Head")
+		local headAccessory = false
+		local accessory = instance:FindFirstAncestorOfClass("Accessory")
+		local targetHead = hitCharacter:FindFirstChild("Head")
+		local handle = accessory and accessory:FindFirstChild("Handle")
+		if handle and targetHead then
+			for _, joint in handle:GetChildren() do
+				if (joint:IsA("Weld") or joint:IsA("Motor6D"))
+					and (joint.Part0 == targetHead or joint.Part1 == targetHead) then
+					headAccessory = true
+					break
+				end
+			end
+		end
+		local isHeadshot = hitHelmet or headAccessory or instance.Name == "Head"
 
 		if isHeadshot then
 			local shotKey = helmetShotKey(player, hitData)
@@ -776,10 +789,11 @@ function module.start_module()
 				if action == HelmetRules.Action.Obliterate then
 					module.pop_helmet(hitCharacter, helmet, true, player)
 					if canDamageThroughHelmet(weaponName, character) then
-						DeathAudio.RecordDamage(hitCharacter, humanoid, "Head", humanoid.MaxHealth)
+						DeathAudio.RecordDamage(hitCharacter, humanoid, "Head", humanoid.MaxHealth,false,weaponName)
 						humanoid:TakeDamage(humanoid.MaxHealth)
 						awardKillMorale(player, hitCharacter, true)
 						player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
+				require(script.Mastery).Kill(player,hitCharacter,weaponName)
 					end
 				elseif action == HelmetRules.Action.KnockOff then
 					if knockable and not helmet:GetAttribute("Knocked") then
@@ -790,28 +804,33 @@ function module.start_module()
 			elseif isHellion or weaponName == "KingslayerRevolver" then
 				local finalDamage = (damage or 0) * (isHellion and 1.2 or 2)
 					* (hitCharacter:GetAttribute("DamageTakenMultiplier") or 1)
-				DeathAudio.RecordDamage(hitCharacter, humanoid, "Head", finalDamage)
+				DeathAudio.RecordDamage(hitCharacter, humanoid, "Head", finalDamage,false,weaponName)
 				humanoid:TakeDamage(finalDamage)
 				if humanoid.Health <= 0 then
 					awardKillMorale(player, hitCharacter, true)
 					handleLethalHipfireHeadshot(player, character, hitPlayer, weaponName, hitData, position)
 					player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
+				require(script.Mastery).Kill(player,hitCharacter,weaponName)
 				end
 				return
 			else
 				handleLethalHipfireHeadshot(player, character, hitPlayer, weaponName, hitData, position)
-				DeathAudio.RecordDamage(hitCharacter, humanoid, "Head", humanoid.Health)
+				DeathAudio.RecordDamage(hitCharacter, humanoid, "Head", humanoid.Health,false,weaponName)
 			humanoid.Health = 0
 				awardKillMorale(player, hitCharacter, true)
 				player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
+				require(script.Mastery).Kill(player,hitCharacter,weaponName)
 				return
 			end
 		end
 
 		-- Normal damage
 		damage = (damage or 0) * (hitCharacter:GetAttribute("DamageTakenMultiplier") or 1)
-		DeathAudio.RecordDamage(hitCharacter, humanoid, instance.Name, damage)
+		DeathAudio.RecordDamage(hitCharacter, humanoid, instance.Name, damage,false,weaponName)
 		humanoid:TakeDamage(damage)
+		if damage > 0 and instance:IsA("BasePart") then
+			-- Native impact blood handles this hit without a second global particle broadcast.
+		end
 		if hitCharacter:GetAttribute("IsTrainingRig") then
 			require(script.Parent.TrainingRigService).ApplyDamageStatus(hitCharacter, instance.Name, weaponName)
 		end
@@ -831,12 +850,22 @@ function module.start_module()
 		end
 		
 		if humanoid.Health > 0 and humanoid.Health < 100 and hitPlayer then
-			status_service.GiveStatus(hitPlayer, "WoundStatus", "Bullet", instance.Name)
+			local shotKey = helmetShotKey(player, hitData)
+			local shots = woundedShots[hitCharacter]
+			if not shots then shots = {}; woundedShots[hitCharacter] = shots end
+			if not shotKey or not shots[shotKey] then
+				if shotKey then
+					shots[shotKey] = true
+					task.delay(10, function() shots[shotKey] = nil end)
+				end
+				status_service.GiveStatus(hitPlayer, "WoundStatus", "Bullet", instance.Name)
+			end
 		end
 		
 		if humanoid.Health <= 0 then
 			awardKillMorale(player, hitCharacter, false)
 			player:SetAttribute("RoundKills", (player:GetAttribute("RoundKills") or 0) + 1)
+				require(script.Mastery).Kill(player,hitCharacter,weaponName)
 		end
 	end)
 	
@@ -1063,6 +1092,7 @@ function module.start_module()
 		reserve.Value = math.max(0, reserve.Value - count)
 	end)
 	
+	local ammoDefinition = require(ReplicatedStorage.Shared.Library.EquipmentRules).Get("AmmoPack")
 	local ammoCharges = setmetatable({}, {__mode = "k"})
 	AmmoPackEvent.OnServerEvent:Connect(function(player, target)
 		local character = player.Character
@@ -1083,11 +1113,11 @@ function module.start_module()
 		end
 		local now = os.clock()
 		local state = ammoCharges[character]
-		if not state then state = {count = 2, time = now}; ammoCharges[character] = state end
-		local restored = math.floor((now - state.time) / 30)
-		if restored > 0 then state.count = math.min(2, state.count + restored); state.time += restored * 30 end
+		if not state then state = {count = ammoDefinition.ammo, time = now}; ammoCharges[character] = state end
+		local restored = math.floor((now - state.time) / ammoDefinition.cd)
+		if restored > 0 then state.count = math.min(ammoDefinition.ammo, state.count + restored); state.time += restored * ammoDefinition.cd end
 		if state.count <= 0 then return end
-		if state.count == 2 then state.time = now end
+		if state.count == ammoDefinition.ammo then state.time = now end
 		state.count -= 1
 		if recipient then
 			Util.setammo(recipient)

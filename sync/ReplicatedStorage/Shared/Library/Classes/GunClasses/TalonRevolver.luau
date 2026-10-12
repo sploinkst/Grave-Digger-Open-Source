@@ -605,7 +605,7 @@ function TalonRevolver:spin()
 	self._spinCancelled = false
 
 	local startTrack = self:_playAnim("Spin_Start")
-	if startTrack then startTrack.Stopped:Wait() end
+	if startTrack then self:_waitAnimation(startTrack) end
 
 	if self._spinCancelled then
 		self.Spinning       = false
@@ -615,7 +615,7 @@ function TalonRevolver:spin()
 	end
 
 	local spinTrack = self:_playAnim("Spin")
-	if spinTrack then spinTrack.Stopped:Wait() end
+	if spinTrack then self:_waitAnimation(spinTrack) end
 
 	self.Spinning       = false
 	self._spinCancelled = false
@@ -751,7 +751,7 @@ function TalonRevolver:reload()
 		while missingIndexes >= 2 do
 			local rotationBefore = self.cylinder_rotation
 			local indexTrack = self:_playAnim("Reload_Loop_After_Twice")
-			if indexTrack then indexTrack.Stopped:Wait() elseif (self.reload_index_two_time or WEAPON_STATS.reload_index_two_time) > 0 then task.wait(self.reload_index_two_time or WEAPON_STATS.reload_index_two_time) end
+			if indexTrack then self:_waitAnimation(indexTrack) elseif (self.reload_index_two_time or WEAPON_STATS.reload_index_two_time) > 0 then task.wait(self.reload_index_two_time or WEAPON_STATS.reload_index_two_time) end
 			if not self.Equipped or self._equipGeneration ~= generation then return end
 			if self.cylinder_rotation == rotationBefore then
 				self:_rotateCylinder(2, self.reload_index_two_time or WEAPON_STATS.reload_index_two_time)
@@ -761,7 +761,7 @@ function TalonRevolver:reload()
 		if missingIndexes == 1 then
 			local rotationBefore = self.cylinder_rotation
 			local indexTrack = self:_playAnim("Reload_Loop_After")
-			if indexTrack then indexTrack.Stopped:Wait() elseif (self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time) > 0 then task.wait(self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time) end
+			if indexTrack then self:_waitAnimation(indexTrack) elseif (self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time) > 0 then task.wait(self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time) end
 			if not self.Equipped or self._equipGeneration ~= generation then return end
 			if self.cylinder_rotation == rotationBefore then
 				self:_rotateCylinder(1, self.reload_cancel_index_time or WEAPON_STATS.reload_cancel_index_time)

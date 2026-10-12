@@ -112,12 +112,13 @@ WeaponIds.LegacyToCanonical = {
 	flagpole = "Flagpole",
 	hammer = "Hammer",
 	jaegerkit = "HunterKit",
-	lance = "lance",
+	lance = "LancerLance",
+	lancerlance = "LancerLance",
 	lancerstim = "LancerStim",
 	nebel = "NebelGrenade",
 	nebelgrenade = "NebelGrenade",
-	pick = "Pick",
-	pickaxe = "Pickaxe",
+	pick = "Pickaxe",
+	pickaxe = "HeavyPickaxe",
 	stims = "StimulantCompounds",
 	stimulants = "StimulantCompounds",
 	throwaxe = "ThrowingAxes",
@@ -144,6 +145,7 @@ WeaponIds.LegacyToCanonical = {
 }
 
 WeaponIds.DisplayNames = {
+	LancerLance = "Heavy Lance",
 	AdjudicatorRifle = "Adjudicator",
 	AuclairPistol = "Auclair",
 	CrestfallRifle = "Crestfall",
@@ -183,6 +185,7 @@ WeaponIds.DisplayNames = {
 }
 
 WeaponIds.PreferredAssetNames = {
+	LancerLance = "lance",
 	MachinePistol = "mpgun",
 	OcelotTalonRevolverSecondary = "saa",
 	AdjudicatorRifle = "rsc",
@@ -242,7 +245,8 @@ WeaponIds.PreferredAssetNames = {
 	Machete = "machete",
 	NebelGrenade = "nebel",
 	Pick = "pick",
-	Pickaxe = "pickaxe",
+	Pickaxe = "pick",
+	HeavyPickaxe = "pickaxe",
 	Stimulants = "stims",
 	ThrowingAxes = "throwaxe",
 	TrenchWhistle = "whistle",
@@ -275,11 +279,16 @@ for canonical, assetName in pairs(WeaponIds.PreferredAssetNames) do
 	WeaponIds.CanonicalToLegacyAsset[canonical] = assetName
 end
 
+-- Legacy lowercase pickaxe is the Rook heavy tool; Pickaxe is our regular controller.
+WeaponIds.LegacyToCanonical.pickaxe = "HeavyPickaxe"
+WeaponIds.LegacyToCanonical.Pickaxe = "Pickaxe"
+
 function WeaponIds.Canonical(name: any): string
 	if type(name) ~= "string" then
 		return ""
 	end
 
+	if WeaponIds.CanonicalToLegacyAsset[name] then return name end
 	return WeaponIds.LegacyToCanonical[name] or WeaponIds.LegacyToCanonical[normalize(name)] or name
 end
 

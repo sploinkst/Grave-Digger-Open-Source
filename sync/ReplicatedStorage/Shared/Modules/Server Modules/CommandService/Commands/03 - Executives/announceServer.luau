@@ -10,7 +10,7 @@ return function (context, text)
 	manager.BroadcastPresentation("global_alert", {
 		message = filtered .. " - " .. context.Executor.Name,
 		privateServer = game.PrivateServerId ~= "",
-		duration = 15,
+		duration = 5,
 	})
 	return "Created announcement."
 end

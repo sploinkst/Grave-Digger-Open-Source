@@ -59,8 +59,9 @@ local function show(player: Player, requestedArm: any)
 		or character:GetAttribute("Aiming") == true
 		or character:GetAttribute("CompassDenied") == true then return end
 
-	local expectedArm = if character:GetAttribute("CompassRight") == true then "Right Arm" else "Left Arm"
-	if requestedArm ~= expectedArm then return end
+	-- Client hand attributes do not replicate; validate the visual request.
+	if requestedArm ~= "Right Arm" and requestedArm ~= "Left Arm" then return end
+	local expectedArm = requestedArm
 	local arm = character:FindFirstChild(expectedArm)
 	if not arm or not arm:IsA("BasePart") then return end
 	local items = Shared.Assets:FindFirstChild("Items")

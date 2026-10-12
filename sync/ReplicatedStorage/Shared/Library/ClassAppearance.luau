@@ -1,6 +1,3 @@
--- Shared by the real character and the loadout preview.
---   Assets/outfits/<team>/<class>
---   Assets/outfits/elite/<team>/<class> (Shock Troopers only)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Appearance = {}
 Appearance.DebugHelmets = false

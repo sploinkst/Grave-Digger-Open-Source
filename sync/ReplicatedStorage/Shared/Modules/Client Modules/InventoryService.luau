@@ -17,6 +17,9 @@ local FadeDelay = 5
 
 local EquipmentBB = ReplicatedStorageService:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("UI"):WaitForChild("Equipment_BB")
 local Utils = require(ReplicatedStorageService:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Util"))
+local InventoryView = require(ReplicatedStorageService.Shared.Library.InventoryView)
+local AuthoredAssets = require(ReplicatedStorageService.Shared.Library.AuthoredAssets)
+local started = false
 
 local InventorySlots = {
 	["1"] = { Keybind = Enum.KeyCode.One, Tool = nil, UI = nil, Designation = "Primary", PermanentUISpot = true },
@@ -52,11 +55,7 @@ end
 -- // Helpers
 
 local function GetSlotParts(ui)
-	if not ui or not ui.Parent then return nil, nil, nil end
-	local frame = ui:FindFirstChild("Frame", true)
-	local image = ui:FindFirstChild("ImageLabel", true)
-	local text = ui:FindFirstChild("Hotkey", true)
-	return frame, image, text
+	return InventoryView.Parts(ui)
 end
 
 local function TweenSlot(ui, props)
@@ -86,10 +85,8 @@ local function TweenSlot(ui, props)
 end
 
 local function GetInventoryItemName()
-	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-	local main = playerGui and playerGui:FindFirstChild("main")
-	local coreGame = main and main:FindFirstChild("core_game")
-	local frame = coreGame and coreGame:FindFirstChild("inventoryitemname")
+	local coreGame = AuthoredAssets.CoreGame()
+	local frame = AuthoredAssets.Widget("inventoryitemname")
 	local label = frame and frame:FindFirstChild("item")
 	if frame and frame:IsA("GuiObject") and label and label:IsA("TextLabel") then
 		return frame, label
@@ -98,9 +95,13 @@ local function GetInventoryItemName()
 end
 
 local function ShowInventoryItemName(toolObject)
+ local character=LocalPlayer.Character
+ if character and character:GetAttribute("IsDreadnought")==true then return end
 	local frame, label = GetInventoryItemName()
 	if not frame or not label then return end
 	label.Text = toolObject.Display_Name or toolObject.DisplayName or toolObject.name or ""
+
+	-- Keep the authored name panel in Extras, outside the slot UIListLayout.
 	frame.Visible = true
 	TweenService:Create(label, TweenInfoDefault, { TextTransparency = 0 }):Play()
 end
@@ -113,16 +114,21 @@ local function FadeInventoryItemName()
 end
 
 local function CreateSlotUI(slotNumber, slot)
-	if slot.UI and slot.UI.Parent then
+	local holder, template = InventoryView.Template(LocalPlayer.PlayerGui)
+	if not holder then return end
+	if slot.UI and slot.UI.Parent == holder then
 		-- // Already has a UI instance (e.g. AssignTool created it before
 		-- // this loop ran) — don't spawn a duplicate.
 		return
 	end
+	if slot.UI then slot.UI:Destroy() end
 	slot.UI = nil
 
-	local ui = LocalPlayer.PlayerGui:WaitForChild("Inventory"):WaitForChild("Main").Example:Clone()
+	local ui = template:Clone()
 	ui.Name = "Slot_" .. slotNumber
-	ui.Parent = LocalPlayer.PlayerGui.Inventory:WaitForChild("Main")
+	ui:SetAttribute("InventorySlot", true)
+	ui.LayoutOrder = slotNumber == "0" and 10 or tonumber(slotNumber)
+	ui.Parent = holder
 	ui.Visible = true
 
 	local frame, image, text = GetSlotParts(ui)
@@ -133,12 +139,32 @@ local function CreateSlotUI(slotNumber, slot)
 	end
 
 	text.Text = slotNumber
-	image.Image = EmptyIcon
+	image.Image = (slot.Tool and slot.Tool.item_image) or EmptyIcon
 	frame.BackgroundTransparency = 1
 	image.ImageTransparency = 1
 	text.TextTransparency = 1
 
 	slot.UI = ui
+	local button = Instance.new("TextButton")
+	button.Name = "EquipButton"
+	button.Size = UDim2.fromScale(1, 1)
+	button.BackgroundTransparency = 1
+	button.Text = ""
+	button.AutoButtonColor = false
+	local topIndex = ui.ZIndex
+	for _, descendant in ipairs(ui:GetDescendants()) do
+		if descendant:IsA("GuiObject") then topIndex = math.max(topIndex, descendant.ZIndex) end
+	end
+	button.ZIndex = topIndex + 1
+	button.Parent = ui
+	button.Activated:Connect(function()
+		local character = LocalPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if slot.Tool and humanoid and humanoid.Health > 0 and LocalPlayer:GetAttribute("MenuOpen") ~= true
+			and not LocalPlayer:GetAttribute("CantUnequip") and not character:GetAttribute("DontRotate") then
+			Module.EquipTool(slot.Tool)
+		end
+	end)
 end
 
 local function UpdateSlotUI(slot)
@@ -194,6 +220,8 @@ end
 -- // Slot Visibilities
 
 local function CanShowSlots(): boolean
+ local character=LocalPlayer.Character
+ if character and character:GetAttribute("IsDreadnought")==true then return false end
 	if LocalPlayer:GetAttribute("MenuOpen") == true then return false end
 	local character = LocalPlayer.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -202,6 +230,8 @@ end
 
 local function RevealSlots()
 	if not CanShowSlots() then
+        local screen=LocalPlayer.PlayerGui:FindFirstChild("Inventory")
+        if screen and screen:IsA("ScreenGui") then screen.Enabled=false end
 		return
 	end
 	slotsVisible = true
@@ -218,6 +248,13 @@ local function RevealSlots()
 end
 
 local function FadeSlots()
+ local screen=LocalPlayer.PlayerGui:FindFirstChild("Inventory")
+ if screen and screen:IsA("ScreenGui") then screen.Enabled=CanShowSlots() end
+	if CanShowSlots() then
+		RevealSlots()
+		FadeInventoryItemName()
+		return
+	end
 	slotsVisible = false
 	for _, key in ipairs(SlotOrder) do
 		local ui = InventorySlots[key].UI
@@ -310,6 +347,11 @@ end
 -- // Equip (single, debounced entry point — used by every key press)
 
 local function EquipTool(toolObject)
+ local character=LocalPlayer.Character
+ if character and character:GetAttribute("IsDreadnought")==true then
+  if not toolObject or toolObject.className~="BrowningMachineGun" then return false end
+  if currentEquipped==toolObject and toolObject.Equipped then return true end
+ end
 	if equipBusy then
 		return false
 	end
@@ -332,7 +374,9 @@ local function EquipTool(toolObject)
 					toolObject:setDualWieldWeapon(InventorySlots["2"].Tool)
 				end
 				toolObject:equip()
-				currentEquipped = toolObject
+				if not toolObject._destroyed and toolObject.Equipped then
+					currentEquipped = toolObject
+				end
 			end
 		end
 	end)
@@ -358,7 +402,9 @@ local function AssignTool(toolObject)
 
 	local designation = toolObject.Designation or "Miscellaneous"
 
-	local slotNumber = FindFirstEmptySlot(designation)
+	local preferred = toolObject.InventorySlot
+	local slotNumber = preferred and InventorySlots[preferred] and not InventorySlots[preferred].Tool and preferred
+		or FindFirstEmptySlot(designation)
 	if not slotNumber then
 		return
 	end
@@ -421,6 +467,10 @@ local function AddEquipmentBB(character)
 
 	local characterHRP = character:WaitForChild("HumanoidRootPart")
 	equipmentBBClone = EquipmentBB:Clone()
+	-- The active equipment controller enables this only during gameplay.
+	for _, gui in equipmentBBClone:GetDescendants() do
+		if gui:IsA("BillboardGui") then gui.Enabled = false end
+	end
 
 	equipmentBBClone.Parent = characterHRP
 
@@ -433,6 +483,15 @@ local function OnCharacterAdded(character)
 	-- // (e.g. ToolService) waiting on this attribute doesn't race us —
 	-- // they'll see false during the reset and re-wait for the true edge below.
 	character:SetAttribute("InventoryReady", false)
+ character:GetAttributeChangedSignal("IsDreadnought"):Connect(function()
+  FadeSlots()
+  if character:GetAttribute("IsDreadnought")==true then
+   for _,key in ipairs(SlotOrder) do
+    local tool=InventorySlots[key].Tool
+    if tool and tool.className=="BrowningMachineGun" then task.defer(function() Module.EquipTool(tool) end);break end
+   end
+  end
+ end)
 
 	-- // Always release the equip lock on respawn, in case a previous
 	-- // equip/unequip call was interrupted (e.g. tool destroyed on death)
@@ -480,6 +539,24 @@ end
 -- // Init
 
 function Module.start_module()
+	if started then return end
+	started = true
+	local gui = LocalPlayer:WaitForChild("PlayerGui")
+	local queued = false
+	gui.DescendantAdded:Connect(function(child)
+		if queued or (child.Name ~= "main" and child.Name ~= "inventory" and child.Name ~= "ex"
+			and child.Name ~= "Inventory" and child.Name ~= "Main" and child.Name ~= "Example") then return end
+		queued = true
+		task.defer(function()
+			queued = false
+			for _, key in ipairs(SlotOrder) do
+				local slot = InventorySlots[key]
+				if slot.PermanentUISpot or slot.Tool then CreateSlotUI(key, slot); UpdateSlotUI(slot) end
+			end
+			UpdateHighlight(selectedKey)
+			if CanShowSlots() then RevealSlots() end
+		end)
+	end)
 	for _, key in ipairs(SlotOrder) do
 		local slot = InventorySlots[key]
 		if slot.PermanentUISpot then
@@ -496,11 +573,13 @@ function Module.start_module()
 		if LocalPlayer:GetAttribute("MenuOpen") == true then
 			fadeToken += 1
 			FadeSlots()
+		else
+			RevealSlots()
 		end
 	end)
 
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then
+		if gameProcessed or (LocalPlayer.Character and LocalPlayer.Character:GetAttribute("EliteKitSelecting")) then
 			return
 		end
 
@@ -560,9 +639,6 @@ function Module.start_module()
 		for _, key in ipairs(SlotOrder) do
 			local slot = InventorySlots[key]
 
-			if LocalPlayer.Character:GetAttribute("StimulantSelecting")
-				or LocalPlayer.Character:GetAttribute("OfficerOrderSelecting")
-				or LocalPlayer.Character:GetAttribute("ConstructionSelecting") then return end
 			if input.KeyCode == slot.Keybind then
 				local tool = slot.Tool
 
@@ -592,7 +668,13 @@ function Module.start_module()
 end
 
 function Module.AssignTool(tool)
-	AssignTool(tool)
+ AssignTool(tool)
+ local character=LocalPlayer.Character
+ if character and character:GetAttribute("IsDreadnought")==true and tool.className=="BrowningMachineGun" then
+  task.defer(function()
+   if LocalPlayer.Character==character and not tool._destroyed then Module.EquipTool(tool) end
+  end)
+ end
 end
 
 function Module.EquipTool(tool)
@@ -600,9 +682,9 @@ function Module.EquipTool(tool)
 	if not EquipTool(tool) then return false end
 	for _, key in ipairs(SlotOrder) do
 		if InventorySlots[key].Tool == tool then
-			selectedKey = key
+			selectedKey = currentEquipped == tool and key or nil
 			OnInventoryKey(key)
-			UpdateHighlight(key)
+			UpdateHighlight(selectedKey)
 			break
 		end
 	end

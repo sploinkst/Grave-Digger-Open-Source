@@ -1,4 +1,3 @@
--- Canonical perk catalog migrated from the legacy master configuration.
 local Perks = {}
 
 Perks.Order = {
@@ -94,6 +93,17 @@ local legacyIds = {
 	Ambidextrous = "akimbo", Hippocratic = "hippocratic", Cursed = "cursed",
 }
 
+local masterPerks = require(script.Parent.MasterReference.Base).perks
+for name, id in pairs(legacyIds) do
+ local source = masterPerks[id] or (id == "blackhand" and masterPerks.quickdraw)
+ local definition = Perks.Definitions[name]
+ if source and definition then
+  definition.Description = source.desc or definition.Description
+  definition.Icon = source.icon or definition.Icon
+  definition.Lore = source.lore or definition.Lore
+  definition.LancerDescription = source.lancerdesc or definition.LancerDescription
+ end
+end
 local function normalize(name: string): string
 	return name:lower():gsub("[^%w]", "")
 end

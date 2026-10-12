@@ -111,7 +111,7 @@ function BaseShotgun:_fireShotgunBlast(options): boolean
 
 	local fireDelay = options and options.fireDelay
 	if fireDelay and fireDelay > 0 then
-		task.wait(self.getFireDelay and self:getFireDelay(fireDelay) or fireDelay)
+		task.wait(if options.fixedFireDelay then fireDelay else self:_effectiveFireDelay(fireDelay))
 	end
 
 	if not self.Equipped or equipGeneration ~= self._equipGeneration then return true end

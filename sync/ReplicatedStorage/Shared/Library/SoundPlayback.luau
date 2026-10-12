@@ -1,9 +1,5 @@
 --!strict
 
--- Independent playback for transient sounds. Every call owns a fresh Sound
--- and, for spatial audio, a stationary world anchor. Later calls can never
--- restart an earlier shot and deleting the source weapon cannot cut its tail.
-
 local SoundService = game:GetService("SoundService")
 local Workspace = game:GetService("Workspace")
 
@@ -17,6 +13,8 @@ export type Options = {
 	PitchVariation: number?,
 	TimePosition: number?,
 	RollOffMaxDistance: number?,
+	RollOffMinDistance: number?,
+	FollowParent: boolean?,
 }
 
 local function soundWorldCFrame(parent: Instance?): CFrame?
@@ -62,7 +60,12 @@ function SoundPlayback.Play(source: Sound, parent: Instance?, options: Options?)
 	if not source or not source:IsA("Sound") then return nil end
 	local settings = options or {}
 	local clone = source:Clone()
-	local target, anchor = playbackParent(parent)
+	local target, anchor
+	if settings.FollowParent and parent and (parent:IsA("BasePart") or parent:IsA("Attachment")) then
+		target = parent
+	else
+		target, anchor = playbackParent(parent)
+	end
 	local speed = settings.PlaybackSpeed or source.PlaybackSpeed
 	local variation = settings.PitchVariation or 0
 	if variation > 0 then
@@ -76,6 +79,8 @@ function SoundPlayback.Play(source: Sound, parent: Instance?, options: Options?)
 		clone.RollOffMinDistance = math.min(clone.RollOffMinDistance, settings.RollOffMaxDistance)
 		clone.RollOffMaxDistance = settings.RollOffMaxDistance
 	end
+
+	if settings.RollOffMinDistance then clone.RollOffMinDistance = math.min(settings.RollOffMinDistance, clone.RollOffMaxDistance) end
 
 	local pitchShift = settings.PitchShift or 0
 	if pitchShift ~= 0 then
@@ -92,8 +97,6 @@ function SoundPlayback.Play(source: Sound, parent: Instance?, options: Options?)
 		if anchor and anchor.Parent then anchor:Destroy() end
 	end
 
-	-- Connect before Play so cached, extremely short bullet layers cannot end
-	-- before their cleanup listener exists.
 	clone.Ended:Once(cleanup)
 	clone.Parent = target
 	local played, playError = pcall(function()
@@ -105,7 +108,6 @@ function SoundPlayback.Play(source: Sound, parent: Instance?, options: Options?)
 		return nil
 	end
 
-	-- Ended is authoritative. This only catches invalid assets that never load.
 	task.delay(FAILSAFE_SECONDS, cleanup)
 	return clone
 end

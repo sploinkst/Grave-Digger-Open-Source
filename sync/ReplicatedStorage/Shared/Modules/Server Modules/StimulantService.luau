@@ -23,7 +23,7 @@ function Service.start_module()
 		local state = Mixtures.Get(character)
 		if os.clock() < state.ready then return end
 		if action == "Mix" then
-			if type(argument) ~= "string" or not Rules.Definitions[argument] or state.supplies < 1 then return end
+			if type(argument) ~= "string" or not table.find(Rules.Order, argument) or state.supplies < 1 then return end
 			State.Mix(state, argument); state.ready = os.clock() + 0.73
 		elseif action == "Discard" then
 			State.Discard(state); state.ready = os.clock() + 0.75

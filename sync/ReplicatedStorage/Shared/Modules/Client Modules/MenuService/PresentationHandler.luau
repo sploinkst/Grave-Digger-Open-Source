@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Scope = require(script.Parent.Scope)
+local Settings = require(script.Parent.Parent.SettingsManager)
 
 local module, started = {}, false
 local scope
@@ -48,8 +49,9 @@ end
 
 local function playPopup(main: Instance, key: string, message: string, duration: number?)
 	local core = main:FindFirstChild("core_game")
-	local holder = core and core:FindFirstChild("textpopups")
-	local template = holder and holder:FindFirstChild("ex")
+	local notifications=LocalPlayer.PlayerGui:FindFirstChild("Notifications")
+	local holder=notifications and notifications:FindFirstChild("Main")
+	local template=holder and holder:FindFirstChild("Example")
 	if not holder or not template or not template:IsA("TextLabel") or holder:FindFirstChild(key) then return false end
 	popupSerial += 1
 	local row = template:Clone()
@@ -81,7 +83,7 @@ local function drainAlerts(main: Instance)
 	if alertWorking or #alertQueue == 0 then return end
 	alertWorking = true
 	local item = table.remove(alertQueue, 1)
-	local template = main:FindFirstChild("alert")
+	local template = require(ReplicatedStorage.Shared.Library.AuthoredAssets).Widget("alert")
 	if not template or not template:IsA("GuiObject") then
 		alertWorking = false
 		playPopup(main, "alert", item.message, 4)
@@ -89,7 +91,7 @@ local function drainAlerts(main: Instance)
 		return
 	end
 	local alert = template:Clone()
-	alert.Name, alert.Visible, alert.Parent = "active_alert", true, main
+	alert.Name, alert.Visible, alert.Parent = "active_alert", true, template.Parent
 	configureAlertTeam(alert)
 	local text, icons, scroll = alert:FindFirstChild("maintext"), alert:FindFirstChild("icons"), alert:FindFirstChild("scroll")
 	if text and text:IsA("TextLabel") then text.Text, text.TextTransparency, text.TextStrokeTransparency = item.message, 1, 1 end
@@ -114,57 +116,39 @@ local function showAlert(main: Instance, message: string, category: string?, dur
 end
 
 local function showGlobal(main: Instance, message: string, privateServer: boolean?, duration: number?)
-	local frame = main:FindFirstChild("globalmessage")
-	local text = frame and frame:FindFirstChild("maintext")
-	if not frame or not frame:IsA("GuiObject") or not text then return end
-	globalSerial += 1
-	local serial = globalSerial
-	labelText(text, message)
-	local serverText = text:FindFirstChild("servertext")
-	labelText(serverText, privateServer and "Private Server Message from Bandit Group" or "Server Message from Solace Coalition")
-	if serverText and serverText:IsA("TextLabel") then serverText.TextColor3 = privateServer and Color3.fromRGB(50, 70, 200) or Color3.fromRGB(50, 200, 70) end
-	frame.Visible = true
-	setFade(frame, 1)
-	tweenFade(frame, 0.25, 0)
-	task.delay(tonumber(duration) or 15, function()
-		if serial ~= globalSerial or not frame.Parent then return end
-		tweenFade(frame, 0.35, 1)
-		task.delay(0.36, function() if serial == globalSerial and frame.Parent then frame.Visible = false end end)
-	end)
+ local notifications=LocalPlayer.PlayerGui:FindFirstChild("Notifications")
+ local utils=notifications and notifications:FindFirstChild("Utils")
+ if utils then require(utils).send_notification({},message,duration or 5) end
 end
 
 local function bindMain(main: Instance)
 	if scope then scope:Destroy() end
 	scope = Scope.new()
 	local playerList = main:FindFirstChild("playerlist")
-	local template = playerList and playerList:FindFirstChild("ex")
+	local listTemplate=playerList and playerList:FindFirstChild("empirelist")
+	local template = listTemplate and listTemplate:FindFirstChild("Example")
 	if template and template:IsA("GuiObject") then template.Visible = false end
-	local function refreshPlayerList()
-		if not playerList or not template then return end
-		for _, listName in {"empirelist", "royallist"} do
-			local list = playerList:FindFirstChild(listName)
-			if list then for _, row in list:GetChildren() do if row:GetAttribute("MenuServiceRow") then row:Destroy() end end end
-		end
-		for _, player in Players:GetPlayers() do
-			local list = playerList:FindFirstChild(player.Team and player.Team.Name == "Golden Empire" and "empirelist" or "royallist")
-			if not list then continue end
-			local row = template:Clone(); row.Name = player.Name; row.Visible = true; row:SetAttribute("MenuServiceRow", true); row.Parent = list
-			labelText(row:FindFirstChild("playername"), player.DisplayName)
-			local rank = row:FindFirstChild("rankbg") and row.rankbg:FindFirstChild("rank")
-			local data = player:FindFirstChild("PlayerData"); local profile = data and data:FindFirstChild("PlayerData"); local progress = profile and profile:FindFirstChild("Progression")
-			labelText(rank, progress and progress:FindFirstChild("Rank") and progress.Rank.Value or "")
-		end
-	end
+ local function refreshPlayerList()
+  -- ReplicantService owns player rows, class icons, team changes and death state.
+  if not playerList then return end
+  for _,name in ipairs({"empirelist","royallist"}) do
+   local list=playerList:FindFirstChild(name)
+   local example=list and list:FindFirstChild("Example")
+   if example then example.Visible=false end
+  end
+ end
+
 	local showing = false
 	local function setList(value)
 		showing = value
+        if main:IsA("ScreenGui") then main.Enabled=value end
 		if playerList and playerList:IsA("GuiObject") then playerList.Visible = value end
 		local darken = main:FindFirstChild("playerlistdarken"); if darken and darken:IsA("GuiObject") then darken.Visible = value end
 		if value then refreshPlayerList() end
 	end
 	setList(false)
-	scope:Connect(UserInputService.InputBegan, function(input, processed) if not processed and not UserInputService:GetFocusedTextBox() and (input.KeyCode == Enum.KeyCode.Tab or input.KeyCode == Enum.KeyCode.DPadDown) then setList(true) end end)
-	scope:Connect(UserInputService.InputEnded, function(input) if input.KeyCode == Enum.KeyCode.Tab or input.KeyCode == Enum.KeyCode.DPadDown then setList(false) end end)
+	scope:Connect(UserInputService.InputBegan, function(input, processed) if not processed and not UserInputService:GetFocusedTextBox() and (input.KeyCode == (Settings.GetKey("playerlist")~=Enum.KeyCode.Unknown and Settings.GetKey("playerlist") or Enum.KeyCode.Tab) or input.KeyCode == Enum.KeyCode.DPadDown) then setList(true) end end)
+	scope:Connect(UserInputService.InputEnded, function(input) if input.KeyCode == (Settings.GetKey("playerlist")~=Enum.KeyCode.Unknown and Settings.GetKey("playerlist") or Enum.KeyCode.Tab) or input.KeyCode == Enum.KeyCode.DPadDown then setList(false) end end)
 	scope:Connect(Players.PlayerAdded, function() if showing then refreshPlayerList() end end)
 	scope:Connect(Players.PlayerRemoving, function() if showing then task.defer(refreshPlayerList) end end)
 
@@ -172,7 +156,7 @@ local function bindMain(main: Instance)
 	_G.gamealert = function(message, category, duration) showAlert(main, tostring(message or ""), category, duration) end
 	_G.globalalert = function(message, privateServer, duration) showGlobal(main, tostring(message or ""), privateServer, duration) end
 	_G.flash_hitmarker = function()
-		local hitmarkers = main:FindFirstChild("core_game") and main.core_game:FindFirstChild("hitmarkers")
+		local hitmarkers = require(ReplicatedStorage.Shared.Library.AuthoredAssets).Widget("hitmarkers")
 		if not hitmarkers then return end
 		hitmarkers.Visible = true
 		for _, image in hitmarkers:GetDescendants() do if image:IsA("ImageLabel") then image.ImageTransparency = 0; tween(image, 0.35, {ImageTransparency = 1}) end end
@@ -199,7 +183,17 @@ function module.start_module()
 	if started then return end
 	started = true
 	local gui = LocalPlayer:WaitForChild("PlayerGui")
-	local function refresh(child) if not child or child.Name == "main" then local main = gui:FindFirstChild("main"); if main then bindMain(main) end end end
-	gui.ChildAdded:Connect(refresh); refresh()
+	local Assets = require(ReplicatedStorage.Shared.Library.AuthoredAssets)
+	local boundMain
+	local function refresh()
+		local main = Assets.Screen("Playerlist")
+		if main == boundMain then return end
+		boundMain = main
+		if main then bindMain(main)
+		elseif scope then scope:Destroy(); scope = nil end
+	end
+	gui.ChildAdded:Connect(refresh)
+	gui.ChildRemoved:Connect(function() task.defer(refresh) end)
+	refresh()
 end
 return module

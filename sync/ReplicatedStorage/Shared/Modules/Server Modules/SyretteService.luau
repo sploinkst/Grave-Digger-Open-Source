@@ -8,6 +8,26 @@ local Remote = Shared.Library.Events:WaitForChild("MedicalSyrettes")
 local Charges = setmetatable({}, {__mode = "k"})
 local Aid = require(script.Parent.AidService)
 local Medical = require(Shared.Library.MedicalRules)
+local Flight = require(script.Parent.MasterActions.Projectile)
+local Playback = require(Shared.Library.SoundPlayback)
+local function medicalSound(name, character, variation)
+	local sounds = Shared.Assets:FindFirstChild("Sounds")
+	local equipment = sounds and sounds:FindFirstChild("Equipment")
+	local source
+	for _, folderName in {"medical", "medicalsynnertes"} do
+		local folder = equipment and equipment:FindFirstChild(folderName)
+		local candidate = folder and folder:FindFirstChild(name)
+		if candidate and candidate:IsA("Sound") then source = candidate; break end
+	end
+	local location = character and (character:FindFirstChild("Torso") or character:FindFirstChild("HumanoidRootPart"))
+	if source and source:IsA("Sound") and location then Playback.Play(source, location, {PitchVariation = variation or 0}) end
+end
+local function providerSound(character)
+	task.delay(0.1, function()
+		local humanoid = character.Parent and character:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health > 0 then medicalSound("heal" .. math.random(1, 3), character, 0.1) end
+	end)
+end
 
 local function capacity(character)
 	local data = character:FindFirstChild("CharacterData")
@@ -54,10 +74,11 @@ local function heal(recipient, provider, providerCharacter, health)
 	end
 	if Status.HasStatus(recipient, "ClottingStatus") then Status.RemoveStatus(recipient, "ClottingStatus") end
 	Aid.Record(recipient, provider, providerCharacter)
+	medicalSound("healed", recipient.Character)
 	return true
 end
 
-local function pickup(root)
+local function pickup(root, character, collect)
 	local assets = Shared.Assets:FindFirstChild("Equipment")
 	local source = assets and (assets:FindFirstChild("MedicalSyrettes") or assets:FindFirstChild("MedicalSyrette") or assets:FindFirstChild("Syrette"))
 	local object = source and source:Clone()
@@ -72,22 +93,16 @@ local function pickup(root)
 	object.Name = "MedicalSyrette"
 	local part = object:IsA("BasePart") and object or object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
 	if not part then object:Destroy(); return nil end
-	if object:IsA("Model") then object:PivotTo(root.CFrame * CFrame.new(0, 0, -4))
-	else part.CFrame = root.CFrame * CFrame.new(0, 0, -4) end
-	local parts = object:IsA("Model") and object:GetDescendants() or {part}
-	for _, child in parts do
-		if child:IsA("BasePart") then
-			child.Anchored = false; child.CanCollide = true; child.CanTouch = true
-			if child ~= part then
-				local weld = Instance.new("WeldConstraint")
-				weld.Part0 = part; weld.Part1 = child; weld.Parent = part
-			end
-		end
-	end
-	object.Parent = workspace
-	part:SetNetworkOwner(nil)
-	part.AssemblyLinearVelocity = root.CFrame.LookVector * 20 + Vector3.new(0, 8, 0)
-	return object, parts
+	local velocity = root.CFrame.LookVector * 20 + Vector3.new(0, 8, 0)
+	local launched, visual = Flight.Launch(character, object, velocity.Unit, velocity.Magnitude, function(hit, landed)
+		local parts = landed:IsA("Model") and landed:GetDescendants() or {landed}
+		for _, child in parts do if child:IsA("BasePart") then child.CanTouch = true end end
+		collect(hit.Instance, landed)
+	end, {origin = (root.CFrame * CFrame.new(0, 0, -4)).Position, retain = true})
+	object:Destroy()
+	if not launched then return nil end
+	local parts = visual:IsA("Model") and visual:GetDescendants() or {visual}
+	return visual, parts
 end
 
 function Service.start_module()
@@ -114,22 +129,23 @@ function Service.start_module()
 		if recipient then
 			if not heal(recipient, player, character, health) then return end
 		else
-			local object, parts = pickup(root)
-			if not object then return end
 			local consumed = false
+			local function collect(hit, object)
+				if consumed then return end
+				local model = hit:FindFirstAncestorOfClass("Model")
+				local collector = model and Players:GetPlayerFromCharacter(model)
+				if not collector or collector == player then return end
+				if heal(collector, player, character, health) then consumed = true; object:Destroy() end
+			end
+			local object, parts = pickup(root, character, collect)
+			if not object then return end
 			for _, part in parts do
-				if not part:IsA("BasePart") then continue end
-				part.Touched:Connect(function(hit)
-					if consumed then return end
-					local model = hit:FindFirstAncestorOfClass("Model")
-					local collector = model and Players:GetPlayerFromCharacter(model)
-					if not collector or collector == player then return end
-					if heal(collector, player, character, health) then consumed = true; object:Destroy() end
-				end)
+				if part:IsA("BasePart") then part.Touched:Connect(function(hit) collect(hit, object) end) end
 			end
 			Debris:AddItem(object, 30)
 		end
 		if state.count == maximum then state.time = os.clock() end
+		providerSound(character)
 		state.count -= 1
 		character:SetAttribute("SyretteCharges", state.count)
 	end)

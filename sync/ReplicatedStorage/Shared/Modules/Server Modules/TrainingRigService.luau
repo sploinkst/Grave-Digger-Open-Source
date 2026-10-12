@@ -135,9 +135,9 @@ function Service.Load(character, config)
 		local damage = lastHealth - health
 		lastHealth = health
 		character:SetAttribute("Injured", health > 0 and health < 100 or nil)
-		if damage <= 0 then return end
-		local clip = Voice.Choose(character, damage > 100 and "heavy" or "hurt")
-		if clip then Playback.Play(clip, root, {RollOffMaxDistance = 75}) end
+		local kind = Voice.DamageKind(damage, health, character)
+		if not kind then return end
+		Voice.Play(character, kind)
 		if health > 0 and #reactions > 0 then
 			for _, track in ipairs(reactions) do track:Stop(0.05) end
 			reactions[math.random(#reactions)]:Play(0.05)
@@ -165,7 +165,6 @@ function Service.ApplyDamageStatus(character, origin, weaponName)
 	Status.GiveStatus(owner, "ClottingStatus", 5)
 	Status.GiveStatus(owner, "HitstunStatus", 1)
 	if humanoid.Health < 100 then Status.GiveStatus(owner, "WoundStatus", "Bullet", origin) end
-	if weaponName == "AntiMaterialRifle" then Status.GiveStatus(owner, "ConcussionStatus") end
 end
 
 function Service.start_module()

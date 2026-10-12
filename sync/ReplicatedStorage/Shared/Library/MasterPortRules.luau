@@ -1,5 +1,4 @@
--- Values present in the client masters. Missing server tuning belongs on the
--- authored templates (Cost, Limit, Damage, Radius, Lifetime), not in UI scripts.
+
 local Rules = {}
 Rules.Constructs = {"Barricade", "Palisade", "Sandbags", "Barbed Wire", "Cache"}
 Rules.Traps = {"Mantrap", "Tin Bomb", "Gas Shell", "Dynamite Stack", "Shotshell Trap", "Light Lure"}

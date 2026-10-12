@@ -24,10 +24,10 @@ local function updateEffects(player, character, state)
 	end
 	character:SetAttribute("ChemicalSnapshot", HttpService:JSONEncode(snapshot))
 	character:SetAttribute("ChemicalUnits", units)
-	if units > Rules.SafeUnits and not Status.HasStatus(player, "SicknessStatus") then
+	if (units > Rules.SafeUnits or active.Initropidril) and not Status.HasStatus(player, "SicknessStatus") then
 		Status.GiveStatus(player, "SicknessStatus")
 		state.sickness = true
-	elseif units <= Rules.SafeUnits and state.sickness then
+	elseif units <= Rules.SafeUnits and not active.Initropidril and state.sickness then
 		if Status.HasStatus(player, "SicknessStatus") then Status.RemoveStatus(player, "SicknessStatus") end
 		state.sickness = nil
 	end
@@ -42,7 +42,11 @@ local function updateEffects(player, character, state)
 	effect("Hydrocodone", "ChemicalRecoilMultiplier", 0.5)
 	effect("Haloperidol", "ChemicalHandlingMultiplier", 1.5)
 	effect("Haloperidol", "ChemicalMovementPenaltyMultiplier", 0.5)
-	for _, name in Rules.Order do
+	character:SetAttribute("ChemicalInaprovaline", active.Inaprovaline and true or nil)
+	effect("Inaprovaline", "ChemicalRegenerationBonus", 1)
+	character:SetAttribute("ChemicalEthanol", active.Ethanol and true or nil)
+	effect("Ethanol", "ChemicalPainMultiplier", 0.5)
+	for _, name in Rules.AllOrder do
 		local remaining = 0
 		for _, dose in state.doses do
 			if dose.name == name then remaining = math.max(remaining, dose.expires - os.clock()) end
@@ -61,8 +65,13 @@ function Service.ApplyMixture(provider, providerCharacter, recipient, mix)
 	local state = bloodstreamFor(character)
 	local applied = false
 	for _, name in mix do
+		name = Rules.Normalize(name)
 		if Rules.Add(state.doses, name, os.clock(), protected) then
 			applied = true
+			if name == "Tricordrazine" or name == "Inaprovaline" then
+				while Status.HasStatus(recipient, "WoundStatus") do Status.RemoveStatus(recipient, "WoundStatus") end
+				if name == "Tricordrazine" then humanoid.Health = humanoid.MaxHealth end
+			end
 			updateEffects(recipient, character, state)
 			if name == "Bicardine" and not recipient:GetAttribute("Sickness")
 				and not character:GetAttribute("PositiveStimulantsPaused") and humanoid.Health >= 100 then
@@ -85,9 +94,17 @@ function Service.start_module()
 				local health = character:FindFirstChildOfClass("Humanoid")
 				if not state or not health or health.Health <= 0 then continue end
 				Rules.Expire(state.doses, os.clock())
+				local active = Rules.Active(state.doses)
+				if (active.Peridaxon or active.Tricordrazine) and os.clock() >= (state.purgeAt or 0) then
+					state.purgeAt = os.clock() + 0.25
+					for index, dose in ipairs(state.doses) do
+						if dose.name ~= "Peridaxon" and dose.name ~= "Tricordrazine" then table.remove(state.doses, index); break end
+					end
+				end
 				if os.clock() >= state.toxinAt then
 					state.toxinAt = os.clock() + Rules.ToxinInterval
 					local active = Rules.Active(state.doses)
+					if active.Initropidril then health:TakeDamage(10) end
 					if active.Amatoxin and not player:GetAttribute("Sickness") then
 						local protected = true
 						for _, dose in state.doses do

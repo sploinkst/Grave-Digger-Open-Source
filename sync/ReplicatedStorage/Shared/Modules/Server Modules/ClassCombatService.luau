@@ -4,6 +4,7 @@ local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
 local Rules = require(ReplicatedStorage.Shared.Library.MeleeRules)
 local Util = require(ReplicatedStorage.Shared.Library.Util)
+local Flight = require(script.Parent.MasterActions.Projectile)
 local Service = {}
 local events = ReplicatedStorage.Shared.Library.Events
 local remote = events:FindFirstChild("ClassCombat")
@@ -166,6 +167,7 @@ local function damage(player, target, amount, instant)
 	if not targetPlayer and not target:GetAttribute("IsTrainingRig") then
 		require(script.Parent.ReplicantManager).play_damage_sound(target, finalDamage, player)
 	end
+	require(script.Parent.DeathAudioService).RecordDamage(target, humanoid, "Torso", finalDamage)
 	humanoid:TakeDamage(finalDamage)
 end
 
@@ -217,9 +219,14 @@ local function stab(player, character, direction)
 	damage(player, target, Rules.Lance.StabDamage, headshot and not helmet)
 end
 
+local function equippedLance(character)
+	local tool = character:FindFirstChild("LancerLance") or character:FindFirstChild("lance")
+	return tool and tool:IsA("Tool") and tool or nil
+end
+
 local function attack(player, character, state, mode, direction)
 	local shield = mode == "ShieldSwing"
-	local tool = character:FindFirstChild(shield and "shield" or "lance")
+	local tool = (shield and character:FindFirstChild("shield") or equippedLance(character))
 	if not tool or not tool:IsA("Tool") or state.prepared or state.charging or os.clock() < state.attack then return end
 	local swingSpeed = character:GetAttribute("ChemicalSwingMultiplier") or 1
 	state.attack = os.clock() + Rules.Lance.Interval / swingSpeed
@@ -231,7 +238,7 @@ local function attack(player, character, state, mode, direction)
 end
 
 local function inspire(player, character, state)
-	if not character:FindFirstChild("lance") or state.charging or os.clock() < state.inspire then return end
+	if not equippedLance(character) or state.charging or os.clock() < state.inspire then return end
 	state.inspire = os.clock() + 15
 	character:SetAttribute("InspireReadyAt", workspace:GetServerTimeNow() + 15)
 	remote:FireClient(player, "Inspire")
@@ -279,29 +286,32 @@ local function recover(player, character, seconds, knocked)
 end
 
 charge = function(player, character, state)
-	local tool = character:FindFirstChild("lance")
-	local _, humanoid, root = living(character)
-	if not tool or state.charging or os.clock() < state.charge or os.clock() < state.attack then return end
-	if root.AssemblyLinearVelocity:Dot(root.CFrame.LookVector) < 16 then return end
+	local tool = equippedLance(character)
+	local alive, humanoid, root = living(character)
+	if not alive or not tool or state.charging or os.clock() < state.charge or os.clock() < state.attack then return end
+	-- SprintProgress is client-owned; validate the replicated forward velocity here.
+	local forwardSpeed = root.AssemblyLinearVelocity:Dot(root.CFrame.LookVector)
+	if character:GetAttribute("Aiming") or character:GetAttribute("SprintBlocked")
+		or character:GetAttribute("ActionBlocked") or character:GetAttribute("DamageDealingBlocked")
+		or character:GetAttribute("Crouching") or humanoid.FloorMaterial == Enum.Material.Air
+		or forwardSpeed < 17.5 then return end
 	local butcher, veteran = perk(character, "Butcher"), perk(character, "Veteran")
 	local duration, cooldown, maximum = Rules.ChargePerks(butcher, veteran)
-	-- Point-blank attempts use the ordinary sweep, including its windup/damage.
-	local nearby = workspace:Spherecast(root.Position, 1.5, root.CFrame.LookVector * 4, paramsFor(character))
-	local closeTarget = nearby and characterFrom(nearby.Instance)
-	if closeTarget and enemy(player, closeTarget) then
-		attack(player, character, state, "Sweep", root.CFrame.LookVector)
-		remote:FireClient(player, "CloseSweep")
-		return
-	end
 	state.charging = true
 	character:SetAttribute("charging", true)
+	-- Charge voice bank is not supplied yet; do not reuse the death yell.
 	character:SetAttribute("ImprovedCharge", butcher or veteran)
 	remote:FireClient(player, "Charge")
 	local attachment = Instance.new("Attachment"); attachment.Parent = root
 	local velocity = Instance.new("LinearVelocity")
 	velocity.Attachment0 = attachment; velocity.MaxForce = math.huge
-	velocity.RelativeTo = Enum.ActuatorRelativeTo.World; velocity.Parent = root
-	local endsAt = os.clock() + duration
+	velocity.RelativeTo = Enum.ActuatorRelativeTo.World
+	local speed = math.clamp(forwardSpeed, 18, 32) + 8
+	velocity.VectorVelocity = Vector3.new(root.CFrame.LookVector.X * speed, root.AssemblyLinearVelocity.Y, root.CFrame.LookVector.Z * speed)
+	velocity.Parent = root
+	local startedAt = os.clock()
+	local endsAt = startedAt + duration
+	local airborne = 0
 	local previous = root.Position
 	local struck = {}
 	local count = 0
@@ -317,16 +327,20 @@ charge = function(player, character, state)
 		connection:Disconnect(); velocity:Destroy(); attachment:Destroy()
 		if player.Parent then remote:FireClient(player, "ChargeStop", why) end
 		if why ~= "Cancelled" and player.Character == character and living(character) then
-			recover(player, character, why == "Kill" and (butcher and .35 or .7) or 1, why == "Obstacle")
+			recover(player, character, why == "Obstacle" and 2 or 1, why == "Obstacle")
 		end
 	end
 	connection = RunService.Heartbeat:Connect(function(dt)
 		if player.Character ~= character or not living(character) or tool.Parent ~= character then finish("Cancelled"); return end
 		if os.clock() >= endsAt then finish(reason); return end
+		airborne = humanoid.FloorMaterial == Enum.Material.Air and airborne + dt or 0
+		if airborne > .5 or character:GetAttribute("CombatStunned") or character:GetAttribute("ActionBlocked") or character:GetAttribute("DamageDealingBlocked") then finish("Cancelled"); return end
+		if os.clock() - startedAt >= 1 and root.AssemblyLinearVelocity.Magnitude <= 5 then finish("Expired"); return end
 		local direction = root.CFrame.LookVector
-		velocity.VectorVelocity = Vector3.new(direction.X * 23, root.AssemblyLinearVelocity.Y, direction.Z * 23)
+		velocity.VectorVelocity = Vector3.new(direction.X * speed, root.AssemblyLinearVelocity.Y, direction.Z * speed)
 		local traveled = root.Position - previous
-		if traveled.Magnitude > 23 * dt + 8 then finish("Cancelled"); return end
+		if traveled.Magnitude > speed * dt + 8 then finish("Cancelled"); return end
+		if os.clock() - startedAt < .2 then previous = root.Position; return end
 		local params = paramsFor(character)
 		local excluded = {character}
 		for target in struck do table.insert(excluded, target) end
@@ -347,10 +361,11 @@ charge = function(player, character, state)
 			end
 			struck[target] = true
 			count += 1
-			damage(player, target, 0, true)
+			local early = os.clock() - startedAt < .5
+			damage(player, target, early and Rules.Lance.SweepDamage or 0, not early)
 			reason = "Kill"
 			remote:FireClient(player, "ChargeHit")
-			if count >= maximum then finish("Kill") end
+			if early or count >= maximum then finish("Kill") end
 		elseif hit.Instance.CanCollide then finish("Obstacle") end
 	end)
 end
@@ -385,39 +400,18 @@ throwAxe = function(player, character, state, direction)
 		if player.Character ~= character or not living(character) then return end
 		local head = character:FindFirstChild("Head")
 		if not head then return end
-		local axe = source:Clone()
-		for _, part in axe:GetDescendants() do
-			if part:IsA("BasePart") then part.Anchored = true; part.CanCollide = false; part.CanQuery = false; part.CanTouch = false end
-		end
-		axe.Parent = workspace
-		local position = head.Position
-		local velocity = direction * Rules.Axes.Speed
 		local gravity = workspace.Gravity * (perk(character, "Marksman") and .1 or 1)
-		local elapsed = 0
-		local params = paramsFor(character)
-		params.FilterDescendantsInstances = {character, axe}
-		local connection
-		connection = RunService.Heartbeat:Connect(function(dt)
-			elapsed += dt
-			if not axe.Parent or elapsed > Rules.Axes.Lifetime then connection:Disconnect(); axe:Destroy(); return end
-			local delta = velocity * dt + Vector3.new(0, -gravity * dt * dt / 2, 0)
-			local hit = workspace:Raycast(position, delta, params)
-			if hit then
-				local target = characterFrom(hit.Instance)
-				if target and not Service.Blocks(target, position) and enemy(player, target) then
-					local helmet = Util.check_for_helmet(target)
-					if helmet and (helmet:GetAttribute("Knocked") or helmet:GetAttribute("HelmetSpent")) then helmet = nil end
-					local headshot = hit.Instance.Name == "Head" or (helmet and hit.Instance:IsDescendantOf(helmet))
-					if helmet then require(script.Parent.ReplicantManager).pop_helmet(target, helmet, true, player) end
-					damage(player, target, Rules.Axes.Damage, headshot and not helmet)
-				end
-				axe:PivotTo(CFrame.lookAt(hit.Position, hit.Position + velocity.Unit))
-				connection:Disconnect(); Debris:AddItem(axe, 8); return
+		Flight.Launch(character, source, direction, Rules.Axes.Speed, function(hit, axe, velocity)
+			local target = characterFrom(hit.Instance)
+			if target and not Service.Blocks(target, hit.Position - velocity.Unit) and enemy(player, target) then
+				local helmet = Util.check_for_helmet(target)
+				if helmet and (helmet:GetAttribute("Knocked") or helmet:GetAttribute("HelmetSpent")) then helmet = nil end
+				local headshot = hit.Instance.Name == "Head" or (helmet and hit.Instance:IsDescendantOf(helmet))
+				if helmet then require(script.Parent.ReplicantManager).pop_helmet(target, helmet, true, player) end
+				damage(player, target, Rules.Axes.Damage, headshot and not helmet)
 			end
-			position += delta
-			velocity += Vector3.new(0, -gravity * dt, 0)
-			axe:PivotTo(CFrame.lookAt(position, position + velocity.Unit) * CFrame.Angles(elapsed * 20, 0, 0))
-		end)
+			Debris:AddItem(axe, 8)
+		end, {acceleration = Vector3.new(0, -gravity, 0), lifetime = Rules.Axes.Lifetime, spin = 20, retain = true})
 	end)
 end
 

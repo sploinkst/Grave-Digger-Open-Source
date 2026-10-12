@@ -1,4 +1,4 @@
-return require(script.Parent.LegacyGunFactory).create({
+local UnionStockedPistol = require(script.Parent.LegacyGunFactory).create({
 	className = "UnionStockedPistol",
 	AuthoredWelds = {
 		equipc0 = CFrame.new(-0.32220459, -1.17378056, -0.236167908, 0, 0, -1, 0.99999994, 0, 0, 0, -1, 0),
@@ -60,3 +60,9 @@ return require(script.Parent.LegacyGunFactory).create({
 	},
 	bulletSpeed = 850,
 })
+
+-- The stocked magazine cannot use the original pistol's clip-loading shortcut.
+function UnionStockedPistol:reload()
+	return self:_reloadByRound({startAnim="Reload_Start", loopAnim="Reload_Loop", endAnim="Reload_End", loopWait=self.reload_loop or 0.75})
+end
+return UnionStockedPistol

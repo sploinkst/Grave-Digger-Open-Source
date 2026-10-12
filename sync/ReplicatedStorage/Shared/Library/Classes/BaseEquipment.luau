@@ -36,6 +36,7 @@ function BaseEquipment.new(info: { name: string }): BaseEquipment
 end
 
 function BaseEquipment:Start(character)
+	require(script.Parent.Parent.EquipmentRules).Configure(self)
 	self.Stopped = false
 	self.Character = character
 	local characterHRP = character:WaitForChild("HumanoidRootPart")
@@ -45,7 +46,14 @@ function BaseEquipment:Start(character)
 	local bb = equipmentBB:WaitForChild("bb")
 	local count = bb:WaitForChild("count")
 	if self.Stopped or character ~= game.Players.LocalPlayer.Character then return end
-	bb.Enabled = true
+	local player = game.Players.LocalPlayer
+	local function refreshVisibility()
+		bb.Enabled = not self.Stopped and character == player.Character
+			and player:GetAttribute("MenuOpen") ~= true
+	end
+	if self._menuConnection then self._menuConnection:Disconnect() end
+	self._menuConnection = player:GetAttributeChangedSignal("MenuOpen"):Connect(refreshVisibility)
+	refreshVisibility()
 	if count:IsA("TextLabel") then
 		count.Text = tostring(self.MaxEquipment)
 	end
@@ -268,6 +276,9 @@ end
 
 function BaseEquipment:Stop()
 	self.Stopped = true
+	if self._menuConnection then self._menuConnection:Disconnect(); self._menuConnection = nil end
+	local bb = self:_getEquipmentGui()
+	if bb then bb.Enabled = false end
 	HoldingG = false
 	if self._inputHook then SettingsManager.UnhookInput("Class Equipment", self._inputHook) end
 	for _, tween in self._reloadTweens or {} do tween:Cancel() end

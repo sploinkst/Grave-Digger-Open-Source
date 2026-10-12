@@ -63,13 +63,13 @@ local HonourInsurgentPistol = require(script.Parent.LegacyGunFactory).create({
 })
 
 function HonourInsurgentPistol:reload()
-	if self.Equipped and not self.Equipping then self:drop() end
+	if self.Equipped and not self:_isBusyForActivation() and self.Capacity < self.Max_Capacity then self:drop() end
 end
 
 function HonourInsurgentPistol:fire()
 	if self.Capacity <= 0 then return false end
 	local fired = self:_fireConfiguredShot(self.FireInterval)
-	if fired and self.Capacity <= 0 and self.Equipped then self:drop() end
+	if fired and self.Capacity <= 0 then self.BarrelWarped = true end
 	return fired
 end
 

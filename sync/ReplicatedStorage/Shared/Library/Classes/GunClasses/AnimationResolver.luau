@@ -1,9 +1,9 @@
 -- Fallback for legacy authored animations.
--- Published AnimationIds are always preferred; nested KeyframeSequences are
--- registered only when the wrapper has no usable ID.
+-- Studio uses authored sequences; live games use explicitly published IDs.
 local KeyframeSequenceProvider = game:GetService("KeyframeSequenceProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local WeaponIds = require(script.Parent.Parent.Parent.WeaponIds)
 
 local sequenceCache: { [KeyframeSequence]: Animation } = {}
 
@@ -22,8 +22,17 @@ local function fallbackSequence(
 	gunType: string?,
 	bindingName: string?
 ): KeyframeSequence?
+	-- A borrowed wrapper must retain its own authored sequence and rig.
+	local nested = wrapper:FindFirstChildWhichIsA("KeyframeSequence", true)
+	if nested then return nested end
 	local toolAnimations = ReplicatedStorage:FindFirstChild("ToolAnimations")
 	local folder = toolAnimations and gunType and toolAnimations:FindFirstChild(gunType)
+	if not folder and toolAnimations and gunType then
+		for _, alias in ipairs(WeaponIds.Aliases(gunType)) do
+			folder = toolAnimations:FindFirstChild(alias)
+			if folder then break end
+		end
+	end
 
 	if folder then
 		local wanted = { normalize(wrapper.Name) }
@@ -52,12 +61,16 @@ local function fallbackSequence(
 end
 
 local function resolve(wrapper: Instance, gunType: string?, bindingName: string?): Animation?
-	if wrapper:IsA("Animation") and hasUploadedId(wrapper) then
-		return wrapper
-	end
-
 	local sequence = if wrapper:IsA("KeyframeSequence") then wrapper else fallbackSequence(wrapper, gunType, bindingName)
-	if not sequence then
+	local published = wrapper:GetAttribute("PublishedAnimationId") or (sequence and sequence:GetAttribute("PublishedAnimationId"))
+	if not RunService:IsStudio() or not sequence then
+		if published and tostring(published):match("%d+") then
+			local animation = Instance.new("Animation")
+			animation.Name = wrapper.Name
+			animation.AnimationId = "rbxassetid://" .. tostring(published):match("%d+")
+			return animation
+		end
+		if wrapper:IsA("Animation") and hasUploadedId(wrapper) then return wrapper end
 		return nil
 	end
 

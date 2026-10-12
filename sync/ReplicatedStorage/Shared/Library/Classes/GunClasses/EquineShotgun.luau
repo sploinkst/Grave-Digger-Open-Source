@@ -1,15 +1,7 @@
+local MenuData = require(script.Parent.Parent.Parent.WeaponMenuData).dbgun
 return require(script.Parent.LegacyGunFactory).create({
 	className = "EquineShotgun",
-	AuthoredWelds = {
-		equipc0 = CFrame.new(-0.256728172, -1.84074557, -0.492843628, -3.32235053e-14, -1.41561031e-7, -1, 0.99999994, 4.76835254e-7, -1.00724794e-13, 4.76835282e-7, -1, 1.41561031e-7),
-		equipc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-		lefthand = false,
-		holster_point = "Torso",
-		holsterc0 = CFrame.new(-0.420715332, 0.432474136, 0.743125916, -0.0798373818, 9.07646117e-15, -0.996807873, 0.9968068, -1.1332382e-13, -0.0798374861, 1.13686817e-13, -1, 1.13837935e-21) * CFrame.new(0, 0, 0.3),
-		holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-		alt_holsterc0 = v1.holsterc0 * CFrame.new(0, 0, -0.4),
-		alt_holsterc1 = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-	},
+	AuthoredWelds = require(script.Parent.Parent.Parent.WeaponPreviewMounts).dbgun,
 	assetName = "dbgun",
 	AnimationGunType = "EquineShotgun",
 	StrictAnimations = true,
@@ -25,6 +17,9 @@ return require(script.Parent.LegacyGunFactory).create({
 	Weight = 2,
 	doubleFireAlt = true,
 	LegacyStats = {
+		desc = MenuData.desc,
+		lore = MenuData.lore,
+		assists = MenuData.assists,
 		name = "'Equine' Riding Shotgun",
 		icon = "17858644652",
 		ammo_give = "00 Buckshot",

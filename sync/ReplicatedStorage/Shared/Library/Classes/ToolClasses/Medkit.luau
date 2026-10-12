@@ -38,6 +38,9 @@ function Medkit.new(info: { name: string }): Medkit
 	setmetatable(self, Medkit)
 
 	self.className = "Medkit"
+	self.AuthoredWelds = require(script.Parent.Parent.Parent.WeaponPreviewMounts).firstaid
+	self.EquipWelds = self.AuthoredWelds
+	self.UseNativeEquipMount = true
 	self.name = info.name
 	self.Equipped = false
 
@@ -52,7 +55,7 @@ function Medkit.new(info: { name: string }): Medkit
 	self.item_image  = "rbxassetid://17778483663"
 	self.Designation = "Medkit"
 
-	self.holster_reference = Holster_Folder and Holster_Folder:FindFirstChild("MedkitHolster")
+	self.holster_reference = nil -- Render the tool model using weapon-module holster offsets.
 	self.actual_holster    = nil
 
 	self.model_reference = Tool_Folder:FindFirstChild("Medkit")
@@ -574,16 +577,9 @@ function Medkit:on_give(tool: Tool, holster: Model?, model: Model?)
 		warn("[Medkit] Failed to register animations")
 	end
 
-	if holster then
-		self.actual_holster = holster
-	elseif self.holster_reference then
-		self.actual_holster = Util.reverse_search_holster(
-			local_player,
-			self.holster_reference.Name
-		)
-	else
-		warn("[Medkit] Missing holster_reference")
-	end
+	self.actual_holster = holster or Util.reverse_search_holster(
+		local_player, self.model_reference and self.model_reference.Name, tool
+	)
 end
 
 return Medkit

@@ -1,4 +1,6 @@
 local SettingsManager = {}
+local Master = require(game:GetService("ReplicatedStorage").Shared.Library.MasterClientSettings)
+local keysHeld = {}
 
 -- // Services
 local Players 					= game:GetService("Players")
@@ -32,6 +34,7 @@ local function WaitForReplicatedChild(parent: Instance, name: string): Instance
 end
 
 local function BindInput(inputName: string, keyCode: Enum.KeyCode)
+ if keyCode==Enum.KeyCode.Unknown then keyCode=nil end
 	-- Remove old binding
 	local oldKey = Inputs[inputName]
 	if oldKey and BoundKeys[oldKey] then
@@ -90,6 +93,7 @@ local function RegisterInputs()
 end
 
 local function FireHooks(keyCode: Enum.KeyCode, pressed: boolean)
+ if keyCode==Enum.KeyCode.Unknown then return end
 	local bindings = BoundKeys[keyCode]
 	if not bindings then
 		return
@@ -170,4 +174,20 @@ InputService.InputEnded:Connect(function(input, gameProcessed)
 	FireHooks(input.KeyCode, false)
 end)
 
+function SettingsManager.GetKey(name)
+	local bind = Inputs[Master.BindName(name)]
+	return bind or Enum.KeyCode.Unknown
+end
+function SettingsManager.GetSetting(name, default)
+	return Master.Read(SettingsData, name, default)
+end
+_G.get_keybinds = SettingsManager.GetKey
+_G.get_settings = SettingsManager.GetSetting
+_G.keysheld = keysHeld
+InputService.InputBegan:Connect(function(input)
+	if not InputService:GetFocusedTextBox() then keysHeld[input.KeyCode] = true end
+	_G.using_controller = input.UserInputType.Name:find("Gamepad") ~= nil
+end)
+InputService.InputEnded:Connect(function(input) keysHeld[input.KeyCode] = nil end)
+InputService.WindowFocusReleased:Connect(function() table.clear(keysHeld) end)
 return SettingsManager

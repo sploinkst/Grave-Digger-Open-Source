@@ -18,6 +18,7 @@ local BulwarkRifle = require(script.Parent.LegacyGunFactory).create({
 	assetName = "lewis",
 	soundNames = {"BulwarkRifle", "lewis", "LewisGun"},
 	AnimationGunType = "BulwarkRifle",
+	animationMap = { ShieldPlace = "shieldplace" },
 	WeaponCategory = "Rifle",
 	Designation = "Primary",
 	Weight = 3,
@@ -42,7 +43,7 @@ local BulwarkRifle = require(script.Parent.LegacyGunFactory).create({
 		fire_rate = 0.12,
 		cycle = 0,
 		cycle_rest = 0,
-		draw_speed = 3,
+		draw_speed = 1,
 		aim_speed = 0.6,
 		recoil = 10,
 		recoil_count = 2,
@@ -63,8 +64,8 @@ local BulwarkRifle = require(script.Parent.LegacyGunFactory).create({
 		firing_movement = 0,
 		firing_movement_last = 0.25,
 		chamber = false,
-		reload_start = 5.5,
-		reload_empty = 5.5,
+		reload_start = 4.5,
+		reload_empty = 1,
 		reload_loop = 0,
 		reload_loop_after = 0,
 		reload_end = 0,
@@ -78,6 +79,7 @@ local inheritedUnequip = BulwarkRifle._on_unequip
 local inheritedFire = BulwarkRifle._fireConfiguredShot
 local inheritedBipod = BulwarkRifle._isBipodActive
 local inheritedAim = BulwarkRifle.aim
+local inheritedReloadMultiplier = BulwarkRifle._reloadSpeedMultiplier
 local function remote()
 	return RS.Shared.Library.Events:FindFirstChild("BulwarkAbility")
 end
@@ -85,6 +87,8 @@ end
 function BulwarkRifle.new(info)
 	local self = inheritedNew(info)
 	self.DisableSteadyAimAccuracy = true
+	-- Lewis uses the Veteran clips at their authored rates, without a blanket buff.
+	self.VeteranReloadSpeed = 1
 	self.CasingPartName = "casing"
 	self.EjectionPartName = "ejection"
 	local sounds = RS.Shared.Assets.Sounds.Guns:FindFirstChild("BulwarkRifle")
@@ -150,7 +154,32 @@ function BulwarkRifle:melee() return false end
 function BulwarkRifle:setAltMode()
 	if not self.Equipped or self.Equipping or self:_isBusy() then return end
 	local event = remote()
-	if event then event:FireServer("Deploy") end
+	if not event then return end
+	self.Alting = true
+	local generation = self._equipGeneration
+	local track = self:_playAnim("ShieldPlace")
+	if self:_waitActionPhase(nil, 0.2) then
+		event:FireServer("Deploy")
+		self:_waitActionPhase(track, 0.6)
+	end
+	if self._equipGeneration == generation then
+		self.Alting = false
+		self:_restoreBaseDeferred()
+	end
+end
+
+local function specialty(character)
+	return character and character:GetAttribute("Class") == "Vanguard"
+end
+
+function BulwarkRifle:_reloadSpeedMultiplier()
+	local multiplier = inheritedReloadMultiplier(self)
+	local character = Players.LocalPlayer.Character
+	local elite = character and character:FindFirstChild("elitekit")
+	local class = character and character:FindFirstChild("class")
+	-- Modern class attributes can exist without the legacy class Value objects.
+	if specialty(character) and not (elite and class and elite.Value == class.Value) then multiplier /= 0.8 end
+	return multiplier
 end
 
 function BulwarkRifle:_fireConfiguredShot(delay)
@@ -170,8 +199,8 @@ function BulwarkRifle:reload()
 	local character = player.Character
 	local generation = self._equipGeneration
 	local rounds = math.min(self.Max_Capacity - self.Capacity, reserve.Value)
-	-- Vanguard's listed 4.4 seconds is 80% of the normal 5.5 seconds.
-	local duration = character and character:GetAttribute("Class") == "Vanguard" and 4.4 or 5.5
+	local empty = self.Capacity <= 0
+	local duration = empty and self.RegisteredAnimations.Reload_Empty and self.reload_empty or self.reload_start
 	local multiplier = self:_reloadSpeedMultiplier()
 	if character then
 		character:SetAttribute("BulwarkReloading", true)
@@ -180,17 +209,28 @@ function BulwarkRifle:reload()
 	self._reloadCancelled = false
 	self:_stopAllExcept()
 	player:SetAttribute("CantUnequip", true)
-	local animName = self.Capacity <= 0 and self.RegisteredAnimations.Reload_Empty and "Reload_Empty" or "Reload_Start"
-	local track = self.RegisteredAnimations[animName]
-	self:_playAnim(animName, false, {speed = 1 / duration})
-	local deadline = os.clock() + duration / multiplier
-	repeat task.wait(0.03) until os.clock() >= deadline or not self.Equipped or self._equipGeneration ~= generation or self._reloadCancelled
-	if self.Equipped and self._equipGeneration == generation and not self._reloadCancelled then
+	local function phase(name, seconds, options)
+		local track = self:_playAnim(name, false, options or {speed = 1 / seconds})
+		local deadline = os.clock() + seconds / multiplier
+		while os.clock() < deadline and self.Equipped and self._equipGeneration == generation and not self._reloadCancelled do
+			task.wait(math.min(0.03, deadline - os.clock()))
+		end
+		if track then track:Stop(0) end
+		return self.Equipped and self._equipGeneration == generation and not self._reloadCancelled
+	end
+	local completed = true
+	if empty then
+		-- Master: the empty bolt phase is 60% for Vanguard; the magazine phase is 80%.
+		local boltDuration = self.reload_empty * (specialty(character) and 0.75 or 1)
+		local boltName = self.RegisteredAnimations.Reload_Bolt and "Reload_Bolt" or "Cycle"
+		completed = phase(boltName, boltDuration, {speed = 1 / boltDuration, veteran = false})
+	end
+	if completed then completed = phase(empty and self.RegisteredAnimations.Reload_Empty and "Reload_Empty" or "Reload_Start", duration) end
+	if completed then
 		self.Capacity += rounds
 		self:_fire_ammo(rounds)
 	end
 	if self._equipGeneration == generation then
-		if track then track:Stop(0) end
 		self.Reloading = false
 		self._reloadCancelled = false
 		if character then character:SetAttribute("BulwarkReloading", nil) end
@@ -201,14 +241,11 @@ function BulwarkRifle:reload()
 end
 
 function BulwarkRifle:ammo_check()
-	local character = Players.LocalPlayer.Character
-	self.ExactAmmoCount = character and character:GetAttribute("Class") == "Vanguard" and self.Capacity <= 20
 	return BaseFirearm.ammo_check(self)
 end
 
 function BulwarkRifle:_on_equip()
 	inheritedEquip(self)
-	self:_playConfiguredSound("draw")
 	if self._bulwarkConnection then self._bulwarkConnection:Disconnect() end
 	local elapsed = 0
 	self._bulwarkConnection = RunService.Heartbeat:Connect(function(dt)

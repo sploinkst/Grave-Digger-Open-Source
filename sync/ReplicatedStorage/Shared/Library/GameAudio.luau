@@ -15,6 +15,13 @@ function Audio.Play(group, name)
 	if sound then return Playback.Play(sound) end
 end
 
+function Audio.WarDialogue(mode, faction, role)
+ local line = require(script.Parent.WarDialogue).Select(mode, faction, role)
+ if not line then return nil end
+ if typeof(line) == "Instance" and line:IsA("Sound") then return Playback.Play(line) end
+ if type(line) == "string" then return Audio.Play("WarDialogue", line) end
+ return nil
+end
 function Audio.Whisper()
 	return Audio.Play("Geist", "whisper" .. math.random(1, 4))
 end

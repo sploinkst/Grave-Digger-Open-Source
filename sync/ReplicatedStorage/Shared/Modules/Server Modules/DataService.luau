@@ -124,7 +124,7 @@ local function UpdateTableData(player: Player)
 				end
 			end
 			-- // Value update
-			if property == "Value" and instance:IsA("ValueBase") then
+			if instance:IsA("ValueBase") then
 				local parentTable, key = ResolveParentAndKey(instance)
 				if parentTable and key then
 					parentTable[key] = instance.Value

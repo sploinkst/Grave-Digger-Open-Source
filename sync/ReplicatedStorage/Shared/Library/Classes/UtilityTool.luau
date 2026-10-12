@@ -17,14 +17,21 @@ function Factory.create(name,asset,kind)
 			local legacyClass=character and character:FindFirstChild("class")
 			local role=string.lower(tostring(legacyClass and legacyClass.Value or character and character:GetAttribute("Class") or ""))
 			local duration=(role=="rook" or role=="engineer") and 1/1.5 or 1
-			self.Repairing=true; self:_playAnim("Repair",false,{fade=0.2,speed=asset=="weldingtool" and 1/3 or 1/duration})
+			if asset=="weldingtool" then self:Request("UtilityAction","WeldingStart") end
+			self.Repairing=true
+			local repairTrack=self:_playAnim("Repair",false,{fade=0.2,speed=asset=="weldingtool" and 1/3 or 1/duration})
+			if repairTrack then repairTrack.Looped=true end
 			local generation=self._masterGeneration or 0
 			task.spawn(function()
-				while self.Repairing and self.Equipped and (self._masterGeneration or 0)==generation do
+				while self.Repairing and self.Aiming and self:Ready() and (self._masterGeneration or 0)==generation do
 					task.wait(duration/2)
-					if not self.Repairing or not self.Equipped or (self._masterGeneration or 0)~=generation then break end
+					if not self.Repairing or not self.Aiming or not self:Ready() or (self._masterGeneration or 0)~=generation then break end
 					self:Request("UtilityAction","Repair",self:Direction())
 				end
+				self.Repairing=false
+				if asset=="weldingtool" then self:Request("UtilityAction","WeldingStop") end
+				local repair=self.RegisteredAnimations and self.RegisteredAnimations.Repair
+				if repair then repair:Stop(0.2) end
 			end)
 		elseif kind=="Flag" then
 			self.FlagStartedAt=os.clock()
@@ -59,6 +66,7 @@ function Factory.create(name,asset,kind)
 				if flag then flag:Stop(0.2) end
 			end
 			self.Repairing=false
+			if asset=="weldingtool" then self:Request("UtilityAction","WeldingStop") end
 			local track=self.RegisteredAnimations and self.RegisteredAnimations.Repair
 			if track then track:Stop(0.2) end
 			self:_restoreBaseDeferred()
@@ -93,9 +101,11 @@ function Factory.create(name,asset,kind)
 		elseif kind=="Machete" then self:Action("Clean",2,function() self:Request("UtilityAction","CleanMachete") end) end
 	end
 	function Class:_on_unequip()
+		if asset=="weldingtool" then self:Request("UtilityAction","WeldingStop") end
 		self.Repairing=false; self.Drinking=false; Tool._on_unequip(self)
 	end
 	function Class:destroy()
+		if asset=="weldingtool" and self.tool then self:Request("UtilityAction","WeldingStop") end
 		self.Repairing=false; self.Drinking=false
 		if self.Deactivation then self.Deactivation:Disconnect() end
 		Tool.destroy(self)

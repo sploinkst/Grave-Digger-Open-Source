@@ -1,3 +1,5 @@
+local ModelConnections = require(game:GetService("ReplicatedStorage").Shared.Library.ModelConnections)
+local MasterCosmetics = require(game:GetService("ReplicatedStorage").Shared.Library.MasterCosmetics)
 local module = {}
 
 local types_module = require(game:GetService("ReplicatedStorage").Shared.Library.Types)
@@ -7,6 +9,7 @@ local item_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes
 local gun_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes.GunClasses
 local elite_classes = game:GetService("ReplicatedStorage").Shared.Library.Classes:FindFirstChild("EliteClasses")
 local weapon_ids = require(game:GetService("ReplicatedStorage").Shared.Library.WeaponIds)
+local mod_appearance = require(game:GetService("ReplicatedStorage").Shared.Library.WeaponModAppearance)
 
 
 local function animatedMount(object, character, clone, part1)
@@ -126,6 +129,15 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
     end
 	item = class_item
 
+	if class_item == "HeavyPickaxe" then
+  local character = player.Character
+  local characterData = character and character:FindFirstChild("CharacterData")
+  local classTag = characterData and characterData:FindFirstChild("Class")
+  local role = character and character:GetAttribute("Class") or classTag and classTag.Value
+   or require(game:GetService("ReplicatedStorage").Shared.Library.ClassDefinitions).Selected(player)
+  if role ~= "Rook" then return "HeavyPickaxe is restricted to Rook.", item end
+ end
+
 	-- require class
 	stage = "requiring " .. item
 	print("ItemsService: Requiring item class", item)
@@ -153,7 +165,14 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 	tool:SetAttribute("EquipThroughInventory", equip_through_inventory == true)
 
 	tool.RequiresHandle = false
+	tool:SetAttribute("ClassEquipment", object.ClassEquipment == true)
+	if object.className == "LancerStim" then
+		tool:SetAttribute("MaxCharges", 1)
+		tool:SetAttribute("Charges", 1)
+	end
+	if class_item == "RookLauncher" then tool:SetAttribute("LauncherLoaded", true) end
 	tool.CanBeDropped = false
+	if class_item == "HeavyPickaxe" then require(script.Parent.PickaxeService).Initialize(tool) end
     print("ItemsService: Gave item", item, "to", player.Name)
 
 	local clip_size
@@ -261,26 +280,40 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
     -- check instance property (not class property)
 	-- Models can be equipped even when a weapon does not have a separate holster model.
 	if object.holster_reference or object.model_reference then
+		local equippedCharacter
 		local string_value
 		local holsterReference = object.holster_reference or (object.AuthoredWelds and object.model_reference)
 		if holsterReference then
 			print("Has Holster", object)
 			string_value = Instance.new("BoolValue")
-			string_value.Name = holsterReference.Name
-			string_value:SetAttribute("FromToolModel", object.holster_reference == nil)
+			string_value.Name = object.className .. "_" .. tool:GetAttribute("InventoryId")
+			string_value:SetAttribute("ModelName", holsterReference.Name)
+			string_value:SetAttribute("InventoryId", tool:GetAttribute("InventoryId"))
+			string_value:SetAttribute("InventoryId", tool:GetAttribute("InventoryId"))
+			string_value:SetAttribute("WeaponId", object.className)
+			string_value:SetAttribute("SkinSlot", inventory_designation == "Secondary" and 2 or 1)
+			local referenceValue = Instance.new("ObjectValue")
+			referenceValue.Name = "ModelReference"
+			referenceValue.Value = holsterReference
+			referenceValue.Parent = string_value
+			string_value:SetAttribute("FromToolModel", holsterReference == object.model_reference)
 			if object.AuthoredWelds then
 				string_value:SetAttribute("HolsterPoint", object.holster_point)
 				string_value:SetAttribute("HolsterC0", object.holsterc0)
 				string_value:SetAttribute("HolsterC1", object.holsterc1)
 				string_value:SetAttribute("AltHolsterC0", object.alt_holsterc0)
 				string_value:SetAttribute("AltHolsterC1", object.alt_holsterc1)
-				string_value:SetAttribute("UseAltHolster", object.className == "OcelotTalonRevolverSecondary")
+				string_value:SetAttribute("UseAltHolster", inventory_designation == "Secondary" or object.className == "OcelotTalonRevolverSecondary")
 			end
 			string_value.Parent = player.GameData.Accessorys.Holsters
 			string_value.Value = true
+			tool.Destroying:Connect(function()
+				if string_value then string_value:Destroy(); string_value = nil end
+			end)
 		end
 
 		tool.Equipped:Connect(function()
+			equippedCharacter = player.Character
 			print("Equipped")
 			if string_value then
 				string_value.Value = false
@@ -288,7 +321,10 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 
 			if object.model_reference then
 				print("[MODEL REFERENCE]", object.Name, "has an actual model!")
-				local clone = object.model_reference:Clone()
+				local skin = MasterCosmetics.SelectedSkin(player,object.className,inventory_designation == "Secondary" and 2 or 1)
+				local clone = mod_appearance.Clone(object.model_reference,object.className,skin)
+				mod_appearance.Apply(clone, object.className,skin,player.Character)
+				MasterCosmetics:add_sheath(player.Character,require(game:GetService("ReplicatedStorage").Shared.Library.WeaponIds).AssetName(object.className),skin,inventory_designation == "Secondary" and 2 or 1,player.Team)
 				clone.Parent = player.Character.CharacterData.Equipment
 				object.actual_model = clone
 				if tool.Name=="shield" then require(script.Parent.DeployedShieldService).RestoreSegments(tool,clone) end
@@ -309,7 +345,7 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 
 				-- Resolve Part1 from cloned model
 				local rootReference = object.motor_6d_data.Part1
-				local part1 = findMatchingBasePart(clone, rootReference)
+				local part1 = findMatchingBasePart(clone, rootReference) or mod_appearance.Root(clone)
 
 				if not part1 then
 					print("No Part1 found")
@@ -317,14 +353,23 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 				end
 
 				if object.UseAuthoredGrip then
-					for _, part in clone:GetDescendants() do
+					-- The runtime ToolMotor owns the arm attachment. Template joints
+					-- referencing a rig outside the cloned model would compete with it.
+					for _, joint in clone:GetDescendants() do
+						if (object.AuthoredWelds or object.EquipWelds)
+							and (joint:IsA("JointInstance") or joint:IsA("WeldConstraint")) then
+							local external0 = joint.Part0 and not joint.Part0:IsDescendantOf(clone)
+							local external1 = joint.Part1 and not joint.Part1:IsDescendantOf(clone)
+							if external0 or external1 then joint:Destroy() end
+						end
+					end
+					for _, part in ModelConnections.Parts(clone) do
 						if part:IsA("BasePart") then
 							part.Anchored = false; part.CanCollide = false; part.CanTouch = false; part.Massless = true
 						end
 					end
-					local connected = {[part1] = true}
-					for _, part in part1:GetConnectedParts(true) do connected[part] = true end
-					for _, part in clone:GetDescendants() do
+					local connected = ModelConnections.From(clone,part1)
+					for _, part in ModelConnections.Parts(clone) do
 						if part:IsA("BasePart") and not connected[part] then
 							local weld = Instance.new("WeldConstraint")
 							weld.Part0 = part1; weld.Part1 = part; weld.Parent = part1
@@ -395,17 +440,22 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 		end)
 
 		tool.Unequipped:Connect(function()
+			local character = equippedCharacter
+			equippedCharacter = nil
 			if string_value then
 				string_value.Value = true
 			end
 
-			if player.Character:WaitForChild("CharacterData").Equipment:FindFirstChild(object.model_reference.Name) then
-				player.Character:WaitForChild("CharacterData").Equipment:FindFirstChild(object.model_reference.Name):Destroy()
-			end
+			-- Unequip can run after death or character removal; cleanup must not yield.
+			local characterData = character and character:FindFirstChild("CharacterData")
+			local equipment = characterData and characterData:FindFirstChild("Equipment")
+			local model = equipment and object.model_reference
+				and equipment:FindFirstChild(object.model_reference.Name)
+			if model then model:Destroy() end
 
-			if object.Round then
-				local objectround = player.Character:FindFirstChild(object.Round.Name, true)
-				local Motor6d = player.Character:FindFirstChild("Round_Motor6d", true)
+			if object.Round and character then
+				local objectround = character:FindFirstChild(object.Round.Name, true)
+				local Motor6d = character:FindFirstChild("Round_Motor6d", true)
 
 				if objectround then
 					objectround:Destroy()
@@ -415,14 +465,14 @@ function module.give_item(player: Player, item: string, given_ammo: number?, inv
 				end
 			end
 
-			local ToolMotor = player.Character:FindFirstChild("ToolMotor", true)
+			local ToolMotor = character and character:FindFirstChild("ToolMotor", true)
 			if ToolMotor then
 				ToolMotor:Destroy()
 			end
 			-- A tool model is only valid while its Tool is equipped.  Leaving it in
 			-- CharacterData.Equipment after the motor is removed is what caused the
 			-- shield/lance to remain on the floor beside the player.
-			if item == "shield" and player.Character then player.Character:SetAttribute("ShieldRaised", nil) end
+			if item == "shield" and character then character:SetAttribute("ShieldRaised", nil) end
 			if object.actual_model then
 				object.actual_model:Destroy()
 				object.actual_model = nil

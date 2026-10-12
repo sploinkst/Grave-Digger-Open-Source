@@ -15,13 +15,7 @@ BaseCamera.__index = BaseCamera
 local GameDetails = WorkspaceService:WaitForChild("Game_Details")
 local MenusFolder = GameDetails:WaitForChild("Menus")
 
-local CameraInfoTables = {
-	["Appearance"] = { MenusFolder.Appearance_Scene.Camera_Values },
-	["Credits"] = { MenusFolder.Credits_Scene.Camera_Values },
-	["Loadout"] = { MenusFolder.Loadout_Scene.Camera_Values },
-	["Servers"] = { MenusFolder.Servers_Scene.Camera_Values },
-	["Settings"] = { MenusFolder.Settings_Scene.Camera_Values },
-}
+local CameraInfoTables = require(game:GetService("ReplicatedStorage").Shared.Library.MenuRules).Scenes
 
 local currentScene = "Loadout"
 
@@ -31,12 +25,13 @@ local activeTween: Tween? = nil
 -- // Utilities
 
 local function GetCameraValue(scene: string): CFrame?
-	local data = CameraInfoTables[scene]
-	if not data or not data[1] then
-		warn("[MENUCAMERA::] No data found for scene:", scene)
+	local folder = MenusFolder:FindFirstChild(scene .. "_Scene")
+	local value = folder and folder:FindFirstChild("Camera_Values")
+	if not value or not value:IsA("CFrameValue") then
+		warn("[MenuCamera] Missing camera CFrame for scene:", scene)
 		return nil
 	end
-	return data[1].Value
+	return value.Value
 end
 
 local function CancelTween()

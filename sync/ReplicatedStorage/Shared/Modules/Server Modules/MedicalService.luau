@@ -2,8 +2,9 @@ local module = {}
 
 local Players = game:GetService("Players")
 
-local HEALTH_WAIT = 0.15
-local HEALTH_TICK = 1
+local Base = require(game:GetService("ReplicatedStorage").Shared.Library.MasterReference.Base)
+local HEALTH_WAIT = Base.health_regen_tick
+local HEALTH_TICK = Base.health_regen
 local HEALTH_DELAY = 5
 
 local ActiveHumanoids = {}
@@ -26,7 +27,7 @@ local function health_loop(humanoid)
 			lastDamageTime = os.clock()
 		end
 
-		if newHealth > 0 and newHealth < 100 then
+		if humanoid.Parent and newHealth > 0 and newHealth < 100 then
 			humanoid.Parent:SetAttribute("InjuryRegenerationBlocked", true)
 		end
 		lastHealth = newHealth
@@ -40,13 +41,16 @@ local function health_loop(humanoid)
 		while humanoid.Parent and humanoid.Health > 0 do
 			task.wait(HEALTH_WAIT)
 
-			local player = Players:GetPlayerFromCharacter(humanoid.Parent)
-			local regenerationBlocked = humanoid.Parent:GetAttribute("InjuryRegenerationBlocked") == true
+			-- The character can be destroyed while the regeneration task is waiting.
+			local character = humanoid.Parent
+			if not character or humanoid.Health <= 0 then break end
+			local player = Players:GetPlayerFromCharacter(character)
+			local regenerationBlocked = (character:GetAttribute("InjuryRegenerationBlocked") == true and not character:GetAttribute("LancerPainSuppressed"))
 			or (player and (player:GetAttribute("Clotting") or player:GetAttribute("Sickness")))
 			if not regenerationBlocked and humanoid.Health >= 100 and humanoid.Health < humanoid.MaxHealth then
 				if os.clock() - lastDamageTime >= HEALTH_DELAY then
 					humanoid.Health = math.min(
-						humanoid.Health + HEALTH_TICK * (humanoid.Parent:GetAttribute("ChemicalRegenerationMultiplier") or 1),
+						humanoid.Health + HEALTH_TICK * ((character:GetAttribute("ChemicalRegenerationMultiplier") or 1) + (character:GetAttribute("ChemicalRegenerationBonus") or 0)),
 						humanoid.MaxHealth
 					)
 				end

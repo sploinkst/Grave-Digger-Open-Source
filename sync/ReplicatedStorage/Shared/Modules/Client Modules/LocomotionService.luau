@@ -67,7 +67,8 @@ function Service.Update(dt)
     local aiming = character:GetAttribute("Aiming") == true
     local crouching = character:GetAttribute("Crouching") == true
     local wounds = character:FindFirstChild("CharacterData") and character.CharacterData:FindFirstChild("Wounds")
-    local injured = humanoid.Health < 100 or (wounds and #wounds:GetChildren() > 0)
+    local injured = not character:GetAttribute("LancerPainSuppressed")
+        and (humanoid.Health < 100 or (wounds and #wounds:GetChildren() > 0))
     local walkMultiplier = multiplier("OrderSpeedMultiplier") * multiplier("MovementSpeedMultiplier")
         * multiplier("DebuffMovementMultiplier") * multiplier("BurnMovementMultiplier") * multiplier("TabletMovementMultiplier")
     if not injured then walkMultiplier *= multiplier("BloodlustWalkMultiplier") end
@@ -80,6 +81,7 @@ function Service.Update(dt)
     local result = Rules.Step(state, {
         held=held, toggle=setting("ToggleSprint") == true or UIS:GetLastInputType().Name:find("Gamepad") ~= nil,
         alive=humanoid.Health > 0, menu=menu, blocked=blocked,
+        charging=character:GetAttribute("charging") == true,
         aiming=aiming, crouching=crouching, climbing=humanoidState == Enum.HumanoidStateType.Climbing,
         vaulting=player:GetAttribute("Vaulting") == true or character:GetAttribute("Vaulting") == true,
         mounted=player:GetAttribute("MountedWeapon") ~= nil and player:GetAttribute("MountedWeapon") ~= false,
@@ -103,6 +105,10 @@ function Service.Update(dt)
     if humanoid.Health > 0 and not mounted and not vaulting then
         local speed = (character:GetAttribute("ActionBlocked") or character:GetAttribute("BulwarkFiring")) and 0 or result.speed
         if humanoid.WalkSpeed ~= speed then humanoid.WalkSpeed = speed end
+    end
+    if character:GetAttribute("charging") and humanoid.Health > 0 then
+        flag("Crouching", false)
+        humanoid:Move(root.CFrame.LookVector, false)
     end
     flag("Sprinting", result.sprinting)
     player:SetAttribute("Sprinting", result.sprinting and true or nil)

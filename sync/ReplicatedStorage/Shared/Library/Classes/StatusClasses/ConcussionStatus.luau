@@ -19,7 +19,7 @@ function ConcussionStatus.new(): ConcussionStatus
 	setmetatable(self, ConcussionStatus)
 
 	self.className = "ConcussionStatus"
-	self.duration = 3
+	self.duration = 2.5
 
 	return self
 end
@@ -31,7 +31,7 @@ function ConcussionStatus:_apply(player: Player, duration: number?)
 		self.duration = 0
 		return
 	end
-	self.duration = duration or 3
+	self.duration = math.clamp(duration or 2.5, 2, 3)
 	if character then
 		character:SetAttribute("Hitstun", true)
 		character:SetAttribute("SprintBlocked", true)

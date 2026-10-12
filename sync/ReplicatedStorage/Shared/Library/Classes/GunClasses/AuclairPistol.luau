@@ -99,7 +99,6 @@ end
 local onEquip = AuclairPistol._on_equip
 function AuclairPistol:_on_equip()
 	onEquip(self)
-	self:_playConfiguredSound("draw")
 end
 
 local aim = AuclairPistol.aim

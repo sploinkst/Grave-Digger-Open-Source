@@ -301,7 +301,7 @@ function HonourPistol:setAltMode()
 	self:_stopAllExcept()
 	local nextStock = not self.StockAttached
 	local track = self:_playAnim(nextStock and "Stock_On" or "Stock_Off")
-	if track then track.Stopped:Wait() end
+	if track then self:_waitAnimation(track) end
 	if not self.Equipped then
 		self.Alting = false
 		return
@@ -358,14 +358,14 @@ function HonourPistol:reload()
 		else (self.IsVeteran and "Reload_Full_Vet" or "Reload_Full")
 
 	local startTrack = self:_playAnim(startName)
-	if startTrack then startTrack.Stopped:Wait() end
+	if startTrack then self:_waitAnimation(startTrack) end
 
 	if not self.IsVeteran and hadAmmo then
 		self.Capacity = 0
 	end
 
 	local reloadTrack = self:_playAnim(reloadName)
-	if reloadTrack then reloadTrack.Stopped:Wait() end
+	if reloadTrack then self:_waitAnimation(reloadTrack) end
 
 	if self.Equipped and not self._reloadCancelled then
 		local needed = self.Max_Capacity - self.Capacity

@@ -1,14 +1,22 @@
 local module = {}
 
+-- // Debug (set to false to silence all [Movement] prints)
+local DEBUG = true
+
+local function dbg(...)
+	if DEBUG then
+		print("[Movement]", ...)
+	end
+end
+
 -- // Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local AnimationResolver = require(ReplicatedStorage.Shared.Library.Classes.GunClasses.AnimationResolver)
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
-local SettingsManager = require(
-	ReplicatedStorage.Shared.Modules["Client Modules"].SettingsManager
-)
+local SettingsManager = require(ReplicatedStorage.Shared.Modules["Client Modules"].SettingsManager)
 
 -- // Player
 local LocalPlayer = Players.LocalPlayer
@@ -16,110 +24,129 @@ local Locomotion = require(script.Parent.LocomotionService)
 
 -- // Dynamic character refs
 local Character = nil
-local Humanoid: Humanoid = nil
+local Humanoid: Humanoid? = nil
 local RootPart = nil
 local Animator = nil
 local InjuredLeftTrack: AnimationTrack? = nil
 local InjuredRightTrack: AnimationTrack? = nil
 
--- // VAULT CONFIG
-local VAULT_RAYCAST_RANGE_1 = 2
-local VAULT_RAYCAST_RANGE_2 = 3.5
-local VAULT_RAYCAST_RANGE_3 = 3
-local VAULT_RAYCAST_RANGE_4 = 3
+-- // Vault config
+local VAULT_RAYCAST_RANGE_1 = 2 -- wall ahead
+local VAULT_RAYCAST_RANGE_2 = 3.5 -- headroom
+local VAULT_RAYCAST_RANGE_3 = 3 -- ledge top clear
+local VAULT_RAYCAST_RANGE_4 = 3 -- space above ledge clear
 
 local VAULT_TARGET_UP = 5
 local VAULT_TARGET_FORWARD = 5
 local VAULT_DURATION = 0.4
+local VAULT_COOLDOWN_FALLBACK = 1.5 -- cooldown clears even if Landed never fires
 
-local VAULT_BODY_POSITION_MAXFORCE =
-	Vector3.new(200000, 200000, 200000)
-
+local VAULT_BODY_POSITION_MAXFORCE = Vector3.new(200000, 200000, 200000)
 local VAULT_BODY_POSITION_P = 2000
 local VAULT_BODY_POSITION_D = 500
 
+local JUMP_COOLDOWN = 1
+
 -- // State
-local SprintKeyHeld = false
 local Sprinting = false
-
-
-
-
 local IsJumping = false
 local IsClimbing = false
-
-local fall_time = tick()
-local fall_threshold = 0.35
-local fall_duration_threshold = 0.3
-
-
 local InputsBinded = false
+local jumpCooldown = false
 
-local W_Locked = true
-
--- // VAULT STATE
 local VaultActive = false
 local VaultCooldown = false
 local VaultAnimPlaying = false
 
-local mantleAnim =
-	ReplicatedStorage
-	:WaitForChild("Shared")
-	.Assets
-	.Animations
-	.Character
-	.Jumping
-	.Mantle
-
-local KeyStates = {
-	Forward = false,
-	Backwards = false,
-	Left = false,
-	Right = false,
-}
-
--- // Connection tracking
 local characterConnections = {}
 
--- // Forward declaration
-local tryStartSprint
-local updateSprint
+-- Attributes that should make Locomotion recalculate speed.
+local SPEED_ATTRIBUTES = {
+	"DebuffMovementMultiplier",
+	"BurnMovementMultiplier",
+	"TabletMovementMultiplier",
+	"TakingTablets",
+	"BloodlustWalkMultiplier",
+	"MoraleSprintMultiplier",
+	"OrderSprintSpeedMultiplier",
+	"ChemicalSprintMultiplier",
+	"ChemicalMovementPenaltyMultiplier",
+}
 
-local function updateInjuredPose()
-	if not Humanoid then return end
-	local injured = Humanoid.Health > 0 and Humanoid.Health < 100
-		and Character ~= nil and Character:GetAttribute("Aiming") ~= true
-	local leftTrack = if LocalPlayer:GetAttribute("Current_Shoulder") == "Left"
-		then InjuredRightTrack else InjuredLeftTrack
-	local otherTrack = if leftTrack == InjuredLeftTrack then InjuredRightTrack else InjuredLeftTrack
-	if injured and leftTrack then
-		if otherTrack and otherTrack.IsPlaying then otherTrack:Stop(0.15) end
-		if not leftTrack.IsPlaying then leftTrack:Play(0.15, 1, 0.5) end
-	else
-		if InjuredLeftTrack and InjuredLeftTrack.IsPlaying then InjuredLeftTrack:Stop(0.15) end
-		if InjuredRightTrack and InjuredRightTrack.IsPlaying then InjuredRightTrack:Stop(0.15) end
+local MOVE_KEYS = {
+	[Enum.KeyCode.W] = true,
+	[Enum.KeyCode.A] = true,
+	[Enum.KeyCode.S] = true,
+	[Enum.KeyCode.D] = true,
+}
+
+-- // Animation helpers
+
+-- Accepts an Animation, or a container (Folder/Model) holding one.
+local function resolveAnimation(instance: Instance?): Animation?
+	if not instance then
+		return nil
 	end
+	if instance:IsA("Animation") then
+		return instance
+	end
+	return instance:FindFirstChildWhichIsA("Animation", true) or AnimationResolver.Resolve(instance)
 end
+
+local function loadTrack(animator: Animator?, instance: Instance?, label: string): AnimationTrack?
+	if not animator then
+		warn("[Movement] No Animator when loading", label)
+		return nil
+	end
+
+	local animation = resolveAnimation(instance)
+	if not animation then
+		warn("[Movement] No Animation found for", label, instance and instance:GetFullName() or "(instance missing)")
+		return nil
+	end
+
+	local ok, result = pcall(function()
+		return animator:LoadAnimation(animation)
+	end)
+	if not ok then
+		warn("[Movement] LoadAnimation failed for", label, result)
+		return nil
+	end
+
+	dbg("Loaded animation:", label, "(" .. animation.ClassName .. ")", animation.AnimationId)
+	return result
+end
+
+-- Safe lookup: a missing path no longer errors the whole module.
+local function findMantleAnimation(): Instance?
+	local shared = ReplicatedStorage:WaitForChild("Shared", 10)
+	local node = shared
+	for _, name in { "Assets", "Animations", "Character", "Jumping", "Mantle" } do
+		node = node and node:FindFirstChild(name)
+	end
+	if not node then
+		warn("[Movement] Mantle animation not found at Shared.Assets.Animations.Character.Jumping.Mantle")
+	else
+		dbg("Mantle found:", node:GetFullName(), node.ClassName)
+	end
+	return node
+end
+
+local mantleAnim = findMantleAnimation()
 
 -- // Helpers
 
-local function lerp(a, b, t)
-	return a + (b - a) * t
-end
-
 local function isAiming()
-	return Character
-		and Character:GetAttribute("Aiming") == true
+	return Character ~= nil and Character:GetAttribute("Aiming") == true
 end
 
-local function isCrouching()
-	return Character
-		and Character:GetAttribute("Crouching") == true
+local function sprintHeld()
+	return Locomotion.IsSprintHeld()
 end
 
-local function setSprintAttribute(_state: boolean)
-    local result = Locomotion.Update(0)
-    Sprinting = result and result.accelerating or false
+local function refreshLocomotion()
+	local result = Locomotion.Update(0)
+	Sprinting = result and result.accelerating or false
 end
 
 local function setCharacterBool(name: string, state: boolean)
@@ -128,820 +155,514 @@ local function setCharacterBool(name: string, state: boolean)
 	end
 
 	local data = Character:FindFirstChild("CharacterData")
-
-	local value =
-		data
-		and data:FindFirstChild("State")
-		and data.State:FindFirstChild(name)
+	local stateFolder = data and data:FindFirstChild("State")
+	local value = stateFolder and stateFolder:FindFirstChild(name)
 
 	if value and value:IsA("BoolValue") then
 		value.Value = state
 	end
 
-	Character:SetAttribute(
-		name,
-		state and true or nil
-	)
+	Character:SetAttribute(name, if state then true else nil)
 end
 
-local function refreshSprintInput()
-    SprintKeyHeld = Locomotion.IsSprintHeld()
-end
-
-local function refreshLocomotion()
-    local result = Locomotion.Update(0)
-    Sprinting = result and result.accelerating or false
-    refreshSprintInput()
-end
-local resetSpeed = refreshLocomotion
-local applyRestrictedSpeed = refreshLocomotion
-local enforceMovementSpeed = refreshLocomotion
-
--- // Vault
-
-local function checkVaultGeometry()
-	if not RootPart then
-		return false
-	end
-
-	local rayParams = RaycastParams.new()
-
-	rayParams.FilterType =
-		Enum.RaycastFilterType.Exclude
-
-	rayParams.FilterDescendantsInstances = {
-		Character
-	}
-
-	rayParams.IgnoreWater = true
-
-	-- Ray 1
-	local rayOrigin1 = RootPart.Position
-
-	local rayDirection1 =
-		RootPart.CFrame.LookVector
-		* VAULT_RAYCAST_RANGE_1
-
-	local rayResult1 =
-		workspace:Raycast(
-			rayOrigin1,
-			rayDirection1,
-			rayParams
-		)
-
-	local check1 = false
-
-	if rayResult1 then
-
-		local model =
-			rayResult1.Instance
-			:FindFirstAncestorOfClass("Model")
-
-		local hasHumanoid =
-			model
-			and model:FindFirstChildOfClass("Humanoid")
-
-		if not hasHumanoid
-			and rayResult1.Instance.CanCollide then
-
-			check1 = true
-		end
-	end
-
-	-- Ray 2
-	local rayOrigin2 = RootPart.Position
-
-	local rayDirection2 =
-		RootPart.CFrame.UpVector
-		* VAULT_RAYCAST_RANGE_2
-
-	local rayResult2 =
-		workspace:Raycast(
-			rayOrigin2,
-			rayDirection2,
-			rayParams
-		)
-
-	local check2 = not rayResult2
-
-	-- Ray 3
-	local rayOrigin3 =
-		RootPart.Position
-		+ Vector3.new(0, 2.5, 0)
-
-	local rayDirection3 =
-		RootPart.CFrame.LookVector
-		* VAULT_RAYCAST_RANGE_3
-
-	local rayResult3 =
-		workspace:Raycast(
-			rayOrigin3,
-			rayDirection3,
-			rayParams
-		)
-
-	local check3 = not rayResult3
-
-	-- Ray 4
-	local rayOrigin4 =
-		RootPart.Position
-		+ Vector3.new(0, 6, 0)
-
-	local rayDirection4 =
-		RootPart.CFrame.LookVector
-		* VAULT_RAYCAST_RANGE_4
-
-	local rayResult4 =
-		workspace:Raycast(
-			rayOrigin4,
-			rayDirection4,
-			rayParams
-		)
-
-	local check4 = not rayResult4
-
-	return
-		check1
-		and check2
-		and check3
-		and check4
-end
-
-local function executeVault()
-	if not Character
-		or not RootPart
-		or not Humanoid then
-
+-- Single source of truth for whether the Jumping state is allowed.
+local function applyJumpEnabled()
+	if not Humanoid or not Character then
 		return
 	end
 
-	VaultActive = true
-	VaultCooldown = true
+	local blocked = jumpCooldown
+		or isAiming()
+		or Character:GetAttribute("charging") == true
+		or Character:GetAttribute("JumpBlocked") == true
+		or Character:GetAttribute("BulwarkReloading") == true
 
-	setCharacterBool(
-		"Vaulting",
-		true
-	)
-
-	local animator =
-		Humanoid:FindFirstChildOfClass("Animator")
-
-	if animator then
-
-		pcall(function()
-
-			local track =
-				animator:LoadAnimation(
-					mantleAnim
-				)
-
-			track.Priority =
-				Enum.AnimationPriority.Action
-
-			track:Play(0.05)
-
-			VaultAnimPlaying = true
-		end)
-	end
-
-	local targetPosition =
-		RootPart.Position
-		+ Vector3.new(
-			0,
-			VAULT_TARGET_UP,
-			0
-		)
-		+ (
-			RootPart.CFrame.LookVector
-			* VAULT_TARGET_FORWARD
-		)
-
-	local bodyPosition =
-		Instance.new("BodyPosition")
-
-	bodyPosition.Name =
-		"VaultPosition"
-
-	bodyPosition.MaxForce =
-		VAULT_BODY_POSITION_MAXFORCE
-
-	bodyPosition.P =
-		VAULT_BODY_POSITION_P
-
-	bodyPosition.D =
-		VAULT_BODY_POSITION_D
-
-	bodyPosition.Position =
-		targetPosition
-
-	bodyPosition.Parent =
-		RootPart
-
-	task.delay(
-		VAULT_DURATION,
-		function()
-
-			if bodyPosition
-				and bodyPosition.Parent then
-
-				bodyPosition:Destroy()
-			end
-
-			setCharacterBool(
-				"Vaulting",
-				false
-			)
-
-			VaultActive = false
-			VaultAnimPlaying = false
-		end
-	)
+	Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, not blocked)
 end
 
-local function checkVaultTrigger()
-	if not Character
-		or not RootPart
-		or not IsJumping
-		or VaultActive
-		or VaultCooldown
-		or Character:FindFirstChild("VaultMontage")
-		or VaultAnimPlaying then
+local function startJumpCooldown()
+	local humanoid = Humanoid
+	jumpCooldown = true
+	applyJumpEnabled()
 
+	task.delay(JUMP_COOLDOWN, function()
+		if Humanoid ~= humanoid then
+			return -- character changed
+		end
+		jumpCooldown = false
+		applyJumpEnabled()
+	end)
+end
+
+-- // Injured pose
+
+local function updateInjuredPose()
+	if not Humanoid or not Character then
+		return
+	end
+
+	local injured = Humanoid.Health > 0
+		and Humanoid.Health < Humanoid.MaxHealth
+		and Character:GetAttribute("Aiming") ~= true
+
+	local shoulderLeft = LocalPlayer:GetAttribute("Current_Shoulder") == "Left"
+	local activeTrack = if shoulderLeft then InjuredRightTrack else InjuredLeftTrack
+	local otherTrack = if shoulderLeft then InjuredLeftTrack else InjuredRightTrack
+
+	if injured and activeTrack then
+		if otherTrack and otherTrack.IsPlaying then
+			otherTrack:Stop(0.15)
+		end
+		if not activeTrack.IsPlaying then
+			-- Play(fadeTime, weight, speed): speed is 0.5 here
+			activeTrack:Play(0.15, 1, 0.5)
+		end
+	else
+		if InjuredLeftTrack and InjuredLeftTrack.IsPlaying then
+			InjuredLeftTrack:Stop(0.15)
+		end
+		if InjuredRightTrack and InjuredRightTrack.IsPlaying then
+			InjuredRightTrack:Stop(0.15)
+		end
+	end
+end
+
+-- // Vault
+
+-- True only if the ray hits something solid that isn't a character.
+local function blockedAt(origin: Vector3, direction: Vector3, params: RaycastParams): boolean
+	local result = workspace:Raycast(origin, direction, params)
+	if not result or not result.Instance.CanCollide then
 		return false
 	end
 
-	if Character:GetAttribute("Aiming")
-		or Character:GetAttribute("Crouching") then
+	local model = result.Instance:FindFirstAncestorOfClass("Model")
+	return not (model and model:FindFirstChildOfClass("Humanoid"))
+end
 
-		return false
+local function checkVaultGeometry(): (boolean, string)
+	if not RootPart then
+		return false, "no root part"
+	end
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { Character }
+	params.IgnoreWater = true
+
+	local position = RootPart.Position
+	local look = RootPart.CFrame.LookVector
+
+	local wallAhead = blockedAt(position, look * VAULT_RAYCAST_RANGE_1, params)
+	local headroom = not blockedAt(position, RootPart.CFrame.UpVector * VAULT_RAYCAST_RANGE_2, params)
+	local ledgeClear = not blockedAt(position + Vector3.new(0, 2.5, 0), look * VAULT_RAYCAST_RANGE_3, params)
+	local aboveClear = not blockedAt(position + Vector3.new(0, 6, 0), look * VAULT_RAYCAST_RANGE_4, params)
+
+	local summary = string.format(
+		"wallAhead=%s headroom=%s ledgeClear=%s aboveClear=%s",
+		tostring(wallAhead),
+		tostring(headroom),
+		tostring(ledgeClear),
+		tostring(aboveClear)
+	)
+
+	return wallAhead and headroom and ledgeClear and aboveClear, summary
+end
+
+local function playMantle()
+	local animator = Humanoid and Humanoid:FindFirstChildOfClass("Animator")
+	local track = loadTrack(animator, mantleAnim, "Mantle")
+	if not track then
+		return
+	end
+
+	track.Priority = Enum.AnimationPriority.Action
+	track:Play(0.05)
+	VaultAnimPlaying = true
+end
+
+local function executeVault()
+	if not Character or not RootPart or not Humanoid then
+		return
+	end
+
+	dbg("VAULT executing")
+
+	VaultActive = true
+	VaultCooldown = true
+	setCharacterBool("Vaulting", true)
+
+	playMantle()
+
+	local targetPosition = RootPart.Position
+		+ Vector3.new(0, VAULT_TARGET_UP, 0)
+		+ RootPart.CFrame.LookVector * VAULT_TARGET_FORWARD
+
+	local bodyPosition = Instance.new("BodyPosition")
+	bodyPosition.Name = "VaultPosition"
+	bodyPosition.MaxForce = VAULT_BODY_POSITION_MAXFORCE
+	bodyPosition.P = VAULT_BODY_POSITION_P
+	bodyPosition.D = VAULT_BODY_POSITION_D
+	bodyPosition.Position = targetPosition
+	bodyPosition.Parent = RootPart
+
+	task.delay(VAULT_DURATION, function()
+		if bodyPosition.Parent then
+			bodyPosition:Destroy()
+		end
+
+		setCharacterBool("Vaulting", false)
+		VaultActive = false
+		VaultAnimPlaying = false
+		dbg("VAULT finished")
+	end)
+
+	-- Safety net: don't stay locked out if Landed never fires.
+	task.delay(VAULT_COOLDOWN_FALLBACK, function()
+		VaultCooldown = false
+	end)
+end
+
+-- Returns (canVault, reason)
+local function checkVaultTrigger(): (boolean, string)
+	if not Character or not RootPart then
+		return false, "no character"
+	end
+	if not IsJumping then
+		return false, "not jumping/falling (IsJumping=false)"
+	end
+	if VaultActive then
+		return false, "vault active"
+	end
+	if VaultCooldown then
+		return false, "vault cooldown"
+	end
+	if VaultAnimPlaying then
+		return false, "vault anim playing"
+	end
+	if Character:FindFirstChild("VaultMontage") then
+		return false, "VaultMontage present"
+	end
+	if Character:GetAttribute("charging") then
+		return false, "charging"
+	end
+	if Character:GetAttribute("Aiming") then
+		return false, "aiming"
+	end
+	if Character:GetAttribute("Crouching") then
+		return false, "crouching"
 	end
 
 	return checkVaultGeometry()
 end
 
--- Vault/jump callbacks request a refresh; LocomotionService owns speed.
-updateSprint = refreshLocomotion
-tryStartSprint = refreshLocomotion
-
--- // Bind character connections
+-- // Character connections
 
 local function bindCharacterConnections()
-
-	-- Disconnect previous connections.
-	for _, conn in ipairs(characterConnections) do
-		conn:Disconnect()
+	for _, connection in characterConnections do
+		connection:Disconnect()
 	end
-
 	characterConnections = {}
 
-	local function track(conn)
-		table.insert(
-			characterConnections,
-			conn
-		)
+	local function track(connection)
+		table.insert(characterConnections, connection)
 	end
 
-	local function updateJumpEnabled()
-		local blocked = Character:GetAttribute("JumpBlocked") == true or Character:GetAttribute("BulwarkReloading") == true
-		Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, not blocked)
-		if blocked then
-			Sprinting = false
-			resetSpeed()
+	local function stopSprint()
+		Sprinting = false
+		refreshLocomotion()
+	end
+
+	-- Jump blocking
+	local function onJumpBlockChanged()
+		applyJumpEnabled()
+		if Character:GetAttribute("JumpBlocked") == true or Character:GetAttribute("BulwarkReloading") == true then
+			stopSprint()
 		end
 	end
-	track(Character:GetAttributeChangedSignal("JumpBlocked"):Connect(updateJumpEnabled))
-	track(Character:GetAttributeChangedSignal("BulwarkReloading"):Connect(updateJumpEnabled))
-	track(Character:GetAttributeChangedSignal("DebuffMovementMultiplier"):Connect(resetSpeed))
-	track(Character:GetAttributeChangedSignal("BurnMovementMultiplier"):Connect(resetSpeed))
-	track(Character:GetAttributeChangedSignal("TabletMovementMultiplier"):Connect(resetSpeed))
-	track(Character:GetAttributeChangedSignal("TakingTablets"):Connect(resetSpeed))
-	track(Character:GetAttributeChangedSignal("BloodlustWalkMultiplier"):Connect(resetSpeed))
-	track(Character:GetAttributeChangedSignal("MoraleSprintMultiplier"):Connect(resetSpeed))
-	track(Character:GetAttributeChangedSignal("OrderSprintSpeedMultiplier"):Connect(resetSpeed))
-	track(Character:GetAttributeChangedSignal("ChemicalSprintMultiplier"):Connect(resetSpeed))
-	track(Character:GetAttributeChangedSignal("ChemicalMovementPenaltyMultiplier"):Connect(resetSpeed))
+	track(Character:GetAttributeChangedSignal("JumpBlocked"):Connect(onJumpBlockChanged))
+	track(Character:GetAttributeChangedSignal("charging"):Connect(onJumpBlockChanged))
+	track(Character:GetAttributeChangedSignal("BulwarkReloading"):Connect(onJumpBlockChanged))
+	applyJumpEnabled()
+
+	-- Anything that changes movement speed
+	for _, attribute in SPEED_ATTRIBUTES do
+		track(Character:GetAttributeChangedSignal(attribute):Connect(refreshLocomotion))
+	end
+
 	track(Character:GetAttributeChangedSignal("SprintBlocked"):Connect(function()
 		if Character:GetAttribute("SprintBlocked") then
-			Sprinting = false
-			resetSpeed()
+			stopSprint()
 		end
 	end))
-	updateJumpEnabled()
 
-	-- // Vault cooldown
-	track(
-		Humanoid.StateChanged:Connect(
-			function(old, new)
+	-- Landing clears the vault cooldown
+	track(Humanoid.StateChanged:Connect(function(_, new)
+		if new == Enum.HumanoidStateType.Landed then
+			VaultCooldown = false
+		end
+	end))
 
-				if new ==
-					Enum.HumanoidStateType.Landed then
+	-- Main state machine
+	track(Humanoid.StateChanged:Connect(function(_, new)
+		dbg("State ->", new.Name)
 
-					VaultCooldown = false
+		if new == Enum.HumanoidStateType.Climbing then
+			IsClimbing = true
+			IsJumping = false
+			LocalPlayer:SetAttribute("Climbing", true)
+
+			if Sprinting then
+				dbg("Climbing started, stopping sprint")
+				stopSprint()
+			end
+		elseif new == Enum.HumanoidStateType.Jumping then
+			IsClimbing = false
+			LocalPlayer:SetAttribute("Climbing", nil)
+
+			if Character:GetAttribute("Crouching") then
+				setCharacterBool("Crouching", false)
+			end
+
+			if Character:GetAttribute("Aiming") then
+				return
+			end
+
+			LocalPlayer:SetAttribute("Jumping", true)
+			IsJumping = true
+			startJumpCooldown()
+		elseif new == Enum.HumanoidStateType.Freefall then
+			IsClimbing = false
+			LocalPlayer:SetAttribute("Climbing", false)
+			IsJumping = true
+		elseif new == Enum.HumanoidStateType.Landed then
+			IsClimbing = false
+			IsJumping = false
+			LocalPlayer:SetAttribute("Climbing", false)
+			LocalPlayer:SetAttribute("Jumping", nil)
+
+			if sprintHeld() and not isAiming() then
+				refreshLocomotion()
+			end
+		elseif new == Enum.HumanoidStateType.Running or new == Enum.HumanoidStateType.RunningNoPhysics then
+			if IsClimbing then
+				IsClimbing = false
+				LocalPlayer:SetAttribute("Climbing", false)
+				dbg("Left climbing via Running state")
+
+				if sprintHeld() and not isAiming() then
+					refreshLocomotion()
 				end
 			end
-		)
-	)
+		end
+	end))
 
-	-- // Main state machine
-	track(
-		Humanoid.StateChanged:Connect(
-			function(old, new)
+	-- Health only updates the injured pose (it no longer toggles jumping)
+	track(Humanoid.HealthChanged:Connect(updateInjuredPose))
 
-				if new ==
-					Enum.HumanoidStateType.Climbing then
+	-- ADS transitions never restart sprint or a breath timer.
+	track(Character:GetAttributeChangedSignal("Aiming"):Connect(function()
+		updateInjuredPose()
+		applyJumpEnabled()
+		refreshLocomotion()
+	end))
 
-					IsClimbing = true
-					IsJumping = false
+	-- Crouching
+	track(Character:GetAttributeChangedSignal("Crouching"):Connect(function()
+		local crouching = Character:GetAttribute("Crouching") == true
+		dbg("Crouching attribute changed ->", crouching)
 
-					LocalPlayer:SetAttribute(
-						"Climbing",
-						true
-					)
+		if crouching then
+			Sprinting = false
+		end
+		refreshLocomotion()
+	end))
 
-					if Sprinting then
+	-- ADS movement exemption
+	track(Character:GetAttributeChangedSignal("ADSMovementExempt"):Connect(function()
+		if isAiming() then
+			refreshLocomotion()
+		end
+	end))
 
-						print(
-							"[StateChanged] Climbing started — stopping sprint"
-						)
-
-						Sprinting = false
-
-						resetSpeed()
-					end
-
-				elseif new ==
-					Enum.HumanoidStateType.Jumping then
-
-					IsClimbing = false
-
-					LocalPlayer:SetAttribute(
-						"Climbing",
-						nil
-					)
-
-					if Character:GetAttribute(
-						"Crouching"
-						) then
-
-						setCharacterBool(
-							"Crouching",
-							false
-						)
-					end
-
-					if Character:GetAttribute(
-						"Aiming"
-						) then
-
-						return
-					end
-
-					LocalPlayer:SetAttribute(
-						"Jumping",
-						true
-					)
-
-					Humanoid:SetStateEnabled(
-						Enum.HumanoidStateType.Jumping,
-						false
-					)
-
-					IsJumping = true
-					fall_time = tick()
-
-					task.delay(
-						1,
-						function()
-
-							if Humanoid then
-
-								Humanoid:SetStateEnabled(
-									Enum.HumanoidStateType.Jumping,
-									Character:GetAttribute("JumpBlocked") ~= true and Character:GetAttribute("BulwarkReloading") ~= true
-								)
-							end
-						end
-					)
-
-				elseif new ==
-					Enum.HumanoidStateType.Freefall then
-
-					IsClimbing = false
-
-					LocalPlayer:SetAttribute(
-						"Climbing",
-						false
-					)
-
-					IsJumping = true
-					fall_time = tick()
-
-				elseif new ==
-					Enum.HumanoidStateType.Landed then
-
-					IsClimbing = false
-
-					LocalPlayer:SetAttribute(
-						"Climbing",
-						false
-					)
-
-					LocalPlayer:SetAttribute(
-						"Jumping",
-						nil
-					)
-
-					IsJumping = false
-					fall_time = tick()
-
-					print(
-						"[StateChanged] Landed - fall_time reset to:",
-						fall_time
-					)
-
-					if SprintKeyHeld
-						and not isAiming() then
-
-						tryStartSprint()
-					end
-
-				elseif new ==
-					Enum.HumanoidStateType.Running
-					or new ==
-					Enum.HumanoidStateType.RunningNoPhysics then
-
-					if IsClimbing then
-
-						IsClimbing = false
-
-						LocalPlayer:SetAttribute(
-							"Climbing",
-							false
-						)
-
-						print(
-							"[StateChanged] Left climbing via Running state"
-						)
-
-						if SprintKeyHeld
-							and not isAiming() then
-
-							tryStartSprint()
-						end
-					end
-				end
-			end
-		)
-	)
-
-	-- // Health jump disable
-	track(
-		Humanoid.HealthChanged:Connect(
-			function()
-				updateInjuredPose()
-
-				Humanoid:SetStateEnabled(
-					Enum.HumanoidStateType.Jumping,
-					false
-				)
-
-				task.delay(
-					1,
-					function()
-
-						if Humanoid then
-
-							Humanoid:SetStateEnabled(
-								Enum.HumanoidStateType.Jumping,
-								true
-							)
-						end
-					end
-				)
-			end
-		)
-	)
-
-    -- ADS transitions never restart sprint or a breath timer.
-    track(Character:GetAttributeChangedSignal("Aiming"):Connect(function()
-        updateInjuredPose()
-        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping,
-            not isAiming() and Character:GetAttribute("JumpBlocked") ~= true and Character:GetAttribute("BulwarkReloading") ~= true)
-        refreshLocomotion()
-    end))
-
-	-- // Crouching
-	track(
-		Character:GetAttributeChangedSignal(
-			"Crouching"
-		):Connect(
-			function()
-
-				if Character:GetAttribute(
-					"Crouching"
-					) then
-
-					Sprinting = false
-
-					setSprintAttribute(false)
-				end
-
-				applyRestrictedSpeed()
-			end
-		)
-	)
-
-	-- // ADS movement exemption
-	track(
-		Character:GetAttributeChangedSignal(
-			"ADSMovementExempt"
-		):Connect(
-			function()
-
-				if Character:GetAttribute(
-					"Aiming"
-					) then
-
-					applyRestrictedSpeed()
-				end
-			end
-		)
-	)
-
-	-- // Order speed multiplier
-	track(
-		Character:GetAttributeChangedSignal(
-			"OrderSpeedMultiplier"
-		):Connect(
-			function()
-
-				if not Sprinting
-					or isAiming() then
-
-					applyRestrictedSpeed()
-				end
-			end
-		)
-	)
-
-
+	-- Order speed multiplier
+	track(Character:GetAttributeChangedSignal("OrderSpeedMultiplier"):Connect(function()
+		if not Sprinting or isAiming() then
+			refreshLocomotion()
+		end
+	end))
 end
 
 -- // Character binding
 
 local function bindCharacter(char)
-	if InjuredLeftTrack then InjuredLeftTrack:Stop(0); InjuredLeftTrack:Destroy() end
-	if InjuredRightTrack then InjuredRightTrack:Stop(0); InjuredRightTrack:Destroy() end
+	dbg("bindCharacter start:", char.Name)
+
+	if InjuredLeftTrack then
+		InjuredLeftTrack:Stop(0)
+		InjuredLeftTrack:Destroy()
+	end
+	if InjuredRightTrack then
+		InjuredRightTrack:Stop(0)
+		InjuredRightTrack:Destroy()
+	end
 	InjuredLeftTrack = nil
 	InjuredRightTrack = nil
 
 	Character = char
+	Humanoid = char:WaitForChild("Humanoid")
+	RootPart = char:WaitForChild("HumanoidRootPart")
+	Animator = Humanoid:FindFirstChildOfClass("Animator") or Humanoid:WaitForChild("Animator", 5)
 
-	Humanoid =
-		char:WaitForChild(
-			"Humanoid"
-		)
+	if not Animator then
+		warn("[Movement] Animator not found; creating one")
+		Animator = Instance.new("Animator")
+		Animator.Parent = Humanoid
+	end
 
-	RootPart =
-		char:WaitForChild(
-			"HumanoidRootPart"
-		)
+	local animations = ReplicatedStorage.Shared.Assets:FindFirstChild("Animations")
+	local sharedAnimations = animations and animations:FindFirstChild("Shared")
+	local legacyMovement = ReplicatedStorage:FindFirstChild("MovementAnimations")
+	local function injuryAnimation(name)
+		return (sharedAnimations and sharedAnimations:FindFirstChild(name))
+			or (legacyMovement and legacyMovement:FindFirstChild(name))
+	end
+	InjuredLeftTrack = loadTrack(Animator, injuryAnimation("injured_left"), "injured_left")
+	InjuredRightTrack = loadTrack(Animator, injuryAnimation("injured_right"), "injured_right")
 
-	Animator =
-		Humanoid:WaitForChild(
-			"Animator"
-		)
-
-	local movementAnimations = ReplicatedStorage:FindFirstChild("MovementAnimations")
-	local injuredLeft = movementAnimations and movementAnimations:FindFirstChild("injured_left")
-	local injuredRight = movementAnimations and movementAnimations:FindFirstChild("injured_right")
-	InjuredLeftTrack = injuredLeft and Animator:LoadAnimation(injuredLeft) or nil
-	InjuredRightTrack = injuredRight and Animator:LoadAnimation(injuredRight) or nil
-	for _, track in { InjuredLeftTrack, InjuredRightTrack } do
-		if track then
-			track.Priority = Enum.AnimationPriority.Action2
-			track.Looped = true
+	for _, injuredTrack in { InjuredLeftTrack, InjuredRightTrack } do
+		if injuredTrack then
+			injuredTrack.Priority = Enum.AnimationPriority.Action2
+			injuredTrack.Looped = true
 		end
 	end
 
-	-- Reset volatile state.
+	-- Reset volatile state
 	IsJumping = false
 	IsClimbing = false
-
+	jumpCooldown = false
 	VaultActive = false
 	VaultCooldown = false
 	VaultAnimPlaying = false
-
 	Sprinting = false
-	SprintKeyHeld = false
-
-	W_Locked = LocalPlayer:GetAttribute("FreeLook") ~= true
-	for key in KeyStates do KeyStates[key] = false end
-
-
-	fall_time = tick()
 
 	refreshLocomotion()
-
 	bindCharacterConnections()
 	updateInjuredPose()
+
+	dbg("bindCharacter done")
 end
 
 -- // Vault input loop
 
 local function setupVaultInput()
+	local lastDebugTime = 0
 
-	RunService.RenderStepped:Connect(
-		function()
+	RunService.RenderStepped:Connect(function()
+		local holdingSpace = UserInputService:IsKeyDown(Enum.KeyCode.Space)
+		local holdingGamepad = UserInputService:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, Enum.KeyCode.ButtonA)
 
-			local holdingSpace =
-				UserInputService:IsKeyDown(
-					Enum.KeyCode.Space
-				)
-
-			local holdingGamepad =
-				UserInputService:IsGamepadButtonDown(
-					Enum.UserInputType.Gamepad1,
-					Enum.KeyCode.ButtonA
-				)
-
-			if holdingSpace
-				or holdingGamepad then
-
-				if checkVaultTrigger() then
-					executeVault()
-				end
-			end
+		if not (holdingSpace or holdingGamepad) then
+			return
 		end
-	)
+
+		local canVault, reason = checkVaultTrigger()
+
+		-- Throttled so holding jump doesn't flood the output
+		if DEBUG and os.clock() - lastDebugTime > 0.5 then
+			lastDebugTime = os.clock()
+			dbg("Vault check:", canVault, "|", reason)
+		end
+
+		if canVault then
+			executeVault()
+		end
+	end)
 end
 
--- // Input
+-- // Input hooks
+
+local function hookMovementInput()
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then
+			return
+		end
+
+		if MOVE_KEYS[input.KeyCode] and sprintHeld() then
+			refreshLocomotion()
+		end
+	end)
+
+	LocalPlayer:GetAttributeChangedSignal("FreeLook"):Connect(function()
+		dbg("FreeLook ->", LocalPlayer:GetAttribute("FreeLook"))
+
+		if sprintHeld() and not isAiming() then
+			refreshLocomotion()
+		end
+	end)
+end
+
+local function hookCrouchInput()
+	local ok, err = pcall(function()
+		SettingsManager.HookInput("Crouch", function(_, isPressed)
+			if not isPressed then
+				return
+			end
+
+			dbg("Crouch key pressed")
+
+			if not Character then
+				dbg("Crouch ignored: no character yet")
+				return
+			end
+
+			if Character:GetAttribute("Crouching") then
+				setCharacterBool("Crouching", false)
+				dbg("Crouch OFF")
+
+				if sprintHeld() and not isAiming() then
+					refreshLocomotion()
+				end
+			else
+				setCharacterBool("Crouching", true)
+				dbg("Crouch ON")
+				refreshLocomotion()
+			end
+		end)
+	end)
+
+	if ok then
+		dbg("Crouch input hooked")
+	else
+		warn("[Movement] SettingsManager.HookInput('Crouch') failed:", err)
+	end
+end
+
+-- // Entry point
 
 function module.start_module()
-	Locomotion.start_module()
-
-	bindCharacter(
-		LocalPlayer.Character
-			or LocalPlayer.CharacterAdded:Wait()
-	)
-
-	LocalPlayer.CharacterAdded:Connect(
-		bindCharacter
-	)
-	LocalPlayer:GetAttributeChangedSignal("Current_Shoulder"):Connect(updateInjuredPose)
-
-	setupVaultInput()
-
 	if InputsBinded then
 		return
 	end
-
 	InputsBinded = true
 
-	-- // Movement input
-	UserInputService.InputBegan:Connect(
-		function(input, gameProcessed)
+	dbg("start_module")
 
-			if gameProcessed then
-				return
-			end
+	Locomotion.start_module()
 
-			if input.KeyCode ==
-				Enum.KeyCode.W then
+	-- Hook inputs first so a character-binding problem can't prevent them.
+	hookCrouchInput()
+	hookMovementInput()
+	setupVaultInput()
 
-				KeyStates.Forward = true
+	LocalPlayer:GetAttributeChangedSignal("Current_Shoulder"):Connect(updateInjuredPose)
+	LocalPlayer.CharacterAdded:Connect(bindCharacter)
 
-				if SprintKeyHeld then
-					tryStartSprint()
-				end
+	if LocalPlayer.Character then
+		bindCharacter(LocalPlayer.Character)
+	end
 
-			elseif input.KeyCode ==
-				Enum.KeyCode.S then
-
-				KeyStates.Backwards = true
-
-				if SprintKeyHeld then
-					tryStartSprint()
-				end
-
-			elseif input.KeyCode ==
-				Enum.KeyCode.A then
-
-				KeyStates.Left = true
-
-				if SprintKeyHeld then
-					tryStartSprint()
-				end
-
-			elseif input.KeyCode ==
-				Enum.KeyCode.D then
-
-				KeyStates.Right = true
-
-				if SprintKeyHeld then
-					tryStartSprint()
-				end
-			end
-		end
-	)
-
-	UserInputService.InputEnded:Connect(
-		function(input)
-
-			if input.KeyCode ==
-				Enum.KeyCode.W then
-
-				KeyStates.Forward = false
-
-			elseif input.KeyCode ==
-				Enum.KeyCode.S then
-
-				KeyStates.Backwards = false
-
-			elseif input.KeyCode ==
-				Enum.KeyCode.A then
-
-				KeyStates.Left = false
-
-			elseif input.KeyCode ==
-				Enum.KeyCode.D then
-
-				KeyStates.Right = false
-			end
-		end
-	)
-
-	-- // FreeLook
-	LocalPlayer:GetAttributeChangedSignal(
-		"FreeLook"
-	):Connect(
-		function()
-
-			if not LocalPlayer:GetAttribute(
-				"FreeLook"
-				) then
-
-				W_Locked = true
-
-				print(
-					"[Module] W_Locked set to true"
-				)
-
-			else
-
-				W_Locked = false
-
-				print(
-					"[Module] W_Locked set to false"
-				)
-			end
-
-			if SprintKeyHeld
-				and not isAiming() then
-
-				tryStartSprint()
-			end
-		end
-	)
-
-	-- // Crouch
-	SettingsManager.HookInput(
-		"Crouch",
-		function(Key, IsPressed)
-
-			if not IsPressed then
-				return
-			end
-
-			if Character:GetAttribute(
-				"Crouching"
-				) then
-
-				setCharacterBool(
-					"Crouching",
-					false
-				)
-
-				if SprintKeyHeld
-					and not isAiming() then
-
-					tryStartSprint()
-				end
-
-			else
-
-				setCharacterBool(
-					"Crouching",
-					true
-				)
-
-				resetSpeed()
-			end
-		end
-	)
-
-
+	dbg("inputs hooked")
 end
 
 return module

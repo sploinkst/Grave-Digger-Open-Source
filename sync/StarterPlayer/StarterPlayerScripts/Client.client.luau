@@ -9,7 +9,6 @@ local REQUIRED_PLAYER_UI = {
 	"Aiming",
 	"Black",
 	"Chat",
-	"Inventory",
 	"Menu",
 	"Menu_Scenes",
 	"Scoring",

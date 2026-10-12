@@ -336,7 +336,7 @@ function GraceRevolver:spin()
 	self._spinCancelled = false
 
 	local startTrack = self:_playAnim("Spin_Start")
-	if startTrack then startTrack.Stopped:Wait() end
+	if startTrack then self:_waitAnimation(startTrack) end
 
 	if self._spinCancelled then
 		self.Spinning       = false
@@ -346,7 +346,7 @@ function GraceRevolver:spin()
 	end
 
 	local spinTrack = self:_playAnim("Spin")
-	if spinTrack then spinTrack.Stopped:Wait() end
+	if spinTrack then self:_waitAnimation(spinTrack) end
 
 	local now = os.clock()
 	self._spinCount = if now - self._lastSpinAt <= 2 then self._spinCount + 1 else 1

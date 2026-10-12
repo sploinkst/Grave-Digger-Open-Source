@@ -20,14 +20,12 @@ BaseCamera.__index = BaseCamera
 local LocalPlayer = PlayerService.LocalPlayer
 local function selectionMenuOpen()
 	local character = LocalPlayer.Character
-	return character and (character:GetAttribute("StimulantSelecting") or character:GetAttribute("OfficerOrderSelecting"))
+	return character and (character:GetAttribute("StimulantSelecting") or character:GetAttribute("OfficerOrderSelecting") or character:GetAttribute("EliteKitSelecting"))
 end
 local Camera      = Workspace.CurrentCamera
 
-local mainGui = LocalPlayer.PlayerGui:WaitForChild("main")
-local coreGame = mainGui:WaitForChild("core_game")
-local cursor_ui = coreGame:WaitForChild("genericcrosshair")
-cursor_ui.Visible = false
+-- The camera uses its existing cursor created by Initialize; no legacy GUI wait.
+local cursor_ui
 
 local Values = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Library"):WaitForChild("Configuration"):WaitForChild("Character_Variables"):WaitForChild("Camera"):WaitForChild("BaseCamera")
 local CameraOffsets = {
@@ -214,11 +212,14 @@ end
 
 function BaseCamera:_unbind()
 	RunService:UnbindFromRenderStep(RENDER_STEP_NAME)
+ self._renderBound=false
 end
 
 function BaseCamera:_bind(callback)
+ self._renderBound=true
 	RunService:BindToRenderStep(RENDER_STEP_NAME, RENDER_PRIORITY, function(dt)
 		self:_updateFOV(dt)
+        self:_updateRecoil(dt)
 		callback(dt)
 		self:_updateCursorVisibility()
 	end)
@@ -335,6 +336,7 @@ function BaseCamera:_updateRecoil(dt: number)
 	self.RecoilPitch = 0
 	self.RecoilYaw = 0
 	self.RecoilRoll = (self.RecoilRoll or 0) * math.exp(-35 * dt)
+	self.RecoilImpulses=self.RecoilImpulses or {}
 	for index = #self.RecoilImpulses, 1, -1 do
 		local impulse = self.RecoilImpulses[index]
 		impulse.elapsed += dt
@@ -568,15 +570,6 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 	end
 
 	-- NORMAL ROTATION
-	if character:GetAttribute("Aiming") ~= true then
-		self.CharacterYaw = targetYaw
-
-		root.CFrame = CFrame.new(root.Position)
-			* CFrame.Angles(0, targetYaw, 0)
-
-		return
-	end
-
 	local diff = math.atan2(
 		math.sin(targetYaw - self.CharacterYaw),
 		math.cos(targetYaw - self.CharacterYaw)
@@ -594,8 +587,8 @@ function BaseCamera:_updateCharacterRotation(root: BasePart, dt: number)
 		maxRate = math.rad(2)
 
 	else
-		local duration = character:GetAttribute("WeaponAimDuration")
-		if typeof(duration) == "number" and duration > 0 then
+		local duration = if character:GetAttribute("Aiming") == true then 0.12 else 0.24
+		if duration > 0 then
 			local alpha = 1 - math.exp(-math.log(100) * dt / duration)
 			self.CharacterYaw += diff * alpha
 			root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, self.CharacterYaw, 0)
@@ -921,6 +914,7 @@ end
 local transparency_descendant_connection
 
 local function first_person_transparency(character: Instance, isFirstPerson: boolean)
+	isFirstPerson = isFirstPerson and not SettingsModule.GetSetting("disabletransparent")
 	if transparency_descendant_connection then
 		transparency_descendant_connection:Disconnect()
 		transparency_descendant_connection = nil
@@ -1071,7 +1065,6 @@ function BaseCamera:CustomCamera()
 	self.transparency_connection = first_person_transparency(character, false)
 
 	self:_bind(function(dt)
-		self:_updateRecoil(dt)
 		local character, root = self:_getCharacterParts()
 		if not root then return
 		end
@@ -1133,7 +1126,7 @@ function BaseCamera:FirstPerson()
 	self.RecoilYaw         = 0
 	self.RecoilTargetPitch = 0
 	self.RecoilTargetYaw   = 0
-	self.RecoilImpulses    = {}
+	self.RecoilImpulses = self.RecoilImpulses or {}
 	self.RecoilRoll        = 0
 	self.CameraKick        = 0
 
@@ -1155,7 +1148,6 @@ function BaseCamera:FirstPerson()
 	self.transparency_connection = first_person_transparency(character, true)
 
 	self:_bind(function(dt)
-		self:_updateRecoil(dt)
 		self:_updateHoldBreath()
 		self:_updateCameraKick(dt)
 		self:_decayCameraOffsetZ(dt)
@@ -1203,7 +1195,7 @@ function BaseCamera:OverTheShoulder()
 	self.RecoilYaw         = 0
 	self.RecoilTargetPitch = 0
 	self.RecoilTargetYaw   = 0
-	self.RecoilImpulses    = {}
+	self.RecoilImpulses = self.RecoilImpulses or {}
 	self.RecoilRoll        = 0
 
 	local hum = self:_getHumanoid()
@@ -1242,7 +1234,6 @@ function BaseCamera:OverTheShoulder()
 	self:_setupSprintCheck()
 
 	self:_bind(function(dt)
-		self:_updateRecoil(dt)
 		self:_updateHoldBreath()
 		self:_updateCameraKick(dt)
 		self:_decayCameraOffsetZ(dt)
@@ -1346,6 +1337,7 @@ function BaseCamera:Switch_Camera(target: string)
 	end
 	
 	if not Presets[target] then return end
+ if target==self.CurrentMode and self._renderBound then return end
 
 	local look = Camera.CFrame.LookVector
 	self.CameraYaw   = math.atan2(-look.X, -look.Z)
@@ -1451,9 +1443,9 @@ function BaseCamera:Start()
 
 		self:_setupCharacterDeathListener(humanoid)
 		self:_snapCameraToCharacter()
+		self:_resetAllTransparency()
 		self:Switch_Camera("OverTheShoulder")
 		self:_switch_shoulder("Right")
-		self:_resetAllTransparency()
 	end
 
 	if LocalPlayer.Character then onCharacterAdded(LocalPlayer.Character) end
@@ -1498,9 +1490,9 @@ function BaseCamera:Resume()
 
 	-- jump straight into the last mode (or default to OTS)
 	local resumeMode = self.CurrentMode or "OverTheShoulder"
+	self:_resetAllTransparency()
 	self:Switch_Camera(resumeMode)
 	self:_switch_shoulder(LocalPlayer:GetAttribute("Current_Shoulder") or "Right")
-	self:_resetAllTransparency()
 end
 
 function BaseCamera:End()
@@ -1513,7 +1505,7 @@ function BaseCamera:End()
 	InputService.MouseIconEnabled = true
 	InputService.MouseBehavior    = Enum.MouseBehavior.Default
 
-	cursor_ui.Visible = false
+	if cursor_ui then cursor_ui.Visible = false end
 	LocalPlayer:SetAttribute("FreeLook", nil)
 	LocalPlayer:SetAttribute("FirstPerson", nil)
 

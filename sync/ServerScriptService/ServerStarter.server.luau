@@ -74,13 +74,35 @@ toolAnimations.Parent = ReplicatedStorage
 local sharedSource = authoredAnimations and authoredAnimations:FindFirstChild("shared")
 local movementAnimations = Instance.new("Folder")
 movementAnimations.Name = "MovementAnimations"
-for _, name in {"walk_forward", "walk_injured", "walk_left", "walk_right",
-	"sprinting_arms", "sprinting_full", "sprinting_lean", "leg_aiming",
-	"injured_left", "injured_right"} do
-	local clip = sharedSource and sharedSource:FindFirstChild(name)
-	if clip then clip:Clone().Parent = movementAnimations
-	else warn("[ServerStarter] Missing shared animation: " .. name) end
+local movementNames={
+ walk_forward={"walk_forward","walk_forward_FootstepsNew"},
+ walk_injured={"walk_injured","walk_injured_new"},
+ walk_left={"walk_left","walk_left_FootstepsNew"},
+ walk_right={"walk_right","walk_right_FootstepsNew"},
+ sprinting_arms={"sprinting_arms"},
+ sprinting_full={"sprinting_full","sprinting_full_FootstepsNews"},
+ sprinting_lean={"sprinting_lean"},leg_aiming={"leg_aiming"},
+ injured_left={"injured_left"},injured_right={"injured_right"},
+}
+local nativeAnimations=ReplicatedStorage.Shared.Assets:FindFirstChild("Animations")
+for name,aliases in pairs(movementNames) do
+ local clip
+ for _,root in ipairs({sharedSource or false,authoredAnimations or false,nativeAnimations or false}) do
+  if root then
+   for _,alias in ipairs(aliases) do
+    for _,candidate in ipairs(root:GetDescendants()) do
+     if candidate.Name==alias and (candidate:IsA("Animation") or candidate:IsA("KeyframeSequence")) then clip=candidate;break end
+    end
+    if clip then break end
+   end
+  end
+  if clip then break end
+ end
+ if clip then
+  local clone=clip:Clone();clone.Name=name;clone.Parent=movementAnimations
+ else warn("[ServerStarter] Missing movement animation: "..name.." ("..table.concat(aliases,", ")..")") end
 end
+
 local previousMovement = ReplicatedStorage:FindFirstChild("MovementAnimations")
 if previousMovement then previousMovement:Destroy() end
 movementAnimations.Parent = ReplicatedStorage
@@ -100,8 +122,8 @@ for _, child in ipairs(modules_folder:GetChildren()) do
 			return
 		end
 
-		if type(module.start_module) ~= "function" then
-			warn(("Module '%s' does not have a start_module() function."):format(child.Name))
+		if type(module) ~= "table" or type(module.start_module) ~= "function" then
+            -- Helper modules are initialized by the service that owns them.
 			return
 		end
 

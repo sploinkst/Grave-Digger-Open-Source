@@ -1,9 +1,8 @@
-	-- Playback ratios from toolScript, independent of Roblox track lengths.
--- Gameplay readiness and animation blend times are separate clocks in the master.
 local Rules = {}
 local durations = {
 	Reload_Start = "reload_start", Reload_Empty = "reload_empty", Reload_Loop = "reload_loop",
 	Reload_Loop_Alt = "reload_loop", Reload_Loop_After = "reload_loop_after",
+	Reload_Heavyloop = "reload_loop",
 	Reload_End = "reload_end", Reload_End_Locked = "reload_end", Reload_Alt = "reload_alt",
 	Reload_Alt_Extra = "reload_alt", Reload_Full = "reload_full", Reload_Clip = "reload_full",
 	Reload_Clip_Start_Empty = "reload_start", Reload_Clip_Start_Empty_Novet = "reload_start",
@@ -115,6 +114,15 @@ function Rules.Playback(weapon, name)
 			profile.speed=1/duration; profile.fade=0.1
 		end
 	end
-	return profile
+	if weapon.IsFirearm and (asset=="dbgun" or asset=="dbgunvariant") then
+  if (name=="Reload_Loop_Vet" or name=="Reload_Dual_Doom") and positive(weapon.reload_loop) then
+   profile.speed=1/(weapon.reload_loop*1.4); profile.fade=0.1
+  elseif name=="Reload_Empty_Doom" and positive(weapon.reload_empty) then
+   profile.speed=1/weapon.reload_empty; profile.fade=0.1
+  elseif name=="Reload_End_Doom" and positive(weapon.reload_end) then
+   profile.speed=1/weapon.reload_end; profile.fade=0.1
+  end
+ end
+ return profile
 end
 return Rules

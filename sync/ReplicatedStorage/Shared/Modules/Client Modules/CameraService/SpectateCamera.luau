@@ -9,6 +9,7 @@ local CameraClass = require(script.Parent.Parent.Parent.Parent.Library.Classes.M
 local SpectateCamera = setmetatable({}, {__index = CameraClass})
 SpectateCamera.__index = SpectateCamera
 local LocalPlayer = Players.LocalPlayer
+local DeathScreen = require(game:GetService("ReplicatedStorage").Shared.Library.UI.DeathScreen)
 
 local targets: {Player} = {}
 local currentIndex = 1
@@ -42,32 +43,6 @@ local function targetPart(player: Player): BasePart?
 	return if root and root:IsA("BasePart") then root else nil
 end
 
-local function spectateGui(): Instance?
-	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-	if not playerGui then return nil end
-	local main = playerGui:FindFirstChild("main")
-	return playerGui:FindFirstChild("Spectate") or (main and main:FindFirstChild("spectate"))
-end
-
-local function setGuiEnabled(enabled: boolean)
-	local gui = spectateGui()
-	if not gui then return end
-	if gui:IsA("ScreenGui") then gui.Enabled = enabled elseif gui:IsA("GuiObject") then gui.Visible = enabled end
-end
-
-local function updateGui(player: Player?)
-	local gui = spectateGui()
-	if not gui then return end
-	local display = player and player.DisplayName or "No living allies"
-	for _, name in ipairs({"playername", "username", "spectating", "target", "maintext"}) do
-		local label = gui:FindFirstChild(name, true)
-		if label and (label:IsA("TextLabel") or label:IsA("TextButton")) then
-			label.Text = player and ("SPECTATING  " .. display) or display
-			break
-		end
-	end
-end
-
 local function currentTarget(): Player?
 	return targets[currentIndex]
 end
@@ -86,7 +61,7 @@ function SpectateCamera:UpdateCamera()
 	local player = currentTarget()
 	local part = player and targetPart(player)
 	if part then Camera.CameraType = Enum.CameraType.Custom; Camera.CameraSubject = part else Camera.CameraSubject = nil end
-	updateGui(player)
+	DeathScreen.SetSpectating(player)
 end
 
 function SpectateCamera:Cycle(direction: number)
@@ -104,7 +79,6 @@ function SpectateCamera:Start()
 	self:End()
 	active = true
 	Camera.CameraType = Enum.CameraType.Custom
-	setGuiEnabled(true)
 	self:RefreshTargets()
 
 	inputConnection = UserInputService.InputBegan:Connect(function(input, processed)
@@ -128,6 +102,7 @@ function SpectateCamera:Resume() self:Start() end
 
 function SpectateCamera:End()
 	active = false
+	DeathScreen.SetSpectating(nil)
 	disconnect(inputConnection); inputConnection = nil
 	disconnect(heartbeatConnection); heartbeatConnection = nil
 	disconnect(characterConnection); characterConnection = nil
@@ -135,7 +110,6 @@ function SpectateCamera:End()
 	disconnect(playerRemovingConnection); playerRemovingConnection = nil
 	disconnect(teamConnection); teamConnection = nil
 	table.clear(targets)
-	setGuiEnabled(false)
 end
 
 function SpectateCamera:Cut() self:End() end

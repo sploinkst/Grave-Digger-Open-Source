@@ -14,6 +14,8 @@ end
 
 function StatusService.GiveStatus(player, status, ...)
 	local args = { ... }
+	-- Concussion is authorized only by a confirmed helmet detachment.
+	if status == "ConcussionStatus" and args[2] ~= "HelmetKnockoff" then return end
 	print("Giving status:", player.Name, status, args)
 	if status ~= "DreadnoughtStatus" then
 		local character = player.Character

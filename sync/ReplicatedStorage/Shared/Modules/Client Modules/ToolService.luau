@@ -7,7 +7,9 @@ local HolsterFolder = AccessoryFolder:WaitForChild("Holsters")
 local ToolHolsterFolder = game:GetService("ReplicatedStorage").Shared.Assets.Guns.Holsters:FindFirstChild("Tool Holsters")
 local GunClasses = game:GetService("ReplicatedStorage").Shared.Library.Classes.GunClasses
 local ToolClasses = game:GetService("ReplicatedStorage").Shared.Library.Classes.ToolClasses
+local WeaponIds = require(game:GetService("ReplicatedStorage").Shared.Library.WeaponIds)
 local InventoryService = require(script.Parent.InventoryService)
+local Metadata = require(game:GetService("ReplicatedStorage").Shared.Library.ToolMetadata)
 local UtilModule = require(script.Parent.Parent.Parent.Library.Util)
 
 Module.RegisteredTools = {}
@@ -53,12 +55,19 @@ local function RegisterTool(tool: Tool, equipImmediately: boolean?)
 	end
 
 	local controllerName = tool.Name == "TrenchWhistleTool" and "TrenchWhistle" or tool.Name
+	local canonicalName = WeaponIds.Canonical(controllerName)
 
 	Debug("Looking for controller:", controllerName)
 
 	local moduleScript =
-		GunClasses:FindFirstChild(controllerName, true)
+		GunClasses:FindFirstChild(controllerName)
+		or ToolClasses:FindFirstChild(controllerName)
+		or GunClasses:FindFirstChild(canonicalName)
+		or ToolClasses:FindFirstChild(canonicalName)
 		or ToolClasses:FindFirstChild(controllerName, true)
+		or GunClasses:FindFirstChild(controllerName, true)
+		or GunClasses:FindFirstChild(WeaponIds.Canonical(Metadata.Weapon(tool)))
+		or ToolClasses:FindFirstChild(WeaponIds.Canonical(Metadata.Weapon(tool)))
 
 	if not moduleScript then
 		warn("[ToolService] No class found for item:", tool.Name)
@@ -68,16 +77,18 @@ local function RegisterTool(tool: Tool, equipImmediately: boolean?)
 
 	Debug("Found controller module:", moduleScript:GetFullName())
 
-	local class = require(moduleScript)
+	local classOk,class=pcall(require,moduleScript)
+ if not classOk then warn("[ToolService] Controller load failed for "..tool.Name..": "..tostring(class));return nil end
 
 	Debug("Required controller module successfully")
 	Debug("Creating controller instance...")
 
-	local instance = class.new({ name = tool.Name })
-	local inventorySlot = tool:FindFirstChild("slot")
-	if inventorySlot and inventorySlot:IsA("StringValue") and inventorySlot.Value ~= "" then
-		instance.Designation = inventorySlot.Value
-	end
+	local created,instance=pcall(class.new,{name=tool.Name})
+ if not created then warn("[ToolService] Controller creation failed for "..tool.Name..": "..tostring(instance));return nil end
+	local inventoryKey, designation = Metadata.Slot(tool)
+	instance.InventorySlot = inventoryKey
+	if designation then instance.Designation = designation end
+	if Metadata.Hidden(tool) then instance.Designation = "Nil" end
 
 	Debug("Controller instance created:", instance)
 
@@ -92,9 +103,27 @@ local function RegisterTool(tool: Tool, equipImmediately: boolean?)
 		return nil
 	end
 
+ -- on_give may set defaults; authoritative slot metadata wins after initialization.
+ instance.InventorySlot=inventoryKey
+ if designation then instance.Designation=designation end
+ if Metadata.Hidden(tool) then instance.Designation="Nil" end
+ if type(instance.item_image)~="string" or instance.item_image=="" then instance.item_image=tool.TextureId end
+ instance.Display_Name=instance.Display_Name or class.Display_Name or WeaponIds.DisplayName(instance.className or canonicalName)
 	Debug("on_give() completed successfully")
 
 	Module.RegisteredTools[tool] = instance
+	-- Server-driven class changes bypass InventoryService's unequip path.
+	tool.Unequipped:Connect(function()
+		if instance.Equipped or instance.Equipping then instance:unequip() end
+	end)
+	if tool:GetAttribute("ClassEquipment") == true then
+		tool.Equipped:Connect(function()
+			if not instance.Equipped then instance:equip() end
+		end)
+		task.defer(function()
+			if tool.Parent == LocalPlayer.Character and not instance.Equipped then instance:equip() end
+		end)
+	end
 
 	Debug("RegisteredTools entry created")
 	Debug("Registered controller:", instance)
@@ -103,9 +132,9 @@ local function RegisterTool(tool: Tool, equipImmediately: boolean?)
 	tool.Destroying:Connect(function()
 		Debug("Tool.Destroying fired:", tool.Name)
 
-		InventoryService.RemoveTool(instance)
-		DestroyToolInstance(instance)
 		Module.RegisteredTools[tool] = nil
+		DestroyToolInstance(instance)
+		InventoryService.RemoveTool(instance)
 
 		Debug("Removed controller from RegisteredTools:", tool.Name)
 	end)
@@ -174,7 +203,7 @@ local function RegisterTool(tool: Tool, equipImmediately: boolean?)
 			Debug("Calling instance:equip()...")
 
 			local equip_success, equip_error = xpcall(function()
-				instance:equip()
+                if tool.Name=="TrenchWhistleTool" then instance:equip() else InventoryService.EquipTool(instance) end
 			end, debug.traceback)
 
 			if not equip_success then

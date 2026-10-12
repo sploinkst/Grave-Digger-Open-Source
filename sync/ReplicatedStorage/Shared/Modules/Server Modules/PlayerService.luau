@@ -367,55 +367,42 @@ local function SetupHitboxes(character: Model)
 end
 
 local function CopyUI(player)
-	for _, child in pairs(game:GetService("ReplicatedStorage").Shared:WaitForChild("Library"):WaitForChild("UI"):GetChildren()) do
-		if child.Name == "Intro" then continue end
-		local existing = player.PlayerGui:FindFirstChild(child.Name)
-		if existing then
-			if child.Name == "Menu" or child.Name == "Menu_Scenes" then
-				for _, gui in ipairs(existing:GetDescendants()) do
-					if gui:IsA("ScreenGui") then gui.ResetOnSpawn = false end
-				end
-				if existing:IsA("ScreenGui") then existing.ResetOnSpawn = false end
-			end
-			continue
-		end
-		local clone = child:Clone()
-		if clone.Name == "Menu" or clone.Name == "Menu_Scenes" then
-			for _, gui in ipairs(clone:GetDescendants()) do
-				if gui:IsA("ScreenGui") then gui.ResetOnSpawn = false end
-			end
-			if clone:IsA("ScreenGui") then clone.ResetOnSpawn = false end
-		end
-		
-		clone.Parent = player:WaitForChild("PlayerGui")
-	end
+ local playerGui=player:WaitForChild("PlayerGui")
+ -- Remove the imported source GUI, including copies already present in the place.
+ for _,existing in ipairs(playerGui:GetChildren()) do
+  if existing.Name=="main" and existing:IsA("ScreenGui") then existing:Destroy() end
+ end
+ local source=game:GetService("ReplicatedStorage").Shared.Library:WaitForChild("UI")
+ for _,child in ipairs(source:GetChildren()) do
+  if child.Name=="Intro" or child:IsA("ModuleScript") then continue end
+  local clone=playerGui:FindFirstChild(child.Name)
+  local created=clone==nil
+  if not clone then clone=child:Clone() end
+  for _,item in ipairs({clone,table.unpack(clone:GetDescendants())}) do
+   if item:IsA("ScreenGui") then
+    item.ResetOnSpawn=false
+    if created and (item.Name=="Menu" or item.Parent and item.Parent.Name=="Menu_Scenes") then item.Enabled=false end
+    if item.Name=="Testing" then item.Enabled=true end
+   elseif item:IsA("LocalScript") and item.Name=="VoiceWheelHandler" then
+    item.Enabled=false
+   end
+  end
+  if created and clone.Name=="Extras" and clone:IsA("ScreenGui") then
+   clone.Enabled=true
+   for _,item in ipairs(clone:GetChildren()) do
+    if item:IsA("GuiObject") then item.Visible=item.Name=="splatters" or item.Name=="rotating_indicator" end
+   end
+   for _,item in ipairs(clone:GetDescendants()) do if item.Name=="ex" and item:IsA("GuiObject") then item.Visible=false end end
+  end
+  if clone.Name=="Testing" then
+   local handler=clone:FindFirstChild("LocalScript");if handler and handler:IsA("LocalScript") then handler.Enabled=true end
+  end
+  clone.Parent=playerGui
+ end
 end
 
 local function CopyRespawnUI(player)
-	for _, child: ScreenGui in pairs(game:GetService("ReplicatedStorage").Shared:WaitForChild("Library"):WaitForChild("UI"):GetChildren()) do
-		if child.Name == "Intro" then continue end
-		if child.Name == "Menu" or child.Name == "Menu_Scenes" then
-			-- These are normally persistent, but Roblox can still remove their
-			-- ScreenGui descendants during a respawn. Restore the authored tree
-			-- if it is absent instead of leaving MenuService with no UI to show.
-			
-			if not player.PlayerGui:FindFirstChild(child.Name) then
-				local clone = child:Clone()
-				for _, gui in ipairs(clone:GetDescendants()) do
-					if gui:IsA("ScreenGui") then gui.ResetOnSpawn = false end
-				end
-				if clone:IsA("ScreenGui") then clone.ResetOnSpawn = false end
-				clone.Parent = player:WaitForChild("PlayerGui")
-			end
-			continue
-		end
-		
-		if player.PlayerGui:FindFirstChild(child.Name) then
-			continue
-		end
-		
-		child:Clone().Parent = player:WaitForChild("PlayerGui")
-	end
+ CopyUI(player)
 end
 
 local function HandleCharacter(player: Player, character: Model, ragdollObject)
@@ -426,7 +413,7 @@ local function HandleCharacter(player: Player, character: Model, ragdollObject)
 	local humanoid: Humanoid = character:WaitForChild("Humanoid")
 	humanoid.BreakJointsOnDeath = false
 
-	local maxHealth = if character:GetAttribute("IsDreadnought") then 11000 elseif character:GetAttribute("IsShockTrooper") then 300 else 200
+	local maxHealth = if character:GetAttribute("IsDreadnought") then 11000 elseif character:GetAttribute("IsShockTrooper") then 300 else require(ReplicatedStorage.Shared.Library.MasterReference.Base).base_health
 	humanoid.MaxHealth = maxHealth
 	humanoid.Health = maxHealth
 	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
@@ -454,6 +441,7 @@ local function HandleCharacter(player: Player, character: Model, ragdollObject)
 		ApplyFullAppearance(character, player)
 	end)
 
+	require(script.Parent.DeathAudioService).Bind(character,humanoid)
 	humanoid.Died:Connect(function()
 		character.Archivable = true
 		local characterClone = character:Clone()
@@ -467,6 +455,7 @@ local function HandleCharacter(player: Player, character: Model, ragdollObject)
 			characterClone.Parent = bodiesFolder
 		end
 
+		require(script.Parent.DeathAudioService).AttachCorpse(character,humanoid,characterClone)
 		ragdollObject:_special_apply(characterClone, character:FindFirstChild("helmet", true))
 
 		player:SetAttribute("Active", nil)
@@ -596,6 +585,10 @@ function Module.SetupTrainingCharacter(character: Model, teamName: string)
 end
 
 function Module.start_module()
+ -- StarterGui must not inject another copy of the retired imported main.
+ for _,screen in ipairs(game:GetService("StarterGui"):GetChildren()) do
+  if screen.Name=="main" and screen:IsA("ScreenGui") and screen:FindFirstChild("core_game") then screen:Destroy() end
+ end
 	for _, player in ipairs(Players:GetPlayers()) do
 		task.spawn(LoadPlayer, player)
 	end

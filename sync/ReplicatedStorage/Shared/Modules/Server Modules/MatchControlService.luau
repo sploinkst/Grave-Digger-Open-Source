@@ -4,6 +4,7 @@ local Rules=require(RS.Shared.Library.MasterPortRules)
 local V=require(script.Parent.MasterActions.Validation)
 local Service={}
 local remote=V.Remote("MatchControl")
+local SpawnSelection=require(script.Parent.GameManager.SpawnSelection)
 local votes={}
 local voteGeneration=-1
 function Service.Surrender(player,forced)
@@ -29,6 +30,13 @@ function Service.start_module()
 	if Service.started then return end; Service.started=true
 	remote.OnServerEvent:Connect(function(player,action,choice)
 		if not V.Cooldown(player,"MatchControl",0.25) then return end
+		if action=="CampaignState" then require(script.Parent.GameManager.MapVote).Replay(player);return end
+		if action=="VoteMap" then require(script.Parent.GameManager).VoteMap(player,choice);return end
+		if action=="SpawnOptions" then remote:FireClient(player,"SpawnOptions",SpawnSelection.Options(player));return end
+		if action=="SelectSpawn" then
+			if SpawnSelection.Select(player,choice) then remote:FireClient(player,"SpawnSelected",choice) end
+			return
+		end
 		if action=="Surrender" then Service.Surrender(player,false); return end
 		if action=="ForcedSurrender" then Service.Surrender(player,true); return end
 		if action~="Vote" then return end

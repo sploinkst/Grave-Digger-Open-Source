@@ -1,0 +1,15 @@
+local file=assert(io.open('sync/ReplicatedStorage/Shared/Modules/Client Modules/VoiceReceiver.luau','rb'))
+local source=file:read('*a');file:close()
+local code=assert(source:match('(local function closeWheel.-)\nlocal function bindWheel'))
+local sent={}
+local env=setmetatable({wheel={Visible=false},selected='help',wheelOpen=false,
+ send=function(command) sent[#sent+1]=command end},{__index=_G})
+local close=assert(load(code..'\nreturn closeWheel','voice menu submission','t',env))()
+close(true);assert(#sent==0 and env.selected==nil)
+env.wheelOpen=true;env.selected='help';close(true)
+assert(#sent==1 and sent[1]=='help' and not env.wheelOpen)
+close(true);assert(#sent==1)
+env.wheelOpen=true;env.selected='ammo';close(false);assert(#sent==1)
+assert(not source:find('for input, command in pairs(Rules.Inputs)',1,true))
+assert(source:find('sender.DisplayName .. ": Danger over there"',1,true))
+print('Voice menu: closed-menu submission blocked, one selection sends once, cancellation sends nothing; display names used')

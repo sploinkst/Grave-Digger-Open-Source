@@ -80,7 +80,6 @@ end
 
 function RadioRifle:_on_equip()
 	inheritedEquip(self)
-	self:_playConfiguredSound("draw")
 end
 
 function RadioRifle:aim()

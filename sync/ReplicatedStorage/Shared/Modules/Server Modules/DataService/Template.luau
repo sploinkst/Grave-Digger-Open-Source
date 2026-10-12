@@ -163,6 +163,10 @@ return {
 		},
 		
 		["Immersion"] = {
+            ["DisableTransparent"] = {DisplayName="Disable Character Transparency", Current=false, Base=false},
+            ["LeaningTilt"] = {DisplayName="Leaning Camera Tilt", Current=true, Base=true},
+            ["DynamicReverb"] = {DisplayName="Dynamic Reverb", Current=true, Base=true},
+            ["LaserObstruction"] = {DisplayName="Laser Barrel Obstruction", Current=false, Base=false},
 			["UntranslatedVoiceComms"] = {
 				DisplayName = "Enable Untranslated Voice Commands",
 				DisplayText = "Voice commnds will be presented in that players set language, rather then the selected game language",
@@ -471,7 +475,9 @@ return {
 		["CMDRLevel"] = 5,
         ["Progression"] = {Medals=0, Duty=0, Rank=0, PlaySeconds=0, Kills=0, Deaths=0},
         ["Mastery"] = {},
-        ["Cosmetics"] = {HairColour="Brown", SkinColour="Avatar", Gender="m", Language="american", Helmet="Default", Accessories={}},
+        ["Skins"] = {},
+        ["Skins"] = {},
+        ["Cosmetics"] = {HairColour="Brown", SkinColour="Avatar", Gender="m", Language="american", Helmet="Default", HatX=0.5, HatY=0.5, HatZ=0.5, Accessories={}},
         ["CosmeticUnlocks"] = {},
 		["Dogtags"] = {
 			["Empire"] = 0,

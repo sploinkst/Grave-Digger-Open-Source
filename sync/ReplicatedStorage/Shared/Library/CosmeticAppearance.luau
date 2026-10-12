@@ -1,3 +1,4 @@
+local Master = require(script.Parent.MasterCosmetics)
 local Appearance = {}
 Appearance.HairColours = {Brown = Color3.fromRGB(92, 58, 35), Black = Color3.fromRGB(24, 22, 21), Red = Color3.fromRGB(151, 59, 32), Blonde = Color3.fromRGB(218, 184, 112)}
 Appearance.SkinColours = {Light = Color3.fromRGB(255, 219, 172), Fair = Color3.fromRGB(241, 194, 125), Tan = Color3.fromRGB(198, 134, 66), Brown = Color3.fromRGB(141, 85, 36), Dark = Color3.fromRGB(82, 50, 30)}
@@ -7,7 +8,7 @@ Appearance.Categories = {
 	gender = {Key="Gender", Label="Gender", Choices={"m", "f"}, Labels={m="Male", f="Female"}},
 	language = {Key="Language", Label="Language", Choices={"american", "brazil", "british", "german", "polish", "russian"}, Labels={american="American", brazil="Brazilian", british="British", german="German", polish="Polish", russian="Russian"}},
 	helmet = {Key="Helmet", Label="Helmet", Choices={"Default", "None"}},
-	accessories = {Key="Accessories", Label="Accessories"},
+	accessories = {Key="Accessories", Label="Accessories", Labels=Master.accessories},
 }
 
 local function find(parent, name)
@@ -38,6 +39,17 @@ function Appearance.BlankHead(character)
 end
 
 local function mount(character, source)
+	local limb = source:FindFirstChild("limb")
+	if source:IsA("BasePart") and limb and limb:IsA("StringValue") then
+		local player=game:GetService("Players"):GetPlayerFromCharacter(character)
+		local team=player and player.Team or (game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer.Team)
+		if not team then
+			local teamName=character:GetAttribute("Team")
+			team=teamName and game:GetService("Teams"):FindFirstChild(teamName)
+		end
+		Master:add_accessory(character,source.Name,team)
+		return
+	end
 	local clone = source:Clone()
 	clone:SetAttribute("CosmeticAppearance", true)
 	for _, item in clone:GetDescendants() do
@@ -120,12 +132,32 @@ function Appearance.Apply(character, data)
 		end
 		colours.Parent = character
 	end
+	for _, item in character:GetDescendants() do
+		if item:GetAttribute("CosmeticAppearance") then item:Destroy() end
+		local original=item:GetAttribute("CosmeticOriginalTransparency")
+		if original~=nil and item:IsA("BasePart") then item.Transparency=original; item:SetAttribute("CosmeticOriginalTransparency",nil) end
+	end
 	local equipped = data and data:FindFirstChild("Accessories")
 	local assets = Appearance.Assets()
 	if equipped and assets then
 		for _, value in equipped:GetChildren() do
 			local source = assets:FindFirstChild(value.Name)
 			if value:IsA("BoolValue") and value.Value and source then mount(character, source) end
+		end
+	end
+	local function axis(name)
+		local value = data and data:FindFirstChild(name)
+		return value and value:IsA("NumberValue") and math.clamp(value.Value,0,1)-0.5 or 0
+	end
+	local offset = CFrame.new(axis("HatX"),axis("HatY"),axis("HatZ"))
+	local head = character:FindFirstChild("Head")
+	for _, object in character:GetChildren() do
+		if object:GetAttribute("CosmeticAppearance") then
+			for _, joint in object:GetDescendants() do
+				if joint:IsA("JointInstance") and (joint.Part0==head or joint.Part1==head) then
+					joint.C1 = joint.C1 * offset
+				end
+			end
 		end
 	end
 end

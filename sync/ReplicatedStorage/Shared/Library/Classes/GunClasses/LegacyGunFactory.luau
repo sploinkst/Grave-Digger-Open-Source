@@ -10,6 +10,12 @@ local BasePistol = require(script.Parent.Parent.BasePistol)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
 local BaseShotgun = require(script.Parent.Parent.BaseShotgun)
 local WeaponIds = require(script.Parent.Parent.Parent.WeaponIds)
+local WeaponSounds = require(script.Parent.Parent.Parent.WeaponSounds)
+local WeaponModStats = require(script.Parent.Parent.Parent.WeaponModStats)
+local WeaponPreviewMounts = require(script.Parent.Parent.Parent.WeaponPreviewMounts)
+local WeaponModBehavior = require(script.Parent.Parent.Parent.WeaponModBehavior)
+local WeaponModAppearance = require(script.Parent.Parent.Parent.WeaponModAppearance)
+local WeaponModFeedback = require(script.Parent.Parent.Parent.WeaponModFeedback)
 
 local Assets = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets")
 local GunAssets = Assets:WaitForChild("Guns")
@@ -144,7 +150,9 @@ local function buildAnimations(animationId: string, strict: boolean?, preferLong
 	local guns = Assets:FindFirstChild("Animations")
 		and Assets.Animations:FindFirstChild("Tools")
 		and Assets.Animations.Tools:FindFirstChild("Guns")
-	local folder = firstChild(guns, { animationId })
+	local names=WeaponIds.Aliases(animationId)
+ table.insert(names,1,animationId)
+ local folder = firstChild(guns,names) or firstChild(ReplicatedStorage:FindFirstChild("ToolAnimations"),names)
 	local prince = guns and guns:FindFirstChild("PrinceRifle")
 	if strict then
 		prince = nil
@@ -200,8 +208,10 @@ local function buildAnimations(animationId: string, strict: boolean?, preferLong
 	-- override is resolved only inside that gun's selected animation folder.
 	if animationMap then
 		for actionName, sourceNames in pairs(animationMap) do
-			local names = if type(sourceNames) == "table" then sourceNames else { sourceNames }
-			result[actionName] = animation(folder, names)
+			if sourceNames ~= false then
+				local names = if type(sourceNames) == "table" then sourceNames else { sourceNames }
+				result[actionName] = animation(folder, names)
+			end
 		end
 	end
 
@@ -219,6 +229,10 @@ local function buildAnimations(animationId: string, strict: boolean?, preferLong
 				end
 			end
 		end
+	end
+	-- Explicit master omissions must survive automatic special-clip discovery.
+	for actionName, sourceNames in pairs(animationMap or {}) do
+		if sourceNames == false then result[actionName] = nil end
 	end
 
 	for _, value in result do
@@ -308,6 +322,13 @@ local Factory = {}
 
 function Factory.create(config)
 	config = mergeLegacyStats(config)
+	local mod = WeaponModStats[config.className]
+	if mod then
+		for key, value in pairs(mod) do config[key] = value end
+		config.Weight = mod.size or config.Weight
+		config.AuthoredWelds = WeaponPreviewMounts[WeaponIds.MasterSourceName(config.className)] or config.AuthoredWelds
+		WeaponModBehavior.Configure(config, mod.variant)
+	end
 	-- Canonical wrappers carry an embedded LegacyStats snapshot. Never execute
 	-- the archived module in that case: those files still reference the removed
 	-- ReplicatedStorage.shared/core_modules hierarchy.
@@ -334,7 +355,7 @@ function Factory.create(config)
 		local self = setmetatable(Base.new(info), Class)
 		local animationId = WeaponIds.Canonical(config.AnimationGunType or config.animations or config.assetName or className)
 		local assetName = config.assetName or WeaponIds.AssetName(className)
-		local modelNames = aliasNames(config.modelNames or {}, assetName, className)
+		local modelNames = aliasNames(mod and {className, WeaponIds.MasterSourceName(className)} or {}, config.modelNames or {}, assetName, className)
 		local soundNames = aliasNames(config.soundNames or {}, assetName, className)
 		local animationNames = if config.StrictAnimations == true
 			then { config.AnimationGunType or config.animations or className }
@@ -344,36 +365,58 @@ function Factory.create(config)
 		self.name = config.name or className
 		self.StrictAnimations = config.StrictAnimations == true
 		self.PreferOwnDraw = config.PreferOwnDraw == true
+		self.AnimationOmissions = {}
+		for action, source in pairs(config.AnimationMap or {}) do
+			if source == false then self.AnimationOmissions[action] = true end
+		end
 		self.item_image = Class.Tool_Image
 		self.Designation = Class.Designation
 		self.ANIM_LAYERS = config.ANIM_LAYERS or DEFAULT_LAYERS
 		self.AnimationGunType = animationId
-		for _, candidate in animationNames do
-			self.animations = buildAnimations(candidate, config.StrictAnimations == true, config.preferLongAnimations == true, config.AnimationMap, config.WeaponCategory)
-			if self.animations then
-				self.AnimationGunType = candidate
-				break
-			end
-		end
+        self.animations={}
+        for _,candidate in animationNames do
+            local resolved=buildAnimations(candidate,config.StrictAnimations==true,config.preferLongAnimations==true,config.AnimationMap,config.WeaponCategory)
+            if type(resolved)=="table" then
+                self.animations=resolved
+                self.AnimationGunType=candidate
+                break
+            end
+        end
 
 		local toolModels = GunAssets:FindFirstChild("ToolModels")
 		local holsters = GunAssets:FindFirstChild("Holsters")
 		local sharedSounds = Assets:FindFirstChild("Sounds")
 		local sounds = sharedSounds and sharedSounds:FindFirstChild("Guns")
-		self.model_reference = firstChild(toolModels, modelNames)
+		if mod then
+			self.model_reference = WeaponModAppearance.Model(toolModels, className, Assets:FindFirstChild("Equipment"))
+			assert(self.model_reference, "Missing weapon model (dedicated or shared): " .. WeaponIds.MasterSourceName(className))
+		else
+			self.model_reference = firstChild(toolModels, modelNames)
+		end
 		local holsterNames = {}
-		for _, name in aliasNames(config.holsterNames or {}, assetName, className) do
+		for _, name in aliasNames(mod and {className, WeaponIds.MasterSourceName(className)} or {}, config.holsterNames or {}, assetName, className) do
 			table.insert(holsterNames, name)
 			table.insert(holsterNames, name .. "Holster")
 		end
-		self.holster_reference = firstChild(holsters, holsterNames)
+		if mod then
+			-- A standard holster model can omit the mod geometry entirely.
+			self.holster_reference = firstChild(holsters, aliasNames({className, WeaponIds.MasterSourceName(className)}))
+		else
+			self.holster_reference = firstChild(holsters, holsterNames)
+		end
 		self.SoundFolder = firstChild(sounds, soundNames)
 		self.FireSound = sound(self.SoundFolder, { "fire", "Fire", "shot" })
+		if mod then
+			self.FireSound = WeaponSounds.Find(self, "variantfire") or self.FireSound
+			self.WeaponModification = mod.variant
+			self.DisableSteadyAimAccuracy = mod.variant == "lever" or mod.variant == "steyr"
+		end
+		self.special = config.special or {}
 
 		self.motor_6d_data = {
 			Parent = config.WeaponCategory == "Pistol" and "Right Arm" or "Left Arm",
 			Part0 = config.WeaponCategory == "Pistol" and "Right Arm" or "Left Arm",
-			Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
+			Part1 = WeaponModAppearance.Root(self.model_reference),
 			C0 = config.GripC0 or self.DefaultGripC0,
 			C1 = CFrame.identity,
 		}
@@ -422,6 +465,7 @@ function Factory.create(config)
 		self._reloadCancelled = false
 		self._autoFireHeld = false
 		self._autoFireLoopActive = false
+		if config.doubleFireAlt then self.Alt_Mode = false end
 		self:_initShoulderTracking()
 		
 		return self
@@ -442,7 +486,7 @@ function Factory.create(config)
 		self:_playConfiguredSound(soundNames[math.random(1, #soundNames)])
 	end
 
-	function Class:_isBipodActive(): boolean
+	function Class:_hasBipodSupport(): boolean
 		if not config.bipod then return false end
 		local character = Players.LocalPlayer.Character
 		local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -461,6 +505,15 @@ function Factory.create(config)
 		end
 		return validSupport(workspace:Raycast(origin + camera.CFrame.LookVector * 4, down, params))
 			or validSupport(workspace:Raycast(origin + camera.CFrame.LookVector * 1.5, down, params))
+	end
+
+	function Class:_isBipodActive(): boolean
+		if self._modFeedbackConnection then return self._bipodActive == true end
+		return self:_hasBipodSupport()
+	end
+
+	function Class:_stopModFeedback()
+		WeaponModFeedback.Stop(self)
 	end
 
 	function Class:_isBusyForActivation(): boolean
@@ -665,14 +718,18 @@ function Factory.create(config)
 			return
 		end
 		if config.doubleFireAlt and self.Alt_Mode == true and self.Capacity >= 2 then
+			local equipGeneration = self._equipGeneration
 			local first = self:_fireShotgunBlast({
 				bulletSpeed = self.BulletSpeed,
 				fireAnimation = self.current_shoulder ~= "Right" and "Fire_Left" or "Fire",
 				sound = self.FireSound,
-				fireDelay = 0,
+				-- Keep the firing lock through the master script's barrel interval.
+				-- This interval is fixed even when normal fire-rate buffs are active.
+				fireDelay = config.doubleFireDelay or 0.08,
+				fixedFireDelay = true,
 			})
 			if first and self.Equipped then
-				task.wait(config.doubleFireDelay or 0.08)
+				if self._equipGeneration ~= equipGeneration then return first end
 				self:_fireShotgunBlast({
 					bulletSpeed = self.BulletSpeed,
 					fireAnimation = self.current_shoulder ~= "Right" and "Fire_Left" or "Fire",
@@ -692,6 +749,11 @@ function Factory.create(config)
 
 	function Class:setAltMode()
 		if not self.Equipped or self:_isBusyForActivation() then return end
+		if config.doubleFireAlt then
+			local now = os.clock()
+			if now < (self._nextAltModeAt or 0) then return end
+			self._nextAltModeAt = now + 0.3
+		end
 		self.Alt_Mode = not self.Alt_Mode
 		if config.doubleFireAlt then
 			self:notify(self.Alt_Mode and "Fire mode: Both barrels" or "Fire mode: Single barrel")
@@ -709,7 +771,9 @@ function Factory.create(config)
 		if config.reloadStartIsFullReload or config.require_full_load then
 			return self:_reloadMagazine()
 		end
+		local reserveAmmo = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
 		if config.doubleBarrelReload and self.IsVeteran and self.Capacity <= 0
+			and reserveAmmo and reserveAmmo.Value >= 2
 			and self.RegisteredAnimations and self.RegisteredAnimations.Reload_Loop_Vet then
 			local player = Players.LocalPlayer
 			local doomReload = self.RegisteredAnimations.Reload_Empty_Doom
@@ -721,6 +785,7 @@ function Factory.create(config)
 				useVeteranAnimations = false,
 				loopAnim = doomReload and "Reload_Dual_Doom" or "Reload_Loop_Vet",
 				roundsPerLoop = 2,
+				loopWait = (config.reload_loop or self.reload_loop or 1) * 1.4,
 				endAnim = doomReload and "Reload_End_Doom" or "Reload_End",
 			})
 		end
@@ -747,6 +812,7 @@ function Factory.create(config)
 
 	function Class:_on_equip()
 		self.Equipped = true
+		if mod then WeaponModFeedback.Start(self) end
 		if config.DreadLocked then
 			Players.LocalPlayer:SetAttribute("CantUnequip", true)
 		end
@@ -774,6 +840,7 @@ function Factory.create(config)
 	end
 
 	function Class:_on_unequip()
+		WeaponModFeedback.Stop(self)
 		self.Equipped = false
 		self.Firing = false
 		self._autoFireHeld = false

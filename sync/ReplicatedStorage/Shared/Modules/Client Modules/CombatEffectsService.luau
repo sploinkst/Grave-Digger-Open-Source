@@ -39,7 +39,7 @@ local function coreGame()
 end
 
 local function image(core, name)
-	local object = core and core:FindFirstChild(name)
+	local object = Assets.Widget(name) or (core and core:FindFirstChild(name))
 	return object and (object:IsA("ImageLabel") or object:IsA("ImageButton")) and object or nil
 end
 
@@ -149,7 +149,6 @@ function Service.EarRing(force)
 	ringingUntil = now + 2.5
 	if ringingSound then ringingSound:Destroy() end
 	ringingSound = playSound("earring")
-	playSound("helmet_hit")
 	if character:GetAttribute("Class") ~= "Vanguard" then
 		playBody(math.random(1, 2) == 1 and "coverexplosion_larm" or "coverexplosion_rarm", Enum.AnimationPriority.Action2, 1, 0.5)
 	end
@@ -223,7 +222,7 @@ function Service.Flinch(direction)
 		flash.Name = "CombatFlinch"
 		flash.Visible = true
 		flash.ImageTransparency = 0
-		flash.Parent = core
+		flash.Parent = template.Parent
 		TweenService:Create(flash, TweenInfo.new(0.6), {ImageTransparency = 1}):Play()
 		Debris:AddItem(flash, 0.65)
 	end

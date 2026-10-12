@@ -20,17 +20,20 @@ local allowedchanges_table = {
 local loadout_targets = {
 	LoadoutPrimary = "Primary",
 	LoadoutSecondary = "Secondary",
+	LoadoutMelee = "Melee",
 }
 local Classes = require(ReplicatedStorage.Shared.Library.ClassDefinitions)
 local ClassService = require(script.Parent.Parent.ClassService)
 local WeaponHandling = require(ReplicatedStorage.Shared.Library.WeaponHandling)
 local Perks = require(ReplicatedStorage.Shared.Library.PerkDefinitions)
+local WeaponIds = require(ReplicatedStorage.Shared.Library.WeaponIds)
 
 local started = false
 
 local function set_loadout(player: Player, target: string, weapon_name: any)
 	local slot_name = loadout_targets[target]
 	if not slot_name or type(weapon_name) ~= "string" then return end
+	if Classes.IsClassWeapon(weapon_name) then return end
 
 	local player_data = player:FindFirstChild("PlayerData")
 	local data = player_data and player_data:FindFirstChild("PlayerData")
@@ -48,12 +51,23 @@ local function set_loadout(player: Player, target: string, weapon_name: any)
 	local weapon_script = gun_classes:FindFirstChild(weapon_name) or tool_classes:FindFirstChild(weapon_name)
 	if not weapon_script or not weapon_script:IsA("ModuleScript") then return end
 
-	if weapon_script.Parent == gun_classes and not WeaponHandling.IsBaseline(weapon_name) then return end
+	local variant = WeaponIds.MasterSourceName(weapon_name):match("variant$") ~= nil
+	if weapon_script.Parent == gun_classes and not WeaponHandling.IsBaseline(weapon_name) and not variant then return end
+	if variant then
+		local unlocked = data and data:FindFirstChild("Unlocked Items")
+		local value = unlocked and unlocked:FindFirstChild(weapon_name)
+		if value and value:IsA("BoolValue") and not value.Value then return end
+	end
 	local success, weapon_class = pcall(require, weapon_script)
 	if not success or type(weapon_class.Weight) ~= "number" then return end
 	-- Firearms can occupy either weapon slot. Non-firearm tools retain their
 	-- authored slot restriction so class equipment cannot leak into loadouts.
 	if weapon_script.Parent ~= gun_classes and weapon_class.Designation ~= slot_name then return end
+	if slot_name == "Melee" then
+		if weapon_script.Parent ~= tool_classes then return end
+		slot.Value = weapon_name
+		return
+	end
 
 	local definition = Classes.Get(Classes.Selected(player))
 	if definition.NoFirearms and weapon_script.Parent == gun_classes then return end

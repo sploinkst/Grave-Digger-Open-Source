@@ -10,8 +10,31 @@ local Util = {}
 
 local HitMarker = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"):WaitForChild("UI"):WaitForChild('HitMarker')
 
--- // Penetration profiles (used by CanPierceFunction inside setupFastCast)
+local UserInputService = game:GetService("UserInputService")
 
+local SelectionPresets = {
+	["Medical"] = {
+		["Vial1"] = {
+			["Image"] = "rbxassetid/0",
+		}
+	}
+}
+
+local SelectionMapping = {
+	[Enum.KeyCode.One] = 1,
+	[Enum.KeyCode.Two] = 2,
+	[Enum.KeyCode.Three] = 3,
+	[Enum.KeyCode.Four] = 4,
+	[Enum.KeyCode.Five] = 5,
+	[Enum.KeyCode.Six] = 6,
+	[Enum.KeyCode.Seven] = 7,
+	[Enum.KeyCode.Eight] = 8,
+	[Enum.KeyCode.Nine] = 9,
+}
+
+local SelectionSlots = {}
+
+-- // Penetration profiles (used by CanPierceFunction inside setupFastCast)
 local Penetration_Profiles = {
 	[4] = { Stud_Limit = 4, Materials = { Enum.Material.Wood, Enum.Material.WoodPlanks }, Distance_Limiter = 70 },
 	[3] = { Stud_Limit = 3, Materials = { Enum.Material.Wood, Enum.Material.WoodPlanks }, Distance_Limiter = 50 },
@@ -89,29 +112,43 @@ function Util.show_holster(player: Player, holster_reference: Instance)
 	end
 end
 
--- // only use when you know the holster is there
-function Util.reverse_search_holster(player: Player, name: string)
-	print("Player, name is:", player.Name, name)
+-- Rendering can lag behind tool registration. A missing holster must not block equip.
+function Util.reverse_search_holster(player: Player, name: string?, tool: Tool?)
+	local character = player.Character
+	local characterData = character and character:FindFirstChild("CharacterData")
+	local renderedHolsters = characterData and characterData:FindFirstChild("Rendered_Holsters")
+	if not renderedHolsters then return nil end
 
-	local character = player.Character or player.CharacterAdded:Wait()
-	local characterData = character:WaitForChild("CharacterData")
-	local renderedHolsters = characterData:WaitForChild("Rendered_Holsters")
-
-	local holster = renderedHolsters:WaitForChild(name)
-
-	if not holster then
-		warn("Could not find holster with:", name)
+	local inventoryId = tool and tool:GetAttribute("InventoryId")
+	if inventoryId then
+		for _, holster in ipairs(renderedHolsters:GetChildren()) do
+			if holster:GetAttribute("InventoryId") == inventoryId then return holster end
+		end
+		return nil
 	end
-
-	return holster
+	if not name then return nil end
+	local exact = renderedHolsters:FindFirstChild(name)
+	if exact then return exact end
+	for _, holster in ipairs(renderedHolsters:GetChildren()) do
+		if holster:GetAttribute("ModelName") == name then return holster end
+	end
+	return nil
 end
 
-function Util.reverse_search_model(player, name: string)
-	local character = player.Character or player.CharacterAdded:Wait()
-	local characterdata = character:WaitForChild("CharacterData")
-	local Equipment_Folder = characterdata:WaitForChild("Equipment")
-
-	return Equipment_Folder:WaitForChild(name)
+function Util.reverse_search_model(player, name: string, tool: Tool?)
+	local character = player.Character
+	if not character then return nil end
+	local deadline = os.clock() + 5
+	repeat
+		if player.Character ~= character or not character.Parent
+			or (tool and tool.Parent ~= character) then return nil end
+		local data = character:FindFirstChild("CharacterData")
+		local equipment = data and data:FindFirstChild("Equipment")
+		local model = equipment and equipment:FindFirstChild(name)
+		if model then return model end
+		task.wait(0.03)
+	until os.clock() >= deadline
+	return nil
 end
 
 function Util.send_raycast(origin: Vector3, direction: Vector3, blacklist: table, whitelist: table)
@@ -561,7 +598,6 @@ function Util.setupFastCast(config: {
 	return caster, behavior
 end
 
-local Camera_Service = require(game.ReplicatedStorage.Shared.Modules["Client Modules"].CameraService)
 local recoilRandom = Random.new()
 
 -- Recoil
@@ -572,6 +608,8 @@ function Util.applyRecoil(
 	doRoll: boolean?,
 	scale: number
 )
+	if not RunService:IsClient() then return end
+	local Camera_Service = require(ReplicatedStorage.Shared.Modules["Client Modules"].CameraService)
 	-- Master recoil_kick: one pitch value and one random signed yaw value
 	-- repeated recoil_count + 1 times. Weapon recoil is degrees / 10 per step.
 	local vertical = math.rad(recoil / 10)
@@ -676,7 +714,11 @@ function Util.fetch_accessory(accessory_name)
 end
 
 function Util.create_object(character, accessory)
-	local accessory_folder = character:WaitForChild("CharacterData"):WaitForChild("Equipment")
+	if not character or not character.Parent or not accessory or not accessory:IsA("Model") then return nil end
+ local data=character:FindFirstChild("CharacterData") or character:WaitForChild("CharacterData",5)
+ if not data or not character.Parent then return nil end
+ local accessory_folder=data:FindFirstChild("Equipment") or data:WaitForChild("Equipment",5)
+ if not accessory_folder or not character.Parent then return nil end
 
 	local clone = accessory:Clone()
 	clone.Parent = accessory_folder
@@ -725,7 +767,10 @@ function Util.quick_give_accessory(player, accessory: Model, create_object: bool
 		return
 	end
 
-	local player_accessory_folder = player.GameData.Accessorys
+	if not player then return nil end
+ local data=player:FindFirstChild("GameData")
+ local player_accessory_folder=data and data:FindFirstChild("Accessorys")
+ if not player_accessory_folder then return nil end
 
 	if create_string then
 		local string_value = Instance.new("StringValue")
@@ -788,4 +833,204 @@ function Util.setammo(player)
 		end
 	end
 end
+
+local function FindFirstEmptySelectionSlot()
+	for i = 1, 9 do
+		if not SelectionSlots[i] then
+			return i
+		end
+	end
+end
+
+function Util.CreateSelectionUI(preset, callback)
+	print("[Selection] CreateSelectionUI called")
+	print("[Selection] Preset:", preset)
+
+	local player = Players.LocalPlayer
+	local player_gui = player.PlayerGui
+
+	local ui = player_gui:WaitForChild("Selections")
+	local selections_holder = ui.selectionboxes.selections
+	local selected_example = selections_holder.example
+
+	table.clear(SelectionSlots)
+
+	player:SetAttribute("CantUnequip", true)
+	print("[Selection] CantUnequip set to true", player:GetAttribute("CantUnequip"))
+	print("[Selection] Selection slots cleared")
+
+	local selection_connection
+
+	if preset == "Medical" then
+		local preset_data = SelectionPresets[preset]
+
+		if not preset_data then
+			warn("[Selection] Could not find preset:", preset)
+			return
+		end
+
+		print("[Selection] Loading preset:", preset)
+
+		for ui_name, ui_preset in pairs(preset_data) do
+			print("[Selection] Creating selection:", ui_name)
+
+			local slot = FindFirstEmptySelectionSlot()
+
+			if not slot then
+				warn("[Selection] No available slot for:", ui_name)
+				break
+			end
+
+			SelectionSlots[slot] = ui_name
+
+			print("[Selection] Assigned", ui_name, "to slot", slot)
+
+			local new = selected_example:Clone()
+			new.Name = ui_name
+			new.Visible = true
+			new.Parent = selections_holder
+
+			new:SetAttribute("SelectionSlot", slot)
+
+			print("[Selection] Created UI:", new:GetFullName())
+
+			if ui_preset.Image then
+				local image = new:FindFirstChild("Image", true)
+
+				if image and image:IsA("ImageLabel") then
+					image.Image = ui_preset.Image
+
+					print(
+						"[Selection] Applied image to",
+						ui_name,
+						"Image:",
+						ui_preset.Image
+					)
+				else
+					warn(
+						"[Selection] Could not find ImageLabel for:",
+						ui_name
+					)
+				end
+			end
+		end
+	else
+		warn("[Selection] Unknown preset:", preset)
+	end
+
+	print("[Selection] Current slot mapping:")
+
+	for slot, selection_name in pairs(SelectionSlots) do
+		print(
+			"[Selection] Slot",
+			slot,
+			"=",
+			selection_name
+		)
+	end
+
+	selection_connection = UserInputService.InputBegan:Connect(function(input, game_processed)
+		print(
+			"[Selection] InputBegan:",
+			input.KeyCode.Name,
+			"GameProcessed:",
+			game_processed
+		)
+
+		if game_processed then
+			print("[Selection] Input ignored because game processed it")
+			return
+		end
+
+		local selection = SelectionMapping[input.KeyCode]
+
+		if not selection then
+			print(
+				"[Selection] Key has no selection mapping:",
+				input.KeyCode.Name
+			)
+			return
+		end
+
+		print(
+			"[Selection] Key",
+			input.KeyCode.Name,
+			"mapped to slot",
+			selection
+		)
+
+		local selected_name = SelectionSlots[selection]
+
+		if not selected_name then
+			print(
+				"[Selection] Slot",
+				selection,
+				"is empty"
+			)
+			return
+		end
+
+		print(
+			"[Selection] Selected:",
+			selected_name,
+			"from slot",
+			selection
+		)
+
+		print("[Selection] Calling callback")
+
+		callback(selected_name, selection)
+
+		print("[Selection] Callback completed")
+
+		Util.CloseSelectionUI()
+
+		if selection_connection then
+			print("[Selection] Disconnecting input connection")
+
+			selection_connection:Disconnect()
+			selection_connection = nil
+			task.delay(0.2, function()
+				player:SetAttribute("CantUnequip", nil)
+			end)
+		end
+	end)
+
+	print("[Selection] Input connection created")
+end
+
+function Util.CloseSelectionUI()
+	print("[Selection] CloseSelectionUI called")
+
+	local player = Players.LocalPlayer
+	local ui = player.PlayerGui:WaitForChild("Selections")
+	local selections_holder = ui.selectionboxes.selections
+
+	local removed = 0
+
+	for _, selection_ui in selections_holder:GetChildren() do
+		if selection_ui:IsA("ImageButton") and selection_ui.Name ~= "example" then
+			print(
+				"[Selection] Removing UI:",
+				selection_ui.Name
+			)
+
+			selection_ui:Destroy()
+			removed += 1
+		end
+	end
+
+	table.clear(SelectionSlots)
+
+	print(
+		"[Selection] Selection UI closed. Removed:",
+		removed,
+		"elements"
+	)
+
+	print("[Selection] Selection slots cleared")
+	
+	print("[Selection] CantUnequip set to false", player:GetAttribute("CantUnequip"))
+end
+
 return Util

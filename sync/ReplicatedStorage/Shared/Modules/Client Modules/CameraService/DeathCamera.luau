@@ -1,7 +1,6 @@
 local workspace_service = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local PlayerService = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Camera = workspace_service.CurrentCamera
@@ -14,6 +13,7 @@ local DeathCamera = setmetatable({}, { __index = CameraClass })
 DeathCamera.__index = DeathCamera
 
 local LocalPlayer = PlayerService.LocalPlayer
+local DeathScreen = require(game:GetService("ReplicatedStorage").Shared.Library.UI.DeathScreen)
 
 local currentHighlight
 local CameraService
@@ -21,10 +21,6 @@ local CameraService
 local characterAddedConnection
 
 local ended = false
-local deathScreenTweens = {}
-local deathScreenToken = 0
-local deathFramePositions: {[Instance]: UDim2} = {}
-
 local function NormalizeDeadCamera()
 	LocalPlayer.CameraMode = Enum.CameraMode.Classic
 	LocalPlayer.CameraMaxZoomDistance = 10
@@ -33,76 +29,6 @@ local function NormalizeDeadCamera()
 	UserInputService.MouseIconEnabled = true
 	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 end
-
-local function GetDeathScreen(): GuiObject?
-	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-	local main = playerGui and playerGui:FindFirstChild("main")
-	local coreGame = main and main:FindFirstChild("core_game")
-	local deathScreen = main and main:FindFirstChild("deathscreen")
-		or (coreGame and coreGame:FindFirstChild("deathscreen"))
-	return if deathScreen and deathScreen:IsA("GuiObject") then deathScreen else nil
-end
-
-local function CancelDeathScreenTweens()
-	for _, tween in ipairs(deathScreenTweens) do tween:Cancel() end
-	table.clear(deathScreenTweens)
-end
-
-local function HideDeathScreen()
-	deathScreenToken += 1
-	CancelDeathScreenTweens()
-	local screen = GetDeathScreen()
-	if not screen then return end
-	local spawnFrame = screen:FindFirstChild("spawnframe")
-	if spawnFrame and spawnFrame:IsA("GuiObject") then spawnFrame.Visible = false end
-	local blackout = screen:FindFirstChild("totalblackout")
-	if blackout and blackout:IsA("GuiObject") then blackout.BackgroundTransparency = 1 end
-	for _, name in ipairs({"topframe", "bottomframe"}) do
-		local frame = screen:FindFirstChild(name)
-		if frame and frame:IsA("GuiObject") and deathFramePositions[frame] then
-			frame.Position = deathFramePositions[frame]
-		end
-	end
-	screen.Visible = false
-end
-
-local function PlayDeathScreen()
-	deathScreenToken += 1
-	CancelDeathScreenTweens()
-	local screen = GetDeathScreen()
-	if not screen then
-		warn("[DEATHCAMERA] Missing main.deathscreen")
-		return
-	end
-
-	local top = screen:FindFirstChild("topframe")
-	local bottom = screen:FindFirstChild("bottomframe")
-	local spawnFrame = screen:FindFirstChild("spawnframe")
-	if spawnFrame and spawnFrame:IsA("GuiObject") then spawnFrame.Visible = false end
-	screen.Visible = true
-
-	local function slide(frame: Instance?, fromY: number)
-		if not frame or not frame:IsA("GuiObject") then return end
-		if not deathFramePositions[frame] then deathFramePositions[frame] = frame.Position end
-		local finalPosition = deathFramePositions[frame]
-		frame.Visible = true
-		frame.Position = UDim2.new(finalPosition.X.Scale, finalPosition.X.Offset, fromY, finalPosition.Y.Offset)
-		local tween = TweenService:Create(frame, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Position = finalPosition,
-		})
-		table.insert(deathScreenTweens, tween)
-		tween:Play()
-	end
-
-	slide(top, -1)
-	slide(bottom, 1)
-	local blackout = screen:FindFirstChild("totalblackout")
-	if blackout and blackout:IsA("GuiObject") then
-		blackout.Visible = false
-		blackout.BackgroundTransparency = 1
-	end
-end
-
 
 -- // Finds an unused body and marks that exact body as used.
 -- // The body is returned so the caller can actually use it.
@@ -170,7 +96,6 @@ local function HandleRegularDeath()
 	
 	if CameraService then
 		CameraService.SwitchCamera("SpectateCamera", true)
-		print("SpectateCamera")
 	end
 end
 
@@ -270,7 +195,7 @@ function DeathCamera:Start()
 
 	ended = false
 	NormalizeDeadCamera()
-	PlayDeathScreen()
+	DeathScreen.Show(LocalPlayer.Character)
 
 	RunService:UnbindFromRenderStep("KillCamera")
 
@@ -309,7 +234,6 @@ function DeathCamera:Start()
 
 		if CameraService then
 			CameraService.SwitchCamera("SpectateCamera", true)
-			print("SpectateCamera")
 		end
 	end)
 end
@@ -322,7 +246,7 @@ end
 
 function DeathCamera:End()
 	ended = true
-	HideDeathScreen()
+	DeathScreen.Hide()
 
 	RunService:UnbindFromRenderStep("KillCamera")
 
@@ -341,7 +265,7 @@ end
 
 function DeathCamera:Cut()
 	-- Cut means the kill/body camera is handing control to spectating. The
-	-- player is still dead, so leave the deathscreen visible until respawn.
+	-- player is still dead, so leave the death overlay visible until respawn.
 	ended = true
 	RunService:UnbindFromRenderStep("KillCamera")
 	if currentHighlight then

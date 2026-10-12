@@ -1,4 +1,4 @@
-return require(script.Parent.LegacyGunFactory).create({
+local KnellBanditRevolver = require(script.Parent.LegacyGunFactory).create({
 	className = "KnellBanditRevolver",
 	AuthoredWelds = {
 		equipc0 = CFrame.new(-0.257659912, -1.43795609, -0.50579834, 0, 0, -1, 0.99999994, 0, 0, 0, -1, 0),
@@ -58,3 +58,31 @@ return require(script.Parent.LegacyGunFactory).create({
 	},
 	bulletSpeed = 800,
 })
+
+local baseFire = KnellBanditRevolver.fire
+function KnellBanditRevolver:setAltMode()
+	if not self.Equipped or self:_isBusyForActivation() then return end
+	self.Alt_Mode = not self.Alt_Mode
+	self:notify(self.Alt_Mode and "Single action: cock, then fire" or "Double action: cock and fire")
+end
+function KnellBanditRevolver:fire()
+	if not self.Equipped or self:_isBusyForActivation() then return false end
+	if self.SlideLocked == false then
+		local generation = self._equipGeneration
+		local duration = self.Alt_Mode and 0.25 or 0.15
+		self.Cycling = true
+		self:_playConfiguredSound("hammer")
+		self:_playAnim("Hammer_Pull", false, {restart=true})
+		task.wait(duration / 1.5)
+		if not self.Equipped or generation ~= self._equipGeneration then return false end
+		self:_playConfiguredSound("rotate_cylinder")
+		task.wait(duration - duration / 1.5)
+		if not self.Equipped or generation ~= self._equipGeneration then return false end
+		self.Cycling = false; self.SlideLocked = true
+		if self.Alt_Mode then return false end
+	end
+	local fired = baseFire(self)
+	if fired then self.SlideLocked = false end
+	return fired
+end
+return KnellBanditRevolver

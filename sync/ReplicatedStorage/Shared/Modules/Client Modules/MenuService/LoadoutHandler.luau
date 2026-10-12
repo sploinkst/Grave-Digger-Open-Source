@@ -36,6 +36,14 @@ local WeaponIds = require(
 
 local WeaponHandling = require(replicatedstorage_service.Shared.Library.WeaponHandling)
 local Perks = require(replicatedstorage_service.Shared.Library.PerkDefinitions)
+local modificationOnly, choosingSlot = false, nil
+local modCategoryButton
+local MenuData = require(replicatedstorage_service.Shared.Library.WeaponMenuData)
+local Audio = require(replicatedstorage_service.Shared.Library.GameAudio)
+local MenuPreview = require(script.Parent.Preview)
+local PreviewEquipment = require(script.Parent.PreviewEquipment)
+local menuOwner
+local Layout = require(replicatedstorage_service.Shared.Library.MenuLayout)
 
 local PENETRATION_NAMES = {
 	"Little", "Weak", "Decent", "Strong", "Powerful", "Devastating",
@@ -48,10 +56,12 @@ local function image_id(value): string
 	return "rbxassetid://" .. text
 end
 
+local Localization = require(replicatedstorage_service.Shared.Library.Localization)
 local function set_text(parent: Instance?, name: string, value)
 	local label = parent and parent:FindFirstChild(name, true)
+	if not label and parent and name == "wepname" then label = parent:FindFirstChild("wepnametext", true) end
 	if label and (label:IsA("TextLabel") or label:IsA("TextButton")) then
-		label.Text = tostring(value or "")
+		label.Text = Localization.Text(name, tostring(value or ""), local_player.LocaleId)
 	end
 end
 
@@ -129,36 +139,27 @@ local function get_loadout_ui()
 		return false
 	end
 
-	local menu_scenes = player_gui:FindFirstChild("Menu_Scenes")
-
-	if not menu_scenes then
-		return false
-	end
-
-	local loadout = menu_scenes:FindFirstChild("Loadout")
-
-	if not loadout then
-		return false
-	end
-
-	local main_frame = loadout:FindFirstChild("Main_Frame")
+	local legacy = Layout.Container()
+	local scene = Layout.Scene("Loadout")
+	local main_frame = legacy and legacy:FindFirstChild("customisationframe")
+		or (scene and scene:FindFirstChild("Main_Frame"))
 
 	if not main_frame then
 		return false
 	end
 
 	local new_scrolling_list =
-		main_frame:FindFirstChild("Popup_Scrolling_List")
+		main_frame:FindFirstChild("Popup_Scrolling_List") or main_frame:FindFirstChild("scroll")
 
 	local new_options_frame =
-		main_frame:FindFirstChild("Weapon_Options")
+		main_frame:FindFirstChild("Weapon_Options") or main_frame:FindFirstChild("weapons")
 
 	if not new_scrolling_list or not new_options_frame then
 		return false
 	end
 
 	local new_example =
-		new_scrolling_list:FindFirstChild("Example")
+		new_scrolling_list:FindFirstChild("ex") or new_scrolling_list:FindFirstChild("Example") or new_options_frame:FindFirstChild("ex")
 
 	if not new_example then
 		return false
@@ -178,6 +179,16 @@ local function get_loadout_ui()
 	loadout_ui = main_frame
 	scrolling_list = new_scrolling_list
 	scrolling_list_example = new_example
+	scrolling_list_example.Visible = false
+	-- Authored screens may use either list or grid layouts. Create a list when
+	-- none exists, and explicitly use the master menu's LayoutOrder values.
+	local layout = scrolling_list:FindFirstChildOfClass("UIListLayout")
+		or scrolling_list:FindFirstChildOfClass("UIGridLayout")
+	if not layout then
+		layout = Instance.new("UIListLayout")
+		layout.Parent = scrolling_list
+	end
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
 	options_frame = new_options_frame
 
 	primary_button = new_primary
@@ -210,6 +221,15 @@ end
 
 -- // Weapon
 local function is_locked(name: string)
+	if WeaponIds.MasterSourceName(name):match("variant$") then
+		local root = local_player:FindFirstChild("PlayerData")
+		local data = root and root:FindFirstChild("PlayerData")
+		local unlocked = data and data:FindFirstChild("Unlocked Items")
+		local value = unlocked and unlocked:FindFirstChild(name)
+		-- This open-source loadout has no mod purchase flow. Missing entries are
+		-- available; explicit saved false values still represent locked mods.
+		return value ~= nil and value:IsA("BoolValue") and not value.Value
+	end
 	--[[
 		Uncomment this if you want the unlock system.
 
@@ -225,13 +245,16 @@ end
 
 
 local function clean_up_scrolling_list()
+	modificationOnly, choosingSlot = false, nil
+	if modCategoryButton then modCategoryButton.Visible = false end
 	if not scrolling_list or not scrolling_list.Parent then
 		return
 	end
 
 	for _, child in ipairs(scrolling_list:GetChildren()) do
-		if child.Name == "Example"
-			or child:IsA("UIListLayout") then
+		if child == scrolling_list_example
+			or child:IsA("UIGridStyleLayout")
+			or child:IsA("UIPadding") then
 			continue
 		end
 
@@ -242,6 +265,7 @@ end
 
 local function get_master_weapon_data(weapon_module, weapon_name: string?)
 	local merged = {}
+	for key, value in pairs(MenuData[WeaponIds.MasterSourceName(weapon_name or weapon_module.className or weapon_module.name)] or {}) do merged[key] = value end
 	-- Canonical GunClasses now publish their complete display and gameplay
 	-- metadata. Requiring weapon_modules here executes obsolete modules that
 	-- depend on the removed ReplicatedStorage.shared/core_modules hierarchy.
@@ -252,8 +276,9 @@ local function get_master_weapon_data(weapon_module, weapon_name: string?)
 end
 
 local function get_legacy_item_data(asset_name: string)
-	local legacy_folder = gun_classes:FindFirstChild("weapon_modules")
-	local source = legacy_folder and legacy_folder:FindFirstChild(asset_name)
+	-- Archived modules depend on the removed shared/core_modules hierarchy.
+	local name = WeaponIds.Canonical(asset_name)
+	local source = gun_classes:FindFirstChild(name) or tool_classes:FindFirstChild(name)
 	if not source or not source:IsA("ModuleScript") then return nil end
 	local ok, data = pcall(require, source)
 	return ok and type(data) == "table" and data or nil
@@ -262,10 +287,11 @@ end
 local function show_weapon_details(weapon_module, weapon_name: string?)
 	if not loadout_ui or type(weapon_module) ~= "table" then return end
 	weapon_module = get_master_weapon_data(weapon_module, weapon_name)
-	local stats_side = loadout_ui:FindFirstChild("Statistics") or loadout_ui:FindFirstChild("statsside")
+	local stats_side = (loadout_ui:FindFirstChild("Statistics") or loadout_ui:FindFirstChild("statsside")) or loadout_ui:FindFirstChild("statsside")
 	if not stats_side then return end
 
 	stats_side.Visible = true
+	if weapon_name then require(script.Parent.WeaponSkinView).Render(stats_side, weapon_name, choosingSlot) end
 	local icon = stats_side:FindFirstChild("wepicon")
 	if icon and icon:IsA("ImageLabel") then
 		icon.Image = image_id(weapon_module.icon or weapon_module.Tool_Image)
@@ -276,6 +302,9 @@ local function show_weapon_details(weapon_module, weapon_name: string?)
 	set_text(description, "desc", weapon_module.desc)
 	if description and description:IsA("ScrollingFrame") then
 		description.CanvasPosition = Vector2.zero
+		description.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		local label = description:FindFirstChild("desc")
+		if label and label:IsA("TextLabel") then label.AutomaticSize=Enum.AutomaticSize.Y; label.TextWrapped=true end
 	end
 
 	local lore_panel = stats_side:FindFirstChild("perklore_lower")
@@ -283,6 +312,9 @@ local function show_weapon_details(weapon_module, weapon_name: string?)
 	set_text(lore_scroll, "desc", weapon_module.lore)
 	if lore_scroll and lore_scroll:IsA("ScrollingFrame") then
 		lore_scroll.CanvasPosition = Vector2.zero
+		lore_scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		local label = lore_scroll:FindFirstChild("desc")
+		if label and label:IsA("TextLabel") then label.AutomaticSize=Enum.AutomaticSize.Y; label.TextWrapped=true end
 	end
 	if lore_panel and lore_panel:IsA("GuiObject") then
 		lore_panel.Visible = false
@@ -323,7 +355,7 @@ local function show_weapon_details(weapon_module, weapon_name: string?)
 	end
 
 	local stats_lower = stats_side:FindFirstChild("statslower")
-	local is_gun = weapon_module.tooltype == "gun"
+	local is_gun = weapon_module.tooltype == "gun" or (weapon_name and gun_classes:FindFirstChild(WeaponIds.Canonical(weapon_name)) ~= nil)
 	if stats_lower and stats_lower:IsA("GuiObject") then stats_lower.Visible = is_gun end
 	local stats_range = stats_side:FindFirstChild("statsrange")
 	if stats_range and stats_range:IsA("GuiObject") then stats_range.Visible = is_gun end
@@ -468,7 +500,7 @@ local function update_selected_weapon(
 end
 
 
-local function create_weapon_options(slot_name: string)
+local function create_weapon_options(slot_name: string, mods: boolean?)
 	if not loadout_ui
 		or not loadout_ui.Parent then
 		return
@@ -481,7 +513,7 @@ local function create_weapon_options(slot_name: string)
 		return
 	end
 
-	if definition.NoFirearms
+	if (definition.NoFirearms and slot_name ~= "Melee")
 		or (
 			definition.FixedPrimary
 				and slot_name == "Primary"
@@ -491,40 +523,52 @@ local function create_weapon_options(slot_name: string)
 
 	clean_up_scrolling_list()
 
-	-- // None
-	local none =
-		scrolling_list_example:Clone()
-
-	none.Name = "None"
-
-	local none_icon =
-		none:FindFirstChild("wepicon")
-
-	if none_icon then
-		none_icon.Image = ""
+	modificationOnly = mods == true and (slot_name == "Primary" or slot_name == "Secondary")
+	choosingSlot = slot_name
+	if modCategoryButton then
+		modCategoryButton.Visible = slot_name == "Primary" or slot_name == "Secondary"
+		require(script.Parent.UI).Selected(modCategoryButton, modificationOnly)
 	end
 
-	local none_locked =
-		none:FindFirstChild("weaponlocked")
+	if not modificationOnly then
+		-- // Empty weapon slot
+		local none =
+			scrolling_list_example:Clone()
 
-	if none_locked then
-		none_locked.Visible = false
+		none.Name = "None"
+		none.LayoutOrder = 0
+
+		local none_icon =
+			none:FindFirstChild("wepicon")
+
+		if none_icon then
+			none_icon.Image = ""
+		end
+
+		local none_locked =
+			none:FindFirstChild("weaponlocked")
+
+		if none_locked then
+			none_locked.Visible = false
+		end
+
+		set_text(none, "wepname", "None")
+		set_text(none, "desc", "Leave this equipment slot empty.")
+
+		none.Visible = true
+		none.Parent = scrolling_list
+
+		none.MouseEnter:Connect(function() Audio.Play("Menu", "hover") end)
+		none.SelectionGained:Connect(function() Audio.Play("Menu", "hover") end)
+		none.Activated:Connect(function()
+			datapush_event:FireServer(
+				"Loadout" .. slot_name,
+				""
+			)
+
+			clean_up_scrolling_list()
+		end)
 	end
-
-	set_text(none, "wepname", "None")
-	set_text(none, "desc", "Leave this equipment slot empty.")
-
-	none.Visible = true
-	none.Parent = scrolling_list
-
-	none.Activated:Connect(function()
-		datapush_event:FireServer(
-			"Loadout" .. slot_name,
-			""
-		)
-
-		clean_up_scrolling_list()
-	end)
 
 	-- // Weapon choices
 	local choices =
@@ -541,7 +585,10 @@ local function create_weapon_options(slot_name: string)
 		end
 	end
 
+	-- Keep equal-weight choices deterministic across folder replication order.
+	table.sort(choices, function(a, b) return a.Name < b.Name end)
 	for _, child in ipairs(choices) do
+		if Classes.IsClassWeapon(child.Name) then continue end
 		if not child:IsA("ModuleScript") then
 			continue
 		end
@@ -550,14 +597,17 @@ local function create_weapon_options(slot_name: string)
 			or child.Name == "LegacyGunFactory" then
 			continue
 		end
+		if slot_name == "Melee" and child.Parent == gun_classes then continue end
 		-- SteyrRifle is an internal controller for the Union pistol's weapon
 		-- modification. It must never become a standalone loadout choice.
 		if child.Name == "SteyrRifle" then
 			continue
 		end
-		if child.Parent == gun_classes and not WeaponHandling.IsBaseline(child.Name) then
+		local variant = WeaponIds.MasterSourceName(child.Name):match("variant$") ~= nil
+		if child.Parent == gun_classes and not WeaponHandling.IsBaseline(child.Name) and not variant then
 			continue
 		end
+		if variant ~= modificationOnly then continue end
 
 		local success, weapon_module =
 			pcall(require, child)
@@ -597,14 +647,17 @@ local function create_weapon_options(slot_name: string)
 		local weapon_weight =
 			weapon_module.Weight or 0
 
-		local too_heavy =
-			weapon_weight + other_weight
-			> Classes.GetMaxWeight(local_player)
+		local too_heavy = slot_name ~= "Melee" and weapon_weight + other_weight > Classes.GetMaxWeight(local_player)
 
 		local scrolling_clone =
 			scrolling_list_example:Clone()
 
 		scrolling_clone.Name = child.Name
+		local source_name = WeaponIds.MasterSourceName(child.Name)
+		local master_data = MenuData[source_name]
+		-- Master: Empty = 0, lebel = 1, other weapons = 6 - size.
+		scrolling_clone.LayoutOrder = if source_name == "lebel" then 1
+			else 6 - (master_data and master_data.size or weapon_weight)
 		scrolling_clone.Visible = true
 		scrolling_clone.Parent = scrolling_list
 
@@ -618,8 +671,14 @@ local function create_weapon_options(slot_name: string)
 		local menu_data = get_master_weapon_data(weapon_module, child.Name)
 		set_text(scrolling_clone, "wepname", menu_data.Display_Name or menu_data.name or child.Name)
 		set_text(scrolling_clone, "desc", menu_data.desc)
+		if too_heavy then
+			set_text(scrolling_clone, "desc", "Too heavy with your other weapon. Change the other slot first.")
+		elseif is_locked(child.Name) then
+			set_text(scrolling_clone, "desc", "This modification is locked.")
+		end
 
 		local function preview_details()
+			Audio.Play("Menu", "hover")
 			show_weapon_details(weapon_module, child.Name)
 		end
 		scrolling_clone.MouseEnter:Connect(preview_details)
@@ -693,12 +752,13 @@ local function create_perk_options()
 	if not scrolling_list or not scrolling_list_example then return end
 	clean_up_scrolling_list()
 
-	for _, perk_name in Perks.Order do
+	for order, perk_name in Perks.Order do
 		local definition = Perks.Definitions[perk_name]
 		if not definition or definition.Selectable == false then continue end
 
 		local row = scrolling_list_example:Clone()
 		row.Name = perk_name
+		row.LayoutOrder = order
 		row.Visible = true
 		row.Parent = scrolling_list
 		set_text(row, "wepname", perk_name)
@@ -712,6 +772,7 @@ local function create_perk_options()
 		if weight and weight:IsA("GuiObject") then weight.Visible = false end
 
 		local function preview()
+			Audio.Play("Menu", "hover")
 			show_perk_details(perk_name)
 		end
 		row.MouseEnter:Connect(preview)
@@ -726,6 +787,8 @@ end
 
 -- // Character Preview
 local function setup_character()
+	local scene=menuOwner and menuOwner.GetScene("Loadout")
+	if not menuOwner or not menuOwner.IsOpen() or not scene or not scene.Enabled then return end
 	previewGeneration += 1
 
 	local generation =
@@ -762,18 +825,8 @@ local function setup_character()
 		return
 	end
 
-	character.Archivable = true
-
-	local character_clone =
-		character:Clone()
-
-	for _, descendant in character_clone:GetDescendants() do
-		if descendant:IsA("LuaSourceContainer")
-			or descendant:IsA("Tool") then
-
-			descendant:Destroy()
-		end
-	end
+	local character_clone = MenuPreview.Clone(character)
+	if not character_clone then return end
 
 	ClassAppearance.Apply(
 		character_clone,
@@ -818,8 +871,12 @@ local function setup_character()
 	character_clone.Parent =
 		character_spot.Parent
 
-	clone_root.CFrame =
-		character_spot.CFrame
+	PreviewEquipment.Apply(character_clone, local_player)
+	MenuPreview.Place(character_clone, character_spot.CFrame, character_spot)
+	local loadoutScene = menuOwner and menuOwner.GetScene("Loadout")
+	if menuOwner and menuOwner.IsOpen() and loadoutScene and loadoutScene.Enabled then
+		MenuPreview.PlayLoadout(character_clone, local_player)
+	end
 end
 
 
@@ -887,12 +944,17 @@ local function refresh_class()
 	end
 
 	clean_up_scrolling_list()
+	modificationOnly, choosingSlot = false, nil
+	if modCategoryButton then
+		modCategoryButton.Visible = false
+		require(script.Parent.UI).Selected(modCategoryButton, false)
+	end
 
 	-- // Class buttons
 	local buttons =
-		loadout_ui:FindFirstChild(
+		(loadout_ui:FindFirstChild(
 			"Classes_Options"
-		)
+		) or loadout_ui:FindFirstChild("classes"))
 
 	if buttons then
 		for _, name in Classes.Order do
@@ -1043,7 +1105,8 @@ local function refresh_class()
 			gun_classes:FindFirstChild(name)
 			or tool_classes:FindFirstChild(name)
 
-		if source and source.Parent == gun_classes and not WeaponHandling.IsBaseline(name) then
+		if source and source.Parent == gun_classes and not WeaponHandling.IsBaseline(name)
+			and not WeaponIds.MasterSourceName(name):match("variant$") then
 			source = nil
 			name = ""
 		end
@@ -1101,9 +1164,9 @@ local function refresh_class()
 
 	-- // Inventory weight
 	local weights =
-		loadout_ui:FindFirstChild(
+		(loadout_ui:FindFirstChild(
 			"Inventory_Weights"
-		)
+		) or loadout_ui:FindFirstChild("inv_weights"))
 
 	if weights then
 		local max_weight = Classes.GetMaxWeight(local_player)
@@ -1182,14 +1245,14 @@ local function preview_inventory_row(row_name: string)
 	elseif row_name == "Combat Experience" then
 		show_item_details(nil, SPECIAL_DETAIL_ASSETS[selected], {
 			name = definition.Passive,
-			desc = "Class specialty for the " .. selected .. ".",
-			lore = "",
+			desc = definition.PassiveDetails and definition.PassiveDetails.desc or definition.Description,
+			lore = definition.PassiveDetails and definition.PassiveDetails.lore or "",
 		})
 	elseif row_name == "Equipment Strap" then
 		show_item_details(nil, EQUIPMENT_DETAIL_ASSETS[selected], {
 			name = definition.EquipmentName,
-			desc = "Class equipment issued to the " .. selected .. ".",
-			lore = "",
+			desc = definition.EquipmentDetails and definition.EquipmentDetails.desc or "",
+			lore = definition.EquipmentDetails and definition.EquipmentDetails.lore or "",
 		})
 	elseif row_name == "Perk Slot" then
 		local value = equipment and equipment:FindFirstChild("Perk")
@@ -1227,6 +1290,43 @@ local function setup_ui_connections()
 			"Classes_Options"
 		)
 
+	local modifications = loadout_ui:FindFirstChild("Modifications")
+	local meleeButton = options_frame:FindFirstChild("Melee Sheath")
+	if meleeButton and meleeButton:IsA("GuiButton") then
+		table.insert(ui_connections, meleeButton.Activated:Connect(function() modificationOnly=false; create_weapon_options("Melee") end))
+	end
+	local modButton = modifications and modifications:FindFirstChild("modbutton")
+		or loadout_ui:FindFirstChild("modbutton", true)
+	if not modButton then
+		modButton = Instance.new("TextButton")
+		modButton.Name = "modbutton"; modButton.Text = "Weapon Mods"
+		modButton.Size = UDim2.fromOffset(160, 32); modButton.Position = UDim2.fromScale(0.02, 0.94)
+		modButton.BackgroundColor3 = Color3.fromRGB(20, 18, 16)
+		modButton.TextColor3 = Color3.fromRGB(235, 225, 205); modButton.TextSize = 18
+		modButton.Font = Enum.Font.Garamond; modButton.Parent = loadout_ui
+	end
+	if modButton:IsA("GuiButton") then
+		modCategoryButton = modButton
+		modButton.Visible = false
+		if modButton:IsA("TextButton") then modButton.Text = "Weapon Mods" end
+		set_text(modButton, "wepnametext", "Weapon Mods")
+		set_text(modButton, "inv_weighttag", "Weapon Mods")
+		table.insert(ui_connections, modButton.Activated:Connect(function()
+			if not modButton.Visible or (choosingSlot ~= "Primary" and choosingSlot ~= "Secondary") then return end
+			create_weapon_options(choosingSlot, not modificationOnly)
+		end))
+	end
+	local weightPopup = (loadout_ui:FindFirstChild("Weight_Popup") or loadout_ui:FindFirstChild("weight_popup"))
+	local weightButton = weightPopup and weightPopup:FindFirstChild("inv_weight_popup")
+	local weightInfo = (weightPopup and weightPopup:FindFirstChild("Mouse_Hover_Popup")) or loadout_ui:FindFirstChild("Mouse_Hover_Popup")
+	if weightButton and weightInfo and weightButton:IsA("GuiButton") then
+		weightInfo.Visible = false
+		table.insert(ui_connections, weightButton.Activated:Connect(function() weightInfo.Visible = not weightInfo.Visible end))
+		table.insert(ui_connections, weightButton.MouseEnter:Connect(function() weightInfo.Visible = true end))
+		table.insert(ui_connections, weightButton.MouseLeave:Connect(function() weightInfo.Visible = false end))
+	end
+
+
 	-- Every visible inventory card previews its master item record on hover,
 	-- matching the original menu (weapons, tools, class kit and perk alike).
 	for _, row_name in {
@@ -1253,7 +1353,7 @@ local function setup_ui_connections()
 	end
 
 	-- // Master-script detail panel controls
-	local stats_side = loadout_ui:FindFirstChild("Statistics") or loadout_ui:FindFirstChild("statsside")
+	local stats_side = (loadout_ui:FindFirstChild("Statistics") or loadout_ui:FindFirstChild("statsside")) or loadout_ui:FindFirstChild("statsside")
 	if stats_side then
 		local stats_range = stats_side:FindFirstChild("statsrange")
 		local next_page = stats_range and stats_range:FindFirstChild("nextpage")
@@ -1360,6 +1460,8 @@ local function setup_ui_connections()
 	local perk_button = options_frame:FindFirstChild("Perk Slot")
 	if perk_button and perk_button:IsA("GuiButton") then
 		table.insert(ui_connections, perk_button.Activated:Connect(function()
+			modificationOnly, choosingSlot = false, nil
+			if modCategoryButton then require(script.Parent.UI).Selected(modCategoryButton, false) end
 			local selected_loadout = Classes.GetLoadout(local_player, Classes.Selected(local_player))
 			local perk_value = selected_loadout and selected_loadout:FindFirstChild("Perk")
 			local selected_perk = perk_value and perk_value.Value or ""
@@ -1419,17 +1521,6 @@ local function handle_character_added(character)
 			return
 		end
 
-		local player_gui =
-			local_player:WaitForChild("PlayerGui")
-
-		local menu_scenes =
-			player_gui:WaitForChild("Menu_Scenes")
-
-		local loadout =
-			menu_scenes:WaitForChild("Loadout")
-
-		local main_frame =
-			loadout:WaitForChild("Main_Frame")
 
 		-- Bail if a newer respawn superseded us while waiting.
 		if character ~= local_player.Character
@@ -1467,47 +1558,23 @@ end
 
 
 -- // Start
-function module.start_module()
+function module.start_module(menu)
 	if started then
 		return
 	end
 
 	started = true
-
-	-- // Initial UI
-	if not get_loadout_ui() then
-		local player_gui =
-			local_player:WaitForChild(
-				"PlayerGui"
-			)
-
-		player_gui
-			:WaitForChild(
-				"Menu_Scenes"
-			)
-			:WaitForChild(
-				"Loadout"
-			)
-			:WaitForChild(
-				"Main_Frame"
-			)
-
-		if not get_loadout_ui() then
-			warn(
-				"[LoadoutHandler] Failed to initialize Loadout UI"
-			)
-
-			return
-		end
+	menuOwner = menu
+	if menu then
+		menu.SceneChanged.Event:Connect(function(name)
+   previewGeneration += 1
+   if preview then MenuPreview.Stop(preview); preview:Destroy(); preview=nil end
+   if name == "Loadout" then task.spawn(setup_character) end
+  end)
 	end
 
-	local equipment =
-		local_player
-		:WaitForChild("PlayerData")
-		:WaitForChild("PlayerData")
-		:WaitForChild("Equipment")
-
-	equipment:WaitForChild("Class")
+	-- The menu may arrive after this module; resolve either authored layout.
+	while not get_loadout_ui() do task.wait(0.1) end
 
 	-- // Initial UI connections
 	setup_ui_connections()

@@ -21,6 +21,49 @@ local activeArm: string? = nil
 local activationToken = 0
 local Debounce = false
 local DebounceCooldown = 1
+local baseMarkers: {[string]: BillboardGui} = {}
+
+local function updateBaseMarkers(visible: boolean)
+	local details = Workspace:FindFirstChild("Game_Details")
+	local mainGame = details and details:FindFirstChild("Main_Game")
+	local config = Shared.Library.Configuration:FindFirstChild("Scoring_Variables")
+	for _, faction in {"Empire", "Nation"} do
+		local teamName = if faction == "Empire" then "Golden Empire" else "Royal Nation"
+		local allied = LocalPlayer.Team ~= nil and LocalPlayer.Team.Name == teamName
+		local values = config and config:FindFirstChild(faction)
+		local tickets = values and values:FindFirstChild(faction .. "_Rein_Count")
+		local infinite = values and values:FindFirstChild(faction .. "_Infinite_Tickets")
+		local depleted = tickets and tickets.Value <= 0 and not (infinite and infinite.Value)
+		local spawn = mainGame and mainGame:FindFirstChild(faction)
+		local terrain = spawn and spawn:FindFirstChild("Terrain")
+		local anchor = terrain and terrain:FindFirstChild("Air")
+		local marker = baseMarkers[faction]
+		if anchor and anchor:IsA("BasePart") and not marker then
+			marker = Instance.new("BillboardGui")
+			marker.Name = faction .. "CompassBase"
+			marker.Size = UDim2.fromOffset(180, 36)
+			marker.AlwaysOnTop = true
+			marker.ResetOnSpawn = false
+			local label = Instance.new("TextLabel")
+			label.Size = UDim2.fromScale(1, 1)
+			label.BackgroundTransparency = 1
+			label.TextScaled = true
+			label.TextStrokeTransparency = 0
+			label.Parent = marker
+			marker.Parent = LocalPlayer:WaitForChild("PlayerGui")
+			baseMarkers[faction] = marker
+		end
+		if marker then
+			marker.Adornee = if anchor and anchor:IsA("BasePart") then anchor else nil
+			marker.Enabled = visible and LocalPlayer.Team ~= nil and (allied or depleted == true)
+			local label = marker:FindFirstChildOfClass("TextLabel")
+			if label then
+				label.Text = if allied then "YOUR BASE" else "ENEMY BASE"
+				label.TextColor3 = if allied then Color3.fromRGB(140, 210, 255) else Color3.fromRGB(255, 120, 100)
+			end
+		end
+	end
+end
 
 local function objectivePoints(): Instance?
 	local details = Workspace:FindFirstChild("Game_Details")
@@ -29,6 +72,7 @@ local function objectivePoints(): Instance?
 end
 
 local function setObjectivesVisible(visible: boolean)
+	updateBaseMarkers(visible)
 	local points = objectivePoints()
 	if not points then return end
 	for _, point in points:GetChildren() do
@@ -116,6 +160,14 @@ function Service.start_module()
 	started = true
 	SettingsManager.HookInput("View Objectives", handleInput)
 	SettingsManager.HookInput("Objectives Tool", handleInput)
+	local elapsed = 0
+	game:GetService("RunService").Heartbeat:Connect(function(dt)
+		elapsed += dt
+		if active and elapsed >= 0.25 then
+			elapsed = 0
+			updateBaseMarkers(true)
+		end
+	end)
 
 	local function bindCharacter(character: Model)
 		character:GetAttributeChangedSignal("Aiming"):Connect(function()

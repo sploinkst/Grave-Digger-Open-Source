@@ -189,5 +189,6 @@ end
 Shield.Tool_Image = ""
 Shield.Weight = 2
 Shield.Designation = "Primary"
+Shield.HiddenFromLoadout = true
 
 return Shield

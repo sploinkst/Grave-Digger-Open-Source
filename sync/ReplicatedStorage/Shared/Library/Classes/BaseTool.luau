@@ -14,6 +14,7 @@ local TweenService      = game:GetService("TweenService")
 
 local Types            = require(script.Parent.Parent.Types)
 local WeaponHandling = require(script.Parent.Parent.WeaponHandling)
+local MasterEffects = require(script.Parent.Parent.MasterEffects.Dispatch)
 local WeaponModelState = require(script.Parent.Parent.WeaponModelState)
 local WeaponIds = require(script.Parent.Parent.WeaponIds)
 local WeaponSounds = require(script.Parent.Parent.WeaponSounds)
@@ -145,7 +146,7 @@ local function get_prince_animation(name: string): Animation?
 	local guns = tools and tools:FindFirstChild("Guns")
 	local prince = guns and guns:FindFirstChild("PrinceRifle")
 	local clip = prince and prince:FindFirstChild(name)
-	if clip and clip:IsA("Animation") then
+	if clip and (clip:IsA("Animation") or clip:IsA("KeyframeSequence")) then
 		return clip
 	end
 	return nil
@@ -157,7 +158,7 @@ local function get_grace_animation(name: string): Animation?
 	local guns = tools and tools:FindFirstChild("Guns")
 	local grace = guns and guns:FindFirstChild("GraceRevolver")
 	local clip = grace and grace:FindFirstChild(name)
-	if clip and clip:IsA("Animation") then
+	if clip and (clip:IsA("Animation") or clip:IsA("KeyframeSequence")) then
 		return clip
 	end
 	return nil
@@ -314,8 +315,24 @@ function BaseTool:_applyWeaponWelds()
 end
 
 function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
+	self.MasterAssetName = self.MasterAssetName or WeaponIds.MasterSourceName(self.className)
 	self:_applyWeaponWelds()
 	if self._prepareAnimations then self:_prepareAnimations() end
+	if self.IsFirearm then
+        if type(self.animations)~="table" then self.animations={} end
+		local bindings=script.Parent.Parent:FindFirstChild("GunAnimationBindings")
+        if bindings and bindings:IsA("ModuleScript") then
+            local loaded,api=pcall(require,bindings)
+            if loaded and type(api)=="table" and type(api.Prepare)=="function" then
+                local prepared,problem=pcall(api.Prepare,self)
+                if not prepared then warn("[BaseTool] Animation binding fallback for "..self.className..": "..tostring(problem)) end
+            else
+                warn("[BaseTool] Animation bindings could not load; using controller animations for "..self.className)
+            end
+        else
+            warn("[BaseTool] Missing Library.GunAnimationBindings; using controller animations for "..self.className..". Sync sync.project.json to restore the module.")
+        end
+	end
 	self.tool = tool
 
 	-- These are replicated server-created values.  Update the local aim/equip
@@ -331,7 +348,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 	end
 	self._setLeftAiming = setLeftAiming
 
-	if self.IsFirearm and not self.animations then
+	if self.IsFirearm and type(self.animations)~="table" then
 		self.animations = {}
 	end
 	if self.animations then
@@ -345,8 +362,8 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 			-- stance outside ADS without ever reusing their hip-fire action.
 			self.animations.Hold = get_grace_animation("held")
 		end
-		if self.IsFirearm and self.WeaponCategory == "Pistol" then
-			self.animations.Draw = get_grace_animation("draw") or self.animations.Draw
+		if self.IsFirearm and self.WeaponCategory == "Pistol" and not self.animations.Draw then
+			self.animations.Draw = get_grace_animation("draw")
 		elseif self.IsFirearm and not self.animations.Draw then
 			self.animations.Draw = self.animations.draw or get_prince_animation("draw")
 		end
@@ -413,7 +430,7 @@ function BaseTool:on_give(tool: Tool, holster: Model?, model: Model?)
 			-- Resolve borrowed draw clips against Grace's animation IDs, rather
 			-- than the receiving pistol's legacy animation table.
 			local graceDraw = get_grace_animation("draw")
-			if graceDraw and (not self.PreferOwnDraw or not self.RegisteredAnimations.Draw) then
+			if graceDraw and not self.RegisteredAnimations.Draw then
 				local drawTracks = utilities_module.register_animations(LOCAL_PLAYER, { Draw = graceDraw }, "GraceRevolver")
 				if drawTracks and drawTracks.Draw then self.RegisteredAnimations.Draw = drawTracks.Draw end
 			end
@@ -1009,6 +1026,7 @@ function BaseTool:_blendAim(track: AnimationTrack)
 end
 
 function BaseTool:equip()
+	if self._destroyed or not self.tool or not self.tool.Parent then return end
 	self.MasterAssetName = self.MasterAssetName or WeaponIds.MasterSourceName(self.className)
 	print("Equipping tool:", self.tool.Name)
 	if not self.tool then return end
@@ -1051,9 +1069,9 @@ function BaseTool:equip()
 	local soundOrigin = character:FindFirstChild("HumanoidRootPart")
 	if drawSound and soundOrigin then self:_play_sfx(drawSound, soundOrigin) end
 
-	if self.CompassRight then
-		character:SetAttribute("CompassRight", true)
-	end
+	local compassRight = self.CompassRight
+	if compassRight == nil then compassRight = self.lefthand == true end
+	character:SetAttribute("CompassRight", compassRight)
 
 	if self.CompassDisabled then
 		print("Compass Denied")
@@ -1104,7 +1122,8 @@ function BaseTool:equip()
 	end
 
 	if self.model_reference then
-		self.actual_model = utilities_module.reverse_search_model(LOCAL_PLAYER, self.model_reference.Name)
+		self.actual_model = utilities_module.reverse_search_model(LOCAL_PLAYER, self.model_reference.Name, self.tool)
+		if self._destroyed or not self.Equipped or generation ~= self._equipGeneration then return end
 		if not self.actual_model then warn("[" .. self.className .. "] Failed to find model") end
 	end
 
@@ -1129,6 +1148,7 @@ function BaseTool:equip()
 		table.insert(self.keyframe_connections, track.KeyframeReached:Connect(function(keyframe)
 
 			if WeaponModelState.Keyframe(self, keyframe) then return end
+			if MasterEffects.Weapon(self, keyframe) then return end
 			if keyframe == "vfx_hand_shell_visible" then
 				local target = self.Round_Target_Part
 					and LOCAL_PLAYER.Character:FindFirstChild(self.Round_Target_Part)
@@ -1328,6 +1348,10 @@ function BaseTool:equip()
 end
 
 function BaseTool:unequip()
+	if self._unequipping then return end
+	self._unequipping = true
+	task.defer(function() self._unequipping = false end)
+	LOCAL_PLAYER:SetAttribute("CantUnequip", nil)
 	WeaponModelState.Stop(self)
 	if self._stopModFeedback then self:_stopModFeedback() end
 	self.Check_Delayed = false
@@ -1355,7 +1379,10 @@ function BaseTool:unequip()
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
-	if self._setLeftAiming then self._setLeftAiming(false) end
+	if self._setLeftAiming then
+		-- The server may already have destroyed this tool's remote.
+		pcall(self._setLeftAiming, false)
+	end
 
 	LOCAL_PLAYER:SetAttribute("CantUnequip", false)
 	character:SetAttribute("GunEquipped", nil)
@@ -1523,6 +1550,20 @@ function BaseTool:_stopAllExcept(exception: AnimationTrack?)
 	end
 end
 
+-- Failed assets never emit Stopped; limit waits and cancel when the weapon changes.
+function BaseTool:_waitAnimation(track, fallbackDuration)
+	if not track then return end
+	local generation = self._equipGeneration
+	local speed = math.max(math.abs(track.Speed), 0.01)
+	local duration = fallbackDuration or (track.Length > 0 and track.Length / speed) or 3
+	local deadline = os.clock() + math.min(math.max(duration + 1, 1), 30)
+	while track.IsPlaying and os.clock() < deadline do
+		if not self.Equipped or self._equipGeneration ~= generation then return end
+		task.wait(0.03)
+	end
+	if track.IsPlaying then track:Stop(0.1) end
+end
+
 -- The master waits its phase timer, not Length / Speed. Authored clips are not
 -- all one second long; Stopped:Wait() changes gameplay timing with the asset.
 function BaseTool:_waitActionPhase(track, seconds: number): boolean
@@ -1586,9 +1627,6 @@ function BaseTool:_playAnim(name: string, bypass_equiped: boolean, playbackOptio
 		end
 	end
 	local debugName = track and track.Name or "MISSING"
-	print(string.format("[WeaponAnimation][%s] requested=%s resolved=%s track=%s aiming=%s equipped=%s",
-		tostring(self.className), tostring(requestedName), tostring(name), tostring(debugName),
-		tostring(self.Aiming == true), tostring(self.Equipped == true)))
 	-- Optional clips are absent on some weapons. Callers can skip the action
 	-- or restore idle instead of leaving a busy flag set after an assertion.
 	if not track then
@@ -1698,7 +1736,8 @@ function BaseTool:_aimTrack(): AnimationTrack?
 	if self._isBipodActive and self:_isBipodActive() and anims.Bipod_Aim then
 		return anims.Bipod_Aim
 	end
-	return (self.current_shoulder == "Right") and anims.Aim or anims.Aim_Left
+	if self.current_shoulder=="Left" then return anims.Aim_Left or anims.Aim end
+ return anims.Aim or anims.Aim_Left
 end
 
 function BaseTool:_getFireAnim(): AnimationTrack?
@@ -1980,32 +2019,16 @@ end
 -- // Shoulder tracking
 
 function BaseTool:_onShoulderChanged()
-	if self.Equipped and self.Aiming and self.Firing then
-		self:_killAimTracks()
-		self:_stopFireAnimations()
-		local aimTrack = self:_aimTrack()
-		if aimTrack and not aimTrack.IsPlaying then self:_blendAim(aimTrack) end
-		return
-	end
-	if self:_isBusy() or not self.Aiming then return end
-
-	task.defer(function()
-		if self:_isBusy() or not self.Aiming then return end
-
-		local anims = self.RegisteredAnimations
-		if not anims then return end
-
-		local oldAimTrack = nil
-		if anims.Aim      and anims.Aim.IsPlaying      then oldAimTrack = anims.Aim      end
-		if anims.Aim_Left and anims.Aim_Left.IsPlaying then oldAimTrack = anims.Aim_Left end
-
-		local newAimTrack = self:_aimTrack()
-		self:_stopFireAnimations()
-		if not newAimTrack or oldAimTrack == newAimTrack then return end
-
-		if oldAimTrack and oldAimTrack.IsPlaying then oldAimTrack:Stop(CUT) end
-		if not newAimTrack.IsPlaying then self:_blendAim(newAimTrack) end
-	end)
+ if not self.Equipped or not self.Aiming or self._destroyed then return end
+ -- Reload/cycle completion restores the stance using the current shoulder.
+ if self.Reloading or self.Cycling or self.Equipping or self.Alting then return end
+ local nextAim=self:_aimTrack()
+ -- Preserve the existing stance if a requested clip is unavailable.
+ if not nextAim then return end
+ self:_killAimTracks()
+ -- Do not stop firing tracks: their completion can drive the firing state.
+ self:_blendAim(nextAim)
+ self._fpLeftRot=nil;self._fpRightRot=nil
 end
 
 -- // Aim system
@@ -2570,7 +2593,7 @@ function BaseTool:_startAimTracking()
 				math.rad(85)
 			)
 
-			local yaw = self._smoothedYaw
+			local yaw = self._smoothedYaw * 0.75
 
 			local armRotation
 
@@ -2827,6 +2850,22 @@ function BaseTool:reload() end
 -- // Cleanup
 
 function BaseTool:destroy()
+	if self._destroyed then return end
+	self._destroyed = true
+	-- Inventory replacement can destroy a tool without firing Unequipped.
+	if self.Equipped or self.Equipping or self.Reloading or self.Cycling or self.Meleeing then
+		self:unequip()
+	end
+	self._equipGeneration = (self._equipGeneration or 0) + 1
+	self._reloadCancelled = true
+	self.Reloading = false
+	self.Equipping = false
+	self.Firing = false
+	self.Cycling = false
+	self.Alting = false
+	self.Spinning = false
+	self.Checking = false
+	self.Meleeing = false
 	WeaponModelState.Stop(self)
 	if self._stopModFeedback then self:_stopModFeedback() end
 	self._autoFireHeld = false

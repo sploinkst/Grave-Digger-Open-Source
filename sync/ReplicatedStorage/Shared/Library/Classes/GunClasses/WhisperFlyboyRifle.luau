@@ -1,4 +1,4 @@
-return require(script.Parent.LegacyGunFactory).create({
+local WhisperFlyboyRifle = require(script.Parent.LegacyGunFactory).create({
 	className = "WhisperFlyboyRifle",
 	AuthoredWelds = {
 		equipc0 = CFrame.new(0.253814697, -1.70311737, -0.565979004, -0.0170763358, -0.000915539567, -0.99985379, 0.99842006, 0.0535294637, -0.0171008594, 0.0535372309, -0.998565853, -4.00225453e-9),
@@ -58,3 +58,12 @@ return require(script.Parent.LegacyGunFactory).create({
 	},
 	bulletSpeed = 1000,
 })
+
+local Behavior = require(script.Parent.Parent.Parent.WeaponModBehavior)
+function WhisperFlyboyRifle:reload()
+	return self:_reloadByRound({
+		startAnim = "Reload_Start", loopAnim = "Reload_Loop", endAnim = "Reload_End",
+		loopWait = self.reload_loop or 0.75, loopProfile = Behavior.FlyboyLoading,
+	})
+end
+return WhisperFlyboyRifle

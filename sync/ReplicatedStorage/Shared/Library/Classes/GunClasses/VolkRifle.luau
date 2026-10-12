@@ -291,7 +291,7 @@ function VolkRifle:setAltMode()
 	local altName = nextScopedMode and "Alt_Mode_On" or "Alt_Mode_Off"
 	local altTrack = self.RegisteredAnimations and self.RegisteredAnimations[altName]
 	if altTrack then altTrack = self:_playAnim(altName) end
-	if altTrack then altTrack.Stopped:Wait() end
+	if altTrack then self:_waitAnimation(altTrack) end
 	if not self.Equipped then return end
 	self.ScopedMode = nextScopedMode
 	self:notify(self.ScopedMode and "Sight: Scope" or "Sight: Iron")
@@ -390,9 +390,9 @@ function VolkRifle:fire()
 		local muzzle = self:_getMuzzlePart()
 		if cycleSound and muzzle then self:_play_sfx(cycleSound, muzzle) end
 		if cycleTrack and self.cycle and self.cycle > 0 then
-			cycleTrack:AdjustSpeed(math.max(cycleTrack.Length / self.cycle, 0.01))
+			cycleTrack:AdjustSpeed(1 / self:_cycleDuration(self.cycle))
 		end
-		if cycleTrack then cycleTrack.Stopped:Wait() end
+		if cycleTrack then self:_waitAnimation(cycleTrack) end
 	end
 	task.wait(self.PostCycleDelay or self.cycle_rest or 0)
 

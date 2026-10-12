@@ -71,10 +71,10 @@ local UnionPistol = require(script.Parent.LegacyGunFactory).create({
 
 function UnionPistol:reload()
 	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
-	if self.IsVeteran and self.Capacity <= 1 and reserve and reserve:IsA("NumberValue")
+	if self.IsVeteran and self.Capacity <= 0 and reserve and reserve:IsA("NumberValue")
 		and reserve.Value >= self.Max_Capacity then
 		return self:_reloadByRound({
-			startAnim = self.Capacity == 1 and "Reload_One_Vet" or false,
+			startAnim = false,
 			useEmptyAnim = false,
 			useVeteranAnimations = false,
 			loopAnim = "Reload_Clip",

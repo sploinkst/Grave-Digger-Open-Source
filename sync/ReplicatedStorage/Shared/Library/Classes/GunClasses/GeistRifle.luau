@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
+local ModelAppearance = require(script.Parent.Parent.Parent.WeaponModAppearance)
 
 local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
@@ -135,12 +136,12 @@ function GeistRifle.new(info: Types.BaseToolCreateInfo): GeistRifle
 	self.Designation = "Primary"
 	self.ANIM_LAYERS = ANIM_LAYERS
 	self.AnimationGunType = "GeistRifle"
-	self.model_reference = ToolFolder:FindFirstChild("mondragon") or ToolFolder:FindFirstChild("MondragonRifle")
+	self.model_reference = ToolFolder:FindFirstChild("mondragon") or ToolFolder:FindFirstChild("GeistRifle") or ToolFolder:FindFirstChild("MondragonRifle")
 	self.holster_reference = HolsterFolder:FindFirstChild("mondragonHolster") or HolsterFolder:FindFirstChild("MondragonRifleHolster")
 	self.motor_6d_data = {
 		Parent = "Left Arm",
 		Part0 = "Left Arm",
-		Part1 = self.model_reference and self.model_reference:FindFirstChild("hitbox", true),
+		Part1 = ModelAppearance.Root(self.model_reference),
 		C0 = WEAPON_STATS.equipc0,
 		C1 = WEAPON_STATS.equipc1,
 	}
@@ -192,6 +193,9 @@ function GeistRifle.new(info: Types.BaseToolCreateInfo): GeistRifle
 	self.FireEmissions = nil
 	self.auto = false
 	self.FireSound = SoundFolder and SoundFolder:FindFirstChild("fire")
+	self.AuthoredWelds = GeistRifle.AuthoredWelds
+	self.EquipWelds = nil
+	self:_applyWeaponWelds()
 	self:_initShoulderTracking()
 	return self
 end
@@ -224,7 +228,6 @@ end
 
 function GeistRifle:_on_equip()
 	BaseRifle._on_equip(self)
-	self:_playConfiguredSound("draw")
 end
 
 function GeistRifle:aim()
@@ -240,8 +243,6 @@ function GeistRifle:aim()
 end
 
 function GeistRifle:ammo_check()
-	local character = game.Players.LocalPlayer.Character
-	self.ExactAmmoCount = character and character:GetAttribute("Class") == "Jaeger"
 	return BaseRifle.ammo_check(self)
 end
 

@@ -26,11 +26,8 @@ local function disconnectCharacterConnections()
 	table.clear(characterConnections)
 end
 
-local function getCoreGame(): GuiObject?
-	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-	local main = playerGui and playerGui:FindFirstChild("main")
-	local coreGame = main and main:FindFirstChild("core_game")
-	return if coreGame and coreGame:IsA("GuiObject") then coreGame else nil
+local function getCoreGame(): ScreenGui?
+	return require(ReplicatedStorage.Shared.Library.AuthoredAssets).CoreGame()
 end
 
 local function clearTransientChildren(container: Instance?, preservedName: string)
@@ -74,7 +71,7 @@ local function resetCharacterHud(character: Model)
 
 	local main = coreGame.Parent
 	setVisible(main, "dot_crosshair", false)
-	coreGame.Visible = not hudHidden
+	coreGame.Enabled = not hudHidden and LocalPlayer:GetAttribute("MenuOpen") ~= true
 end
 
 local function currentBooleanSetting(categoryName: string, settingName: string): boolean
@@ -139,8 +136,12 @@ end
 local function toggleHud(_: string, pressed: boolean)
 	if not pressed then return end
 	hudHidden = not hudHidden
-	local coreGame = getCoreGame()
-	if coreGame then coreGame.Visible = not hudHidden end
+	LocalPlayer:SetAttribute("HudHidden", hudHidden)
+	local gui=LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	for _,name in ipairs({"Inventory","Scoring","Aiming","Flinching","Extras"}) do
+	 local screen=gui and gui:FindFirstChild(name)
+	 if screen and screen:IsA("ScreenGui") then screen.Enabled=not hudHidden end
+	end
 end
 
 local function wipeFace(_: string, pressed: boolean)
@@ -162,6 +163,7 @@ end
 function Service.start_module()
 	if started then return end
 	started = true
+	require(script.MasterHud).Start()
 
 	SettingsManager.HookInput("Hide Hud", toggleHud)
 	SettingsManager.HookInput("Wipe Face", wipeFace)

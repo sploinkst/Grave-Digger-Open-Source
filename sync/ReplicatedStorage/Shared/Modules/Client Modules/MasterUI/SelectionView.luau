@@ -34,11 +34,11 @@ end
 function View:Open(character, entries)
 	if active then active:Close() end
 	local core = Assets.CoreGame()
-	local panel = core and core:FindFirstChild("selectionboxes")
+	local panel = Assets.Widget("selectionboxes")
 	local selections = panel and panel:FindFirstChild("selections")
 	local template = selections and selections:FindFirstChild("ex")
 	if not template or not panel:FindFirstChild("selectedoption") then
-		warn("[MasterUI] Missing authored main.core_game.selectionboxes.selections.ex")
+		warn("[MasterUI] Missing Library.UI.Extras.selectionboxes.selections.ex")
 		return false
 	end
 	self.Character = character; self.Panel = panel; self.Selecting = true; active = self

@@ -36,62 +36,91 @@ local function shieldModel()
 	core.Material = Enum.Material.Metal
 	core.Color = Color3.fromRGB(66, 65, 57)
 	core:SetAttribute("IndestructibleShield", true)
+	core:SetAttribute("Unpiercable", true)
+	core.CanQuery = true
+	core.CanCollide = false
+	core.Massless = true
 	core.Parent = model
 	model.PrimaryPart = core
-	-- Reuse the authored shield panels instead of a new decorative asset.
+	-- Preserve the deployment's upright frame rather than using the mesh axes.
 	local deployables = Assets:FindFirstChild("deployables")
-	local barrier = deployables and deployables:FindFirstChild("Vanguard Barrier")
-	local panels = barrier and barrier:FindFirstChild("finished")
-	local cover = panels and panels:FindFirstChild("shieldcover", true)
-	if cover and cover:IsA("BasePart") then
-		core.Transparency = 1
-		for _, name in {"shieldcover", "shieldside", "shieldbolts"} do
-			local source = panels:FindFirstChild(name, true)
-			if source and source:IsA("BasePart") then
+	local template = deployables and (deployables:FindFirstChild("Lewis Shield") or deployables:FindFirstChild("Vanguard Barrier"))
+	local panels = template and (template:FindFirstChild("finished") or template)
+	local visuals = {}
+	if template and template:IsA("Model") and panels then
+		local reference = template:GetPivot()
+		local minimum = Vector3.new(math.huge, math.huge, math.huge)
+		local maximum = -minimum
+		for _, source in panels:GetDescendants() do
+			if source:IsA("BasePart") and source.Transparency < 1
+				and source.Name ~= "core" and source.Name ~= "bounding" and source.Name ~= "click"
+				and source.Name ~= "clickpart" and source.Name ~= "damagepart" then
 				local part = source:Clone()
-				for _, child in part:GetDescendants() do if child:IsA("JointInstance") or child:IsA("WeldConstraint") then child:Destroy() end end
-				part.CFrame = cover.CFrame:ToObjectSpace(source.CFrame)
-				part.CanQuery = false; part.CanCollide = false; part.Massless = true
+				for _, child in part:GetDescendants() do
+					if child:IsA("BasePart") or child:IsA("JointInstance") or child:IsA("Constraint")
+						or child:IsA("BaseScript") or child:IsA("ProximityPrompt") or child:IsA("ClickDetector") then child:Destroy() end
+				end
+				part.CFrame = reference:ToObjectSpace(source.CFrame)
+				part.Anchored = false; part.CanQuery = false; part.CanCollide = false; part.CanTouch = false; part.Massless = true
+				part.CollisionGroup = "Default"
 				part.Parent = model
-				local weld = Instance.new("WeldConstraint"); weld.Part0 = core; weld.Part1 = part; weld.Parent = part
-			end
-		end
-	end
-	return model
-end
-local function backShield(player, state)
-	if state.deployed and state.deployed.Parent then return end
-	if state.back and state.back.Parent then return end
-	local character = player.Character
-	local torso = character and (character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso"))
-	if not torso then return end
-	local model = shieldModel()
-	model:PivotTo(torso.CFrame * CFrame.new(0, 0, 0.8))
-	for _, part in model:GetDescendants() do if part:IsA("BasePart") then part.Anchored = false; part.CanCollide = false; part.Massless = true end end
-	local weld = Instance.new("WeldConstraint"); weld.Part0 = torso; weld.Part1 = model.PrimaryPart; weld.Parent = model.PrimaryPart
-	model.Parent = character
-	state.back = model
-end
-local function remove(state)
-	if state.back then state.back:Destroy() end
-	if state.deployed then state.deployed:Destroy() end
-end
-local function allyCollisions(player, state)
-	local shield = state.deployed
-	if not shield or not shield.Parent then return end
-	local old = shield:FindFirstChild("AllyCollisions")
-	if old then old:Destroy() end
-	local folder = Instance.new("Folder"); folder.Name = "AllyCollisions"; folder.Parent = shield
-	for _, ally in Players:GetPlayers() do
-		if ally == player or (player.Team and ally.Team == player.Team) then
-			for _, part in (ally.Character and ally.Character:GetDescendants() or {}) do
-				if part:IsA("BasePart") then
-					local constraint = Instance.new("NoCollisionConstraint")
-					constraint.Part0 = shield.PrimaryPart; constraint.Part1 = part; constraint.Parent = folder
+				table.insert(visuals, part)
+				local half = part.Size * 0.5
+				for _, x in {-1, 1} do
+					for _, y in {-1, 1} do
+						for _, z in {-1, 1} do
+							local corner = part.CFrame:PointToWorldSpace(Vector3.new(half.X * x, half.Y * y, half.Z * z))
+							minimum = minimum:Min(corner)
+							maximum = maximum:Max(corner)
+						end
+					end
 				end
 			end
 		end
+		if #visuals > 0 then
+			local center = (minimum + maximum) * 0.5
+			core.Transparency = 1
+			-- One solid plate covers the complete bounds of the authored panels.
+			core.Size = (maximum - minimum):Max(Vector3.new(0.1, 0.1, 0.1))
+			for _, part in visuals do part.CFrame -= center end
+		end
 	end
+	for _, part in visuals do
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = core; weld.Part1 = part; weld.Parent = part
+	end
+	return model
+end
+local function setBackShieldVisible(state, visible)
+	local character = state.character
+	if not character then return end
+	-- EliteTorso.main is the authored carried shield. Remove the old duplicate.
+	local duplicate = character:FindFirstChild("BulwarkShield")
+	if duplicate then duplicate:Destroy() end
+	local saved = state.backTransparency
+	if visible then
+		for part, transparency in saved or {} do
+			if part.Parent then part.Transparency = transparency end
+		end
+		state.backTransparency = nil
+		return
+	end
+	local eliteTorso = character:FindFirstChild("EliteTorso", true)
+	local main = eliteTorso and eliteTorso:FindFirstChild("main")
+	if not main then return end
+	saved = saved or {}; state.backTransparency = saved
+	local parts = main:GetDescendants()
+	table.insert(parts, main)
+	for _, part in parts do
+		if part:IsA("BasePart") or part:IsA("Decal") or part:IsA("Texture") then
+			if saved[part] == nil then saved[part] = part.Transparency end
+			part.Transparency = 1
+		end
+	end
+end
+local function remove(state)
+	setBackShieldVisible(state, true)
+	if state.deployed then state.deployed:Destroy() end
 end
 local function pickup(player, state)
 	if not eligible(player) then return end
@@ -100,10 +129,10 @@ local function pickup(player, state)
 		ConstructAudio.Play("shield_pickup", player.Character)
 		state.deployed:Destroy(); state.deployed = nil
 	end
-	backShield(player, state)
+	setBackShieldVisible(state, true)
 end
 local function deploy(player, state)
-	if not eligible(player) or not heldGun(player) or not state.back or (state.deployed and state.deployed.Parent) then return end
+	if not eligible(player) or not heldGun(player) or (state.deployed and state.deployed.Parent) then return end
 	local root = player.Character:FindFirstChild("HumanoidRootPart")
 	if not root then return end
 	local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Exclude; params.FilterDescendantsInstances = {player.Character}
@@ -112,9 +141,26 @@ local function deploy(player, state)
 	if not ground or ground.Normal.Y < 0.6 then return end
 	if workspace:Raycast(root.Position, root.CFrame.LookVector * 5, params) then return end
 	local model = shieldModel()
-	local position = ground.Position + Vector3.new(0, 2, 0)
+	local position = ground.Position
 	local direction = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z).Unit
 	model:PivotTo(CFrame.lookAt(position, position + direction))
+	-- Rest the lowest corner on the ground plane, including the authored panels.
+	-- Checking the plane also keeps the uphill edge clear on sloped ground.
+	local lowest = math.huge
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") then
+			local half = part.Size * 0.5
+			for _, x in {-1, 1} do
+				for _, y in {-1, 1} do
+					for _, z in {-1, 1} do
+						local corner = part.CFrame:PointToWorldSpace(Vector3.new(half.X * x, half.Y * y, half.Z * z))
+						lowest = math.min(lowest, (corner - ground.Position):Dot(ground.Normal))
+					end
+				end
+			end
+		end
+	end
+	model:PivotTo(model:GetPivot() + Vector3.new(0, -lowest / ground.Normal.Y, 0))
 	for _, part in model:GetDescendants() do if part:IsA("BasePart") then part.Anchored = true end end
 	model.PrimaryPart.CanCollide = true
 	model:SetAttribute("OwnerUserId", player.UserId)
@@ -122,23 +168,34 @@ local function deploy(player, state)
 	model.Parent = workspace
 	ConstructAudio.Play("shield_ready", root)
 	ConstructAudio.Play("shield_deploy", model)
-	state.back:Destroy(); state.back = nil; state.deployed = model
+	state.deployed = model
+	setBackShieldVisible(state, false)
 	-- A top rail is a physical surface for the existing downward bipod test.
-	local rail = Instance.new("Part"); rail.Name = "BipodRail"; rail.Size = Vector3.new(4, 0.2, 1.5)
-	rail.CFrame = model.PrimaryPart.CFrame * CFrame.new(0, 1.6, 0)
+	local rail = Instance.new("Part"); rail.Name = "BipodRail"; rail.Size = Vector3.new(model.PrimaryPart.Size.X, 0.2, 1.5)
+	rail.CFrame = model.PrimaryPart.CFrame * CFrame.new(0, model.PrimaryPart.Size.Y * 0.5 - 0.1, 0)
 	rail.Transparency = 1; rail.Anchored = true; rail.CanCollide = false
 	rail:SetAttribute("IndestructibleShield", true); rail.Parent = model
-	local prompt = Instance.new("ProximityPrompt"); prompt.ActionText = "Pick up"; prompt.ObjectText = "Bulwark Shield"
-	prompt.MaxActivationDistance = 8; prompt.RequiresLineOfSight = false; prompt.Parent = model.PrimaryPart
-	prompt.Triggered:Connect(function(who)
-		local r = who.Character and who.Character:FindFirstChild("HumanoidRootPart")
-		if who == player and r and (r.Position - model.PrimaryPart.Position).Magnitude <= 9 then pickup(player, state) end
-	end)
-	allyCollisions(player, state)
+	local detector = Instance.new("ClickDetector")
+	detector.Name = "clicker"
+	detector.MaxActivationDistance = 8
+	local interactionObject = Instance.new("ObjectValue")
+	interactionObject.Name = "InteractionObject"
+	interactionObject.Value = model
+	interactionObject.Parent = detector
+	detector.Parent = model.PrimaryPart
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "Highlight"
+	highlight.Adornee = model
+	highlight.FillTransparency = 0.5
+	highlight.FillColor = Color3.new(1, 1, 1)
+	highlight.OutlineColor = Color3.new(1, 1, 1)
+	highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+	highlight.Enabled = false
+	highlight.Parent = model
 end
 function Service.Restock(player)
 	local state = states[player]
-	if state and eligible(player) and not (state.deployed and state.deployed.Parent) then backShield(player, state) end
+	if state and eligible(player) and not (state.deployed and state.deployed.Parent) then setBackShieldVisible(state, true) end
 end
 local function mounted(player)
 	if not heldGun(player) then return false end
@@ -158,14 +215,19 @@ local function mounted(player)
 		or valid(workspace:Raycast(origin + root.CFrame.LookVector * 4, Vector3.new(0, -2.25, 0), params))
 end
 local function updateGunShield(character, active)
-	for _, model in character:GetChildren() do
+	-- Equipped models are nested under CharacterData.Equipment.
+	for _, model in character:GetDescendants() do
 		if model:IsA("Model") and (string.lower(model.Name):find("lewis", 1, true) or model.Name == "BulwarkRifle") then
 			local parts = model:FindFirstChild("parts")
 			local visual = parts and parts:FindFirstChild("shield")
 			local shield = parts and (parts:FindFirstChild("protect") or visual)
-			if visual and visual ~= shield and visual:IsA("BasePart") then visual.CanQuery = false end
+			if visual and visual:IsA("BasePart") then
+				visual.Transparency = active and 0 or 1
+				if visual ~= shield then visual.CanQuery = false end
+			end
 			if shield and shield:IsA("BasePart") then
 				shield.CanQuery = active; shield:SetAttribute("IndestructibleShield", active or nil)
+				shield:SetAttribute("Unpiercable", active or nil)
 			end
 		end
 	end
@@ -176,6 +238,13 @@ function Service.start_module()
 		local state = states[player]
 		if not state then return end
 		if action == "Deploy" and os.clock() >= (state.nextDeploy or 0) then state.nextDeploy = os.clock() + 0.5; deploy(player, state)
+		elseif action == "Pickup" then
+			local shield = state.deployed
+			local root = player.Character:FindFirstChild("HumanoidRootPart")
+			if shield and shield.Parent and requested == shield and root
+				and (root.Position - shield.PrimaryPart.Position).Magnitude <= 8 then
+				pickup(player, state)
+			end
 		elseif action == "Mount" and os.clock() >= (state.nextMount or 0) then
 			state.nextMount = os.clock() + 0.1
 			local active = requested == true and mounted(player)
@@ -194,9 +263,9 @@ function Service.start_module()
 				local state = states[player]
 				if not state or state.character ~= player.Character then
 					if state then remove(state) end
-					state = {character = player.Character}; states[player] = state; backShield(player, state)
+					state = {character = player.Character}; states[player] = state; setBackShieldVisible(state, true)
 				end
-				if state.deployed and state.deployed.Parent then allyCollisions(player, state) end
+				setBackShieldVisible(state, not (state.deployed and state.deployed.Parent))
 				if player.Character:GetAttribute("BulwarkMounted") and not mounted(player) then player.Character:SetAttribute("BulwarkMounted", nil) end
 				updateGunShield(player.Character, player.Character:GetAttribute("BulwarkMounted") == true)
 			end

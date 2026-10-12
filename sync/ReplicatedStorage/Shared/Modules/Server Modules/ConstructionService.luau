@@ -2,6 +2,7 @@ local RS = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Assets = require(RS.Shared.Library.AuthoredAssets)
 local Rules = require(RS.Shared.Library.MasterPortRules)
+local Base = require(RS.Shared.Library.MasterReference.Base)
 local V = require(script.Parent.MasterActions.Validation)
 local Audio = require(RS.Shared.Library.ConstructAudio)
 local Service = {}
@@ -98,8 +99,9 @@ function Service.Place(player, name, transform, options)
 		end
 		if not linked then model:Destroy(); return nil end
 	end
-	local cost = template:GetAttribute("Cost") or ((name == "Mantrap" or name == "Dynamite Stack" or name == "Tin Bomb") and 2 or 1)
-	local limit = template:GetAttribute("Limit") or (trap and 2 or 10)
+	local master = Base.base_constructs[name]
+	local cost = template:GetAttribute("Cost") or (master and master.cost) or ((name == "Mantrap" or name == "Dynamite Stack" or name == "Tin Bomb") and 2 or 1)
+	local limit = template:GetAttribute("Limit") or (master and master.limits) or (trap and 2 or 10)
 	local supplies = character:FindFirstChild("supplies")
 	local balance = supplies and supplies.Value or character:GetAttribute("ConstructionSupplies") or 0
 	if not (options and options.free) and not Rules.CanSpend(balance, cost, ownerCount(player, name), limit) then model:Destroy(); return nil end
@@ -148,7 +150,7 @@ function Service.Restock(player)
 	local character = player.Character
 	if not character then return end
 	local supplies = character:FindFirstChild("supplies")
-	local capacity = character:GetAttribute("ConstructionCapacity") or 10
+	local capacity = character:GetAttribute("ConstructionCapacity") or Base.base_supplies
 	if supplies then supplies.Value = capacity else character:SetAttribute("ConstructionSupplies", capacity) end
 end
 function Service.start_module()

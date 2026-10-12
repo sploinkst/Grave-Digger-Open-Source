@@ -68,52 +68,219 @@ local KingslayerRevolver = require(script.Parent.LegacyGunFactory).create({
 	bulletSpeed = 800,
 })
 
-function KingslayerRevolver:reload()
-	if not self.Equipped or self.Reloading or self.Capacity >= self.Max_Capacity then return false end
-	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
-	if not reserve or not reserve:IsA("NumberValue") or reserve.Value <= 0 then return false end
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local Input = game:GetService("UserInputService")
+local Rules = require(RS.Shared.Library.KingslayerRules)
+local Assets = require(RS.Shared.Library.AuthoredAssets)
+local Playback = require(RS.Shared.Library.SoundPlayback)
+local player = Players.LocalPlayer
+local baseEquip, baseUnequip = KingslayerRevolver._on_equip, KingslayerRevolver._on_unequip
+local baseActivate = KingslayerRevolver.activate
+local baseDestroy = KingslayerRevolver.destroy
+KingslayerRevolver.Can_Drop = false
+KingslayerRevolver.Starting_Reserve_Ammo = 12
 
-	local generation = self._equipGeneration
-	self.Reloading = true
-	self._reloadCancelled = false
-	game.Players.LocalPlayer:SetAttribute("CantUnequip", true)
-	task.spawn(function()
-		local startTrack = self:_playAnim("Reload_Start")
-		if startTrack then startTrack.Stopped:Wait() end
-		if not self.Equipped or self._equipGeneration ~= generation then return end
-		while self.Equipped and not self._reloadCancelled and self.Capacity < self.Max_Capacity and reserve.Value > 0 do
-			for _, animationName in { "Reload_Powder", "Reload_Add_Ball", "Reload_Cap_Add", "Reload_Cylinder" } do
-				local track = self:_playAnim(animationName, false, { restart = true, fade = 0.05, cutFade = 0 })
-				if track then track.Stopped:Wait() end
-				if not self.Equipped or self._equipGeneration ~= generation then return end
-				if self._reloadCancelled or not self.Equipped then break end
-			end
-			if self._reloadCancelled or not self.Equipped then break end
-			self.Capacity += 1
-			self:_fire_ammo(1)
+function KingslayerRevolver:_kingSound(name)
+	local source = self.SoundFolder and self.SoundFolder:FindFirstChild(name, true)
+	if not source then source = Assets.Find(name, {RS.Shared.Assets}, "Sound") end
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if source and source:IsA("Sound") then return Playback.Play(source, root, {PitchVariation=0.1}) end
+end
+function KingslayerRevolver:_cylinderVisuals()
+	if not self.actual_model or not self.KingslayerState then return end
+	for index, chamber in ipairs(self.KingslayerState.chambers) do
+		local round = self.actual_model:FindFirstChild("round" .. index, true)
+		if round then
+			round:SetAttribute("CapLoaded", chamber.cap == true)
+			round:SetAttribute("BallSeated", chamber.ball == true)
+			round:SetAttribute("PowderCharge", chamber.powder or 0)
+			if round:IsA("BasePart") then round.Transparency = chamber.ball == false and 1 or 0 end
 		end
-		if (self.Equipped and self._equipGeneration == generation) then
-			local endTrack = self:_playAnim("Reload_End")
-			if endTrack then endTrack.Stopped:Wait() end
-			if not self.Equipped or self._equipGeneration ~= generation then return end
-		end
-		self.Reloading = false
-		self._reloadCancelled = false
-		game.Players.LocalPlayer:SetAttribute("CantUnequip", nil)
-		self:_restoreBaseDeferred()
-	end)
+	end
+end
+function KingslayerRevolver:_panel()
+	if self._kingPanel then return self._kingPanel end
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "KingslayerLoading"; gui.ResetOnSpawn = false
+	local label = Instance.new("TextLabel")
+	label.Name = "Instructions"; label.AnchorPoint = Vector2.new(0.5, 1)
+	label.Position = UDim2.fromScale(0.5, 0.93); label.Size = UDim2.fromOffset(540, 190)
+	label.BackgroundColor3 = Color3.fromRGB(20, 18, 16); label.BackgroundTransparency = 0.2
+	label.TextColor3 = Color3.fromRGB(235, 225, 205); label.TextSize = 17; label.TextWrapped = true
+	label.Font = Enum.Font.Garamond; label.Parent = gui
+	gui.Enabled = false; gui.Parent = player:WaitForChild("PlayerGui")
+	self._kingPanel = gui
+	return gui
+end
+function KingslayerRevolver:_display(message)
+	if not self.KingslayerState then return end
+	local state = self.KingslayerState
+	local index = self.Reloading and Rules.Previous(state.cylinder) or state.cylinder
+	local panel = self:_panel(); panel.Enabled = true
+	local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
+	local text = "Chamber " .. index .. " of 6" .. (state.broken and " ? CYLINDER BROKEN" or "")
+	text ..= "\n" .. Rules.Inspect(state.chambers[index]) .. "\nLead balls: " .. (reserve and reserve.Value or 0)
+	if self.Reloading then
+		text ..= "\n1 / D-pad left: cap ? Hold 2 / D-pad right: powder ? 3 / D-pad up: ram"
+		text ..= "\nAlternate Action: ball ? Check Ammo: dump ? Fire: rotate ? 4 / D-pad down: close"
+		text ..= "\nRamrod chamber: " .. Rules.Previous(index)
+	end
+	if message then
+		text ..= "\n" .. message
+	end
+	panel.Instructions.Text = text
+end
+function KingslayerRevolver:_request(action, amount)
+	local generation = self._kingGeneration
+	local remote = RS.Shared.Library.Events:FindFirstChild("KingslayerAction")
+	if not remote then self:_display("Loading service unavailable."); return nil end
+	local ok, response = pcall(function() return remote:InvokeServer(self.tool, action, amount) end)
+	if not self.Equipped or generation ~= self._kingGeneration then return nil end
+	if not ok or not response then return nil end
+	if response.state then self.KingslayerState = response.state; self:_cylinderVisuals() end
+	if response.error then self:_display(response.error); return nil end
+	return response
+end
+function KingslayerRevolver:_loadingAction(action, amount)
+	if not self.Equipped or not self.Reloading or self._kingBusy then return end
+	self._kingBusy = true
+	local generation = self._kingGeneration
+	local chamber = self.KingslayerState and self.KingslayerState.chambers[Rules.Previous(self.KingslayerState.cylinder)]
+	local animation = ({Ball="Reload_Add_Ball", Pour="Reload_Powder", Dump="Reload_Dump", Ram="Reload_Lever", Rotate="Reload_Cylinder", Close="Reload_End"})[action]
+	if action == "Cap" then animation = chamber and chamber.cap == false and "Reload_Cap_Add" or "Reload_Cap_Remove" end
+	local response = self:_request(action, amount)
+	if response then
+		if action ~= "Pour" then self:_playAnim(animation, false, {restart=true}) end
+		self:_display()
+		task.wait(response.duration or 0.3)
+	end
+	if not self.Equipped or generation ~= self._kingGeneration then return end
+	self._kingBusy = false
+	if action == "Close" and response then
+		self.Reloading = false; player:SetAttribute("CantUnequip", nil)
+		if self._kingPanel then self._kingPanel.Enabled = false end
+		self:_stopAllExcept(); self:_restoreBaseDeferred()
+	end
+end
+function KingslayerRevolver:_pour()
+	if not self.Equipped or not self.Reloading or self._kingBusy then return end
+	self._kingBusy = true
+	local generation = self._kingGeneration
+	local response = self:_request("PourStart")
+	if not response then self._kingBusy = false; return end
+	local track = self:_playAnim("Reload_Powder", false, {restart=true})
+	task.wait(response.duration or 0.75)
+	if not self.Equipped or generation ~= self._kingGeneration then return end
+	if track then track:AdjustSpeed(0) end
+	local pourSound = self:_kingSound("powder_pour") or self:_kingSound("powder")
+	self._pourSound = pourSound
+	local start = os.clock()
+	repeat
+		task.wait()
+		if not self.Equipped or generation ~= self._kingGeneration then break end
+		self:_display("Pouring: " .. math.floor(math.min(os.clock() - start, 1) * 100) .. "%")
+	until not self.Equipped or not self.Reloading or os.clock() - start >= 1 or (not self._powderHeld and os.clock() - start >= 0.1)
+	if pourSound then pourSound:Destroy(); self._pourSound = nil end
+	if track then track:AdjustSpeed(1) end
+	if not self.Equipped or generation ~= self._kingGeneration then return end
+	self._kingBusy = false
+	self:_loadingAction("Pour", math.clamp(os.clock() - start, 0.1, 1))
+end
+function KingslayerRevolver:reload()
+	if not self.Equipped or self._kingBusy or self.Firing or self.Equipping then return false end
+	if self.Reloading then self:_loadingAction("Close"); return true end
+	local response = self:_request("Open")
+	if not response then return false end
+	self.Reloading = true; self._kingBusy = true
+	self:endAiming(); player:SetAttribute("CantUnequip", true)
+	local generation = self._kingGeneration
+	self:_playAnim("Reload_Start", false, {restart=true}); self:_display()
+	task.wait(response.duration or 0.5)
+	if self.Equipped and self._kingGeneration == generation then self._kingBusy = false; self:_playAnim("Reload_Idle") end
 	return true
 end
-
-function KingslayerRevolver:_onAltInput(pressed: boolean)
-	if not pressed or not self.Equipped or self:_isBusyForActivation() then return end
-	self.Alting = true
+function KingslayerRevolver:ammo_check()
+	if self.Reloading then self:_loadingAction("Dump"); return end
+	self:_display()
+end
+function KingslayerRevolver:end_ammo_check()
+	if self._kingPanel and not self.Reloading then self._kingPanel.Enabled = false end
+end
+function KingslayerRevolver:_onAltInput(pressed)
+	if pressed and self.Reloading then self:_loadingAction("Ball") end
+end
+function KingslayerRevolver:activate()
+	if self.Reloading then self:_loadingAction("Rotate"); return end
+	return baseActivate(self)
+end
+function KingslayerRevolver:fire()
+	if not self.Equipped or self._kingBusy or self.Reloading or self.Firing or self:_isBusyForActivation() or not self:_canFireNow() then return false end
+	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return false end
+	if not self:_findModelPart(self.MuzzlePartName or "muzzle") or not self.Caster or not self.CasterBehavior then return false end
+	self._kingBusy = true
+	local response = self:_request("Fire")
+	if not response then self._kingBusy = false; return false end
+	local shot = response.shot
+	if shot.kind == "break" then self:_kingSound("walker_break") end
+	if shot.capFired then self:_kingSound("cap") end
+	local animation = shot.kind == "break" and "Fire_Break" or (shot.kind == "weak" and "Fire_Weak" or "Fire")
+	local fired = false
+	if shot.projectile then
+		self.Capacity = 1
+		fired = self:_fireSingleShot({bulletSpeed=self.BulletSpeed,fireAnimation=animation,sound=(shot.kind == "weak" and self.SoundFolder and self.SoundFolder:FindFirstChild("fire_weak")) or self.FireSound,requireAiming=false,metadata={KingslayerShotToken=shot.token}})
+	else
+		if shot.kind == "blank" or shot.kind == "break" then
+			local muzzle = self:_findModelPart(self.MuzzlePartName or "muzzle")
+			self:_playShotFeedback(muzzle, self.FireSound)
+			self:_playAnim(animation, false, {restart=true})
+		else
+			self:_dryFire(); self:_playAnim("Fire_Empty", false, {restart=true})
+		end
+		task.wait(response.duration or self.FireInterval)
+	end
+	self.Capacity = 0; self._kingBusy = false
+	return fired
+end
+function KingslayerRevolver:_on_equip()
+	self._kingGeneration = (self._kingGeneration or 0) + 1
+	baseEquip(self)
+	self.DisableSteadyAimAccuracy = true; self.Can_Drop = false; self.Capacity = 0
+	self._kingBusy = true
+	local generation = self._kingGeneration
 	task.spawn(function()
-		local track = self:_playAnim("Spin_Cylinder")
-		if track then track.Stopped:Wait() end
-		self.Alting = false
-		self:_restoreBaseDeferred()
+		self:_request("Get")
+		if self.Equipped and self._kingGeneration == generation then self._kingBusy = false end
+	end)
+	self._kingInput = Input.InputBegan:Connect(function(input, processed)
+		if processed or not self.Equipped or not self.Reloading then return end
+		local key = input.KeyCode
+		if key == Enum.KeyCode.Two or key == Enum.KeyCode.DPadRight then self._powderHeld = true; task.spawn(function() self:_pour() end)
+		else
+			local action = ({[Enum.KeyCode.One]="Cap",[Enum.KeyCode.DPadLeft]="Cap",[Enum.KeyCode.Three]="Ram",[Enum.KeyCode.DPadUp]="Ram",[Enum.KeyCode.Four]="Close",[Enum.KeyCode.DPadDown]="Close"})[key]
+			if action then task.spawn(function() self:_loadingAction(action) end) end
+		end
+	end)
+	self._kingEnd = Input.InputEnded:Connect(function(input)
+		if input.KeyCode == Enum.KeyCode.Two or input.KeyCode == Enum.KeyCode.DPadRight then self._powderHeld = false end
 	end)
 end
-
+function KingslayerRevolver:_cleanupKingslayer()
+	self._kingGeneration = (self._kingGeneration or 0) + 1
+	self._powderHeld = false; self._kingBusy = false
+	if self._pourSound then self._pourSound:Destroy(); self._pourSound = nil end
+	if self._kingInput then self._kingInput:Disconnect(); self._kingInput = nil end
+	if self._kingEnd then self._kingEnd:Disconnect(); self._kingEnd = nil end
+	if self._kingPanel then self._kingPanel:Destroy(); self._kingPanel = nil end
+	player:SetAttribute("CantUnequip", nil)
+end
+function KingslayerRevolver:_on_unequip()
+	self:_cleanupKingslayer()
+	baseUnequip(self)
+end
+function KingslayerRevolver:destroy()
+	self:_cleanupKingslayer()
+	return baseDestroy(self)
+end
 return KingslayerRevolver

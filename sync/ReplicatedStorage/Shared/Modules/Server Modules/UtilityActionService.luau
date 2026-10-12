@@ -3,13 +3,14 @@ local Players=game:GetService("Players")
 local V=require(script.Parent.MasterActions.Validation)
 local Definitions=require(RS.Shared.Library.MasterToolDefinitions)
 local Audio=require(RS.Shared.Library.ConstructAudio)
+local Welding=require(script.Parent.WeldingEffects)
 local Service={}
 local remote=V.Remote("UtilityAction")
 local actions={
+	WeldingStart={names={"WeldingTool","weldingtool"},cooldown=0.2},
 	Repair={names={"Wrench","WeldingTool","wrench","weldingtool"},cooldown=0.5},
 	FlagPlace={names={"Flagpole","RallyBanner"},cooldown=2},
 	FlagWave={names={"Flagpole","RallyBanner"},cooldown=5},
-	LancerStim={names={"LancerStim","PainkillerInjector"},cooldown=2},
 	Throw={names={"AntiArmourGrenades","NebelGrenade"},cooldown=0.5},
 	Drink={names={"Bottle"},cooldown=1},
 	CleanMachete={names={"Machete"},cooldown=1},
@@ -23,18 +24,14 @@ local function toolModel(character,tool)
 	return equipment and ref and equipment:FindFirstChild(ref.Value)
 end
 function Service.Restock(player)
-	local c=player.Character; if not c then return end
-	local backpack=player:FindFirstChildOfClass("Backpack")
-	if not backpack then return end
-	for _,container in ipairs({c,backpack}) do
-		for _,tool in ipairs(container:GetChildren()) do
-			if tool:IsA("Tool") and (tool.Name=="LancerStim" or tool.Name=="PainkillerInjector") then tool:SetAttribute("Charges",tool:GetAttribute("MaxCharges") or 1) end
-		end
-	end
+	require(script.Parent.LancerStimService).Restock(player)
 end
 function Service.start_module()
 	if Service.started then return end; Service.started=true
 	remote.OnServerEvent:Connect(function(player,tool,action,argument)
+		if action=="CancelLancerStim" then require(script.Parent.LancerStimService).Cancel(player,tool); return end
+		if action=="LancerStim" then require(script.Parent.LancerStimService).Use(player,tool); return end
+		if action=="WeldingStop" then Welding.Stop(player,tool); return end
 		local config=actions[action]
 		if not config then return end
 		local c,root,h=V.Tool(player,tool,config.names)
@@ -43,12 +40,22 @@ function Service.start_module()
 		if action=="Repair" then
 			local legacyClass=c:FindFirstChild("class")
 			local role=string.lower(tostring(legacyClass and legacyClass.Value or c:GetAttribute("Class") or ""))
-			if role=="rook" or role=="engineer" then cooldown/=1.5 end
+			if role=="rook" then cooldown/=1.5 end
 		end
 		if not V.Cooldown(player,"Utility:"..action,cooldown) then return end
-		if action=="Repair" then
-			local hit=V.Ray(c,argument,3); if not hit then return end
-			if require(script.Parent.ConstructionService).Repair(player,hit.Instance,tool:GetAttribute("RepairAmount") or 10) then return end
+		if action=="WeldingStart" then Welding.Start(player,tool)
+		elseif action=="Repair" then
+			local hit=V.Ray(c,argument,3); if not hit then Welding.Stop(player,tool); return end
+			local construction=require(script.Parent.ConstructionService)
+			local target=construction.Find(hit.Instance)
+			local targetHealth=target and target:FindFirstChild("health")
+			local maxHealth=targetHealth and targetHealth:FindFirstChild("maxhealth")
+			local progress=target and target:FindFirstChild("construction")
+			if maxHealth and progress and progress.Value>=100 and targetHealth.Value>=maxHealth.Value then Welding.Stop(player,tool); return end
+			if construction.Repair(player,hit.Instance,tool:GetAttribute("RepairAmount") or 10) then
+				if tool.Name=="WeldingTool" or tool.Name=="weldingtool" then Welding.Contact(player,tool,hit) end
+				return
+			end
 			-- The master's wrench targets the outside of a train carriage.
 			local carriage=hit.Instance
 			while carriage and carriage.Parent and carriage.Parent.Name~="trains" do carriage=carriage.Parent end
@@ -58,8 +65,11 @@ function Service.start_module()
 			if carriage and carriage.Parent and health and maximum and not c:GetAttribute("InsideTrain") then
 				local previous=health.Value
 				health.Value=math.min(maximum.Value,health.Value+(tool:GetAttribute("RepairAmount") or 10))
-				if health.Value>previous then Audio.Play("repair",root) end
-			end
+				if health.Value>previous then
+					Audio.Play("repair",root)
+					if tool.Name=="WeldingTool" or tool.Name=="weldingtool" then Welding.Contact(player,tool,hit) end
+				else Welding.Stop(player,tool) end
+			else Welding.Stop(player,tool) end
 		elseif action=="FlagPlace" then
 			require(script.Parent.BuffService).DeployBanner(player)
 		elseif action=="FlagWave" then
@@ -68,17 +78,6 @@ function Service.start_module()
 				local r=ally.Character and ally.Character:FindFirstChild("HumanoidRootPart")
 				if player.Team and ally.Team==player.Team and r and (r.Position-root.Position).Magnitude<=35 then require(script.Parent.StatusService).GiveStatus(ally,"MoraleStatus",5) end
 			end
-		elseif action=="LancerStim" then
-			local charges=tool:GetAttribute("Charges"); if charges==nil then charges=1 end
-			if charges<=0 then return end
-			tool:SetAttribute("Charges",charges-1)
-			-- Server behavior was not supplied: these overrides are explicit tuning.
-			h.Health=math.min(h.MaxHealth,math.max(h.Health,tool:GetAttribute("HealTo") or 100))
-			local duration=tool:GetAttribute("Duration") or 20
-			c:SetAttribute("LancerStimUntil",workspace:GetServerTimeNow()+duration)
-			require(script.Parent.ChemicalService).ApplyMixture(player,c,player,{"Hydrocodone"})
-			local captured=c
-			task.delay(duration,function() if player.Character==captured then captured:SetAttribute("LancerStimUntil",nil) end end)
 		elseif action=="Throw" then
 			if type(argument)=="table" and V.Direction(argument.direction) then
 				require(script.Parent.OrdnanceService).Fire(player,tool.Name,argument.direction,tool,argument.underhand==true)

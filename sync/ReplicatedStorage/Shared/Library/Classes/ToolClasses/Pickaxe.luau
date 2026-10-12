@@ -52,10 +52,13 @@ function Pickaxe.new(PickaxeCreateInfo: Types.BaseToolCreateInfo): Pickaxe
 	local self = setmetatable(BaseTool.new(PickaxeCreateInfo), Pickaxe)
 
 	self.className = "Pickaxe"
+	self.AuthoredWelds = require(script.Parent.Parent.Parent.WeaponPreviewMounts).pick
+	self.EquipWelds = self.AuthoredWelds
+	self.UseNativeEquipMount = true
 	self.item_image = "rbxassetid://17496049481"
 	self.Designation = "Mining"
 
-	self.holster_reference = Holster_Folder and Holster_Folder:FindFirstChild("PickaxeHolster")
+	self.holster_reference = nil -- Render the tool model using weapon-module holster offsets.
 	self.actual_holster = nil
 
 	self.model_reference = Tool_Folder:FindFirstChild("Pickaxe")
@@ -140,7 +143,8 @@ function Pickaxe:_on_give(tool: Tool)
 	self._deactivationConnection = tool.Deactivated:Connect(function()
 		self._miningHeld = false
 	end)
-	self._miningImpactConnection = delete_terrain.OnClientEvent:Connect(function()
+	self._miningImpactConnection = delete_terrain.OnClientEvent:Connect(function(hitTool)
+		if hitTool and hitTool ~= tool then return end
 		local character = LOCAL_PLAYER.Character
 		local animations = self.RegisteredAnimations
 		local mine = animations and animations.Mine
@@ -153,7 +157,7 @@ function Pickaxe:_on_give(tool: Tool)
 end
 
 function Pickaxe:_mineSwing(): boolean
-	if not self.Equipped or self.Equipping then return false end
+	if not self.Equipped or self.Equipping or self.Reloading or self.Checking then return false end
 	local animations = self.RegisteredAnimations
 	local animationName = self._nextMiningMelee == 1 and "Melee1" or "Melee2"
 	self._nextMiningMelee = self._nextMiningMelee == 1 and 2 or 1
@@ -179,9 +183,10 @@ function Pickaxe:_mineSwing(): boolean
 	if not active() then return false end
 	self:_playMiningSound("swing" .. math.random(1, 2), 0.1)
 	local camera = workspace.CurrentCamera
-	if camera then delete_terrain:FireServer(camera.CFrame.LookVector * MINING_REACH) end
+	if camera then delete_terrain:FireServer(camera.CFrame.LookVector * MINING_REACH, self.Aiming == true) end
 
 	local recovery = self.mining_recovery
+	if self.Aiming then recovery *= self.className == "HeavyPickaxe" and 0.8 or 0.85 end
 	if character:GetAttribute("TunnelRat") then recovery *= 0.75 end
 	recovery /= math.max(character:GetAttribute("ChemicalSwingMultiplier") or 1, 0.05)
 	local readyAt = os.clock() + recovery
@@ -193,7 +198,7 @@ function Pickaxe:_mineSwing(): boolean
 end
 
 function Pickaxe:activate()
-	if not self.Equipped or self.Equipping then return end
+	if not self.Equipped or self.Equipping or self.Reloading or self.Checking or self.Alting then return end
 	self._miningHeld = true
 	if self._miningLoopRunning then return end
 

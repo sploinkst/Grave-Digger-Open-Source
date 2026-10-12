@@ -229,6 +229,7 @@ local function Restock(Player: Player, Character: Model)
 	require(script.Parent.OrdnanceService).Restock(Player)
 	require(script.Parent.UtilityActionService).Restock(Player)
 	require(script.Parent.DeployedShieldService).Restock(Player)
+	require(script.Parent.PickaxeService).Restock(Player)
 
 	Util.setammo(Player)
 

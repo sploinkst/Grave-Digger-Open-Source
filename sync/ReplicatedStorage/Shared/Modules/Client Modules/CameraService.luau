@@ -74,6 +74,13 @@ local function HandleDeath(character)
 	Module.EndCameraByName("SpectateCamera", true)
 
 	humanoid.Died:Connect(function()
+		if PlayerService.LocalPlayer.Character ~= character then return end
+		if PlayerService.LocalPlayer:GetAttribute("MenuOpen") then
+			Module.EndCameraByName("MenuCamera", true)
+			Module.SwitchCamera("DeathCamera", true)
+			Module.SwitchCamera("MenuCamera", true)
+			return
+		end
 		Module.SwitchCamera("DeathCamera", true)
 	end)
 end
@@ -86,11 +93,22 @@ function Module.start_module()
 	Module.SwitchCamera("SpectateCamera", true)
 
 	local function OnCharacterAdded(character)
-		Module.EndCameraByName("DeathCamera", true)
-		Module.EndCameraByName("SpectateCamera", true)
+		local menuOpen = PlayerService.LocalPlayer:GetAttribute("MenuOpen") == true
+        -- Tear down the old stack without resuming dead cameras between removals.
+        local oldStack=table.clone(CamerasStack);table.clear(CamerasStack)
+        for index=#oldStack,1,-1 do
+            local ok,problem=pcall(function() oldStack[index]:Cut() end)
+            if not ok then warn("[CameraService] Respawn cleanup: "..tostring(problem)) end
+        end
+        DeathScreen.Hide()
+        local humanoid=character:WaitForChild("Humanoid",10)
+        if PlayerService.LocalPlayer.Character~=character or not humanoid then return end
+        PlayerService.LocalPlayer:SetAttribute("CantUnequip",nil)
+        if not menuOpen then PlayerService.LocalPlayer:SetAttribute("MenuLocked",nil) end
 		NormalizeGameplayCamera(character)
 		DeathScreen.Hide()
 		Module.SwitchCamera("BaseCamera", true)
+		if menuOpen then Module.SwitchCamera("MenuCamera", true) end
 		HandleDeath(character)
 	end
 

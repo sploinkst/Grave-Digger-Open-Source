@@ -4,6 +4,8 @@ local Appearance = require(Shared.Library.CosmeticAppearance)
 local ClassAppearance = require(Shared.Library.ClassAppearance)
 local Classes = require(Shared.Library.ClassDefinitions)
 local Scope = require(script.Parent.Scope)
+local UI = require(script.Parent.UI)
+local MenuPreview = require(script.Parent.Preview)
 local player = Players.LocalPlayer
 local module = {}
 local started, active = false, false
@@ -49,14 +51,8 @@ local function refreshPreview()
     if not character or not scene or not (rig or spot) then return end
     local pivot = spot and spot:IsA("BasePart") and spot.CFrame or rig and rig:IsA("Model") and rig:GetPivot()
     if not pivot then return end
-    local archivable = character.Archivable
-    character.Archivable = true
-    local clone = character:Clone()
-    character.Archivable = archivable
+    local clone = MenuPreview.Clone(character)
     if not clone then return end
-    for _, object in clone:GetDescendants() do
-        if object:IsA("LuaSourceContainer") or object:IsA("Tool") then object:Destroy() end
-    end
     ClassAppearance.Apply(clone, previewTeam or (player.Team and player.Team.Name), previewClass or Classes.Selected(player))
     Appearance.Apply(clone, Appearance.Data(player))
     local root = clone:FindFirstChild("HumanoidRootPart")
@@ -70,7 +66,7 @@ local function refreshPreview()
     preview = clone
     preview.Name = "AppearancePreview"
     preview.Parent = scene
-    preview:PivotTo(pivot * CFrame.Angles(0, rotation, 0))
+    MenuPreview.Place(preview, pivot * CFrame.Angles(0, rotation, 0), spot)
 end
 
 local function populate()
@@ -96,6 +92,10 @@ local function populate()
     local label = button and button:FindFirstChild("textuse")
     text(frame:FindFirstChild("categoryselection"), label and label:IsA("StringValue") and label.Value ~= "" and label.Value or definition.Label)
     local data = Appearance.Data(player)
+    for _, axis in {"hat_x", "hat_y", "hat_z"} do
+        local control = frame:FindFirstChild(axis)
+        if control and control:IsA("GuiObject") then control.Visible = category == "accessories" end
+    end
     for _, option in options:GetChildren() do
         local icon = option:FindFirstChild("iconuse")
         if icon and icon:IsA("ImageLabel") then icon.ImageColor3 = option.Name == category and Color3.new(1,1,1) or Color3.fromRGB(128,128,128) end
@@ -161,14 +161,8 @@ end
 
 local function bind()
     local gui = player:FindFirstChildOfClass("PlayerGui")
-    local scenes = gui and gui:FindFirstChild("Menu_Scenes")
-    local scene = scenes and scenes:FindFirstChild("Appearance")
+    local scene = UI.Scene("Appearance")
     local nextFrame = scene and scene:FindFirstChild("cosmeticsframe")
-    if not nextFrame then
-        local main = gui and gui:FindFirstChild("main")
-        local loadout = main and main:FindFirstChild("loadout_menu")
-        nextFrame = loadout and loadout:FindFirstChild("cosmeticsframe")
-    end
     if not nextFrame or nextFrame == frame then return end
     local nextList = nextFrame:FindFirstChild("scroll")
     local nextOptions = nextFrame:FindFirstChild("customisationoptions")
@@ -204,9 +198,30 @@ local function bind()
     if classes then
         for _, className in Classes.Order do
             local button = classes:FindFirstChild(className:lower())
+            if not button and classes:FindFirstChild("ex") then
+                classes.ex.Visible = false
+                button = UI.Clone(classes.ex, classes, panelScope, className:lower())
+                text(button:FindFirstChild("inner"), className)
+            end
             if button and button:IsA("GuiButton") then
                 panelScope:Connect(button.Activated, function() previewClass = className; text(frame:FindFirstChild("classpopup"), className); refreshPreview() end)
             end
+        end
+    end
+    local cosmeticData = Appearance.Data(player)
+    for _, entry in {{"hat_x", "HatX"}, {"hat_y", "HatY"}, {"hat_z", "HatZ"}} do
+        local box = UI.Find(frame, entry[1] .. "/inputbox")
+        if box and box:IsA("TextBox") then
+            local value = cosmeticData and cosmeticData:FindFirstChild(entry[2])
+            box.Text = tostring(value and value.Value or 0.5)
+            panelScope:Connect(box.FocusLost, function()
+                local number = tonumber(box.Text)
+                if number and number==number and math.abs(number)<math.huge then
+                    Shared.Library.Events:WaitForChild("Appearance"):FireServer(entry[2], math.clamp(number,0,1))
+                end
+                box.Text = tostring(value and value.Value or 0.5)
+            end)
+            if value then panelScope:Connect(value.Changed, function() box.Text=tostring(value.Value) end) end
         end
     end
     panelScope:Connect(frame:GetPropertyChangedSignal("Visible"), function() active = visible(); if active then populate() else clearPreview() end end)

@@ -1,4 +1,3 @@
--- Shared timing and server damage rules. Ranges are measured from the attacker.
 local Rules = {
 	Lance = {SweepDamage = 130, StabDamage = 190, SweepRange = 7, StabRange = 10,
 		Windup = .15, Interval = .85, SweepDot = .25, ChargeTime = 3, ChargeCooldown = 3},

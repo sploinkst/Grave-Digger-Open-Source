@@ -376,7 +376,7 @@ function JudgementRifle:setAltMode()
 	if self.Equipped then
 		local stopTrack = self:_playAnim("Charge_Stop")
 		Players.LocalPlayer.Character:SetAttribute("charging", nil)
-		if stopTrack then stopTrack.Stopped:Wait() end
+		if stopTrack then self:_waitAnimation(stopTrack) end
 	end
 	self:_set_sprint_arms(false)
 	self.ForceBlockFire = false

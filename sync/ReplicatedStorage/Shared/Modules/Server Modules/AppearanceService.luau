@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local Shared = game:GetService("ReplicatedStorage").Shared
 local Appearance = require(Shared.Library.CosmeticAppearance)
+local MenuRules = require(Shared.Library.MenuRules)
 local module = {}
 local started = false
 function module.start_module()
@@ -10,13 +11,27 @@ function module.start_module()
 	remote.Name, remote.Parent = "Appearance", Shared.Library.Events
 	local last = {}
 	remote.OnServerEvent:Connect(function(player, category, choice)
-		if typeof(category) ~= "string" or typeof(choice) ~= "string" or #choice > 100 then return end
+		if typeof(category) ~= "string" then return end
+		if category=="WeaponSkin" then
+			if os.clock()-(last[player] or 0)<0.1 then return end
+			last[player]=os.clock()
+			require(script.WeaponSkins).Select(player,choice)
+			return
+		end
+		local axis = table.find({"HatX", "HatY", "HatZ"}, category)
+		if axis then choice = MenuRules.HatPosition(choice); if not choice then return end
+		elseif typeof(choice) ~= "string" or #choice > 100 then return end
 		if os.clock() - (last[player] or 0) < 0.1 then return end
 		last[player] = os.clock()
 		if not player:GetAttribute("PlayerDataReady") then return end
 		local data = Appearance.Data(player)
 		if not data then return end
-		if category ~= "Accessories" then
+		if axis then
+			local value = data:FindFirstChild(category)
+			if not value then value=Instance.new("NumberValue"); value.Name=category; value.Parent=data end
+			if not value:IsA("NumberValue") then return end
+			value.Value=choice
+		elseif category ~= "Accessories" then
 			local definition
 			for _, entry in Appearance.Categories do if entry.Key == category then definition = entry; break end end
 			if not definition or not table.find(definition.Choices, choice) then return end

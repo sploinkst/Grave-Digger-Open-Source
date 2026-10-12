@@ -1,5 +1,7 @@
 -- Bind authored GUI objects. Only existing row templates may be cloned.
 local UI = {}
+local Layout = require(game:GetService("ReplicatedStorage").Shared.Library.MenuLayout)
+UI.Scene = Layout.Scene
 function UI.Find(root, path)
     local item=root
     for name in path:gmatch("[^/]+") do item=item and item:FindFirstChild(name) end
@@ -31,8 +33,7 @@ function UI.Mount(sceneName, mount)
     local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
     local current, scope
     local function refresh()
-        local scenes = playerGui:FindFirstChild("Menu_Scenes")
-        local scene = scenes and scenes:FindFirstChild(sceneName)
+        local scene = Layout.Scene(sceneName)
         if scene == current then return end
         if scope then scope:Destroy() end
         current, scope = scene, nil

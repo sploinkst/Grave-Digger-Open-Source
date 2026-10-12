@@ -4,6 +4,8 @@ local Module = {}
 local WorkspaceService = game:GetService("Workspace")
 local ReplicatedStorageService = game:GetService("ReplicatedStorage")
 local SoundPlayback = require(ReplicatedStorageService.Shared.Library.SoundPlayback)
+local PickaxeRules = require(ReplicatedStorageService.Shared.Library.PickaxeRules)
+local PickaxeService = require(script.Parent.Parent.PickaxeService)
 
 -- // Constants
 local GameSetup = WorkspaceService.Game_Details.Main_Game
@@ -212,7 +214,7 @@ local function playRockImpact(position, normal)
 	Debris:AddItem(anchor, lifetime)
 end
 
-local function HandleDeleteTerrain(player, direction)
+local function HandleDeleteTerrain(player, direction, precise)
 	if typeof(direction) ~= "Vector3" then return end
 	local magnitude = direction.Magnitude
 	if magnitude ~= magnitude or magnitude == math.huge or magnitude < 0.01 then return end
@@ -221,7 +223,9 @@ local function HandleDeleteTerrain(player, direction)
 	local head = character and character:FindFirstChild("Head")
 	local tool = character and character:FindFirstChildOfClass("Tool")
 	if not head or not humanoid or humanoid.Health <= 0 or not tool
-		or (tool.Name ~= "Pickaxe" and tool.Name ~= "HeavyPickaxe") then return end
+		or (tool.Name ~= "Pickaxe" and tool.Name ~= "Pick" and tool.Name ~= "HeavyPickaxe")
+		or tool:GetAttribute("Sharpening") or character:GetAttribute("ActionBlocked")
+		or character:GetAttribute("CombatStunned") or player:GetAttribute("MenuOpen") then return end
 	if (miningCooldowns[player] or 0) > os.clock() then return end
 	miningCooldowns[player] = os.clock() + 0.4
 	local params = RaycastParams.new()
@@ -233,10 +237,19 @@ local function HandleDeleteTerrain(player, direction)
 	if hit.Material ~= Enum.Material.Rock then
 		return
 	end
-	local center = hit.Position + unit * (TUNNEL_SIZE.Z / 2 - 2)
-	TerrainService:FillBlock(CFrame.lookAt(center, center + unit), TUNNEL_SIZE, Enum.Material.Air)
+	precise = precise == true
+	local mode = PickaxeService.MiningMode(tool, precise)
+	local size = TUNNEL_SIZE
+	if mode ~= "Regular" then
+		local configuredSize = tool:GetAttribute("Mining" .. mode .. "Size")
+		size = if typeof(configuredSize) == "Vector3" then configuredSize
+			else Vector3.new(table.unpack(PickaxeRules[mode .. "Size"]))
+	end
+	local center = hit.Position + unit * (size.Z / 2 - 2)
+	TerrainService:FillBlock(CFrame.lookAt(center, center + unit), size, Enum.Material.Air)
+	PickaxeService.RecordHit(player, tool, precise)
 	playRockImpact(hit.Position, hit.Normal)
-	DeleteTerrainEvent:FireClient(player)
+	DeleteTerrainEvent:FireClient(player, tool)
 	require(script.Parent.Parent.ClassService).RecordMining(player)
 end
 

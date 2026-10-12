@@ -7,26 +7,38 @@ local RunService = game:GetService("RunService")
 
 local Types = require(script.Parent.Parent.Parent.Types)
 local BaseRifle = require(script.Parent.Parent.BaseRifle)
-local VolkRifle = require(script.Parent.VolkRifle)
 
 local Assets = ReplicatedStorage.Shared.Assets
 local GunAssets = Assets.Guns
-local ToolFolder = GunAssets.ToolModels
+local ToolFolder = GunAssets:FindFirstChild("ToolModels")
+local WeaponSounds = require(script.Parent.Parent.Parent.WeaponSounds)
 
-local whisperAnimations = Assets.Animations.Tools.Guns:FindFirstChild("WhisperRifle")
-local princeAnimations = Assets.Animations.Tools.Guns:FindFirstChild("PrinceRifle")
+local animations = Assets:FindFirstChild("Animations")
+local tools = animations and animations:FindFirstChild("Tools")
+local guns = tools and tools:FindFirstChild("Guns")
+local legacyAnimations = ReplicatedStorage:FindFirstChild("ToolAnimations")
+local whisperAnimations = (guns and (guns:FindFirstChild("springfield") or guns:FindFirstChild("WhisperRifle") or guns:FindFirstChild("Springfield")))
+	or (legacyAnimations and (legacyAnimations:FindFirstChild("springfield") or legacyAnimations:FindFirstChild("WhisperRifle")))
+
+local princeAnimations = (guns and (guns:FindFirstChild("PrinceRifle") or guns:FindFirstChild("mauser")))
+	or (legacyAnimations and (legacyAnimations:FindFirstChild("PrinceRifle") or legacyAnimations:FindFirstChild("mauser")))
 
 local function animation(folder: Instance?, name: string): Animation?
-	local found = folder and folder:FindFirstChild(name)
+	local found = folder and folder:FindFirstChild(name, true)
 	return if found and found:IsA("Animation") then found else nil
 end
 
-local whisperSounds = Assets.Sounds.Guns:FindFirstChild("WhisperRifle")
-	or Assets.Sounds.Guns:FindFirstChild("springfield")
-		or Assets.Sounds.Guns:FindFirstChild("Springfield")
-		or Assets.Sounds.Guns:FindFirstChild("WhisperRifle")
-		or Assets.Sounds.Guns:FindFirstChild("Whisper")
-		or Assets.Sounds.Guns.PrinceRifle
+local sounds = Assets:FindFirstChild("Sounds")
+local gunSounds = sounds and sounds:FindFirstChild("Guns")
+local whisperSounds = gunSounds and (gunSounds:FindFirstChild("springfield") or gunSounds:FindFirstChild("WhisperRifle") or gunSounds:FindFirstChild("Springfield") or gunSounds:FindFirstChild("Whisper"))
+
+local function findSound(self, ...): Sound?
+	for _, name in {...} do
+		local sound = self.SoundFolder and self.SoundFolder:FindFirstChild(name, true)
+		if sound and sound:IsA("Sound") then return sound end
+	end
+	return WeaponSounds.Find(self, "fire")
+end
 
 local PEDERSEN_FIRE_INTERVAL = 0.333
 local BOLT_FIRE_INTERVAL = 0.3
@@ -115,11 +127,12 @@ local ANIM_LAYERS: { [string]: number } = {
 
 local WhisperRifle = {}
 WhisperRifle.__index = WhisperRifle
-setmetatable(WhisperRifle, { __index = VolkRifle })
+setmetatable(WhisperRifle, { __index = BaseRifle })
 
 export type WhisperRifle = typeof(setmetatable({} :: any, WhisperRifle))
 
 local function findModel(): Model?
+	if not ToolFolder then return nil end
 	local model = ToolFolder:FindFirstChild("springfield")
 		or ToolFolder:FindFirstChild("Springfield")
 		or ToolFolder:FindFirstChild("WhisperRifle")
@@ -127,20 +140,13 @@ local function findModel(): Model?
 	return model and model:IsA("Model") and model or nil
 end
 
-local function configureSuppressedSounds(folder: Instance)
-	if not RunService:IsClient() then return end
-	for _, sound in folder:GetDescendants() do
-		if sound:IsA("Sound") then
-			local name = string.lower(sound.Name)
-			sound.RollOffMaxDistance = (name == "fire") and 20 or math.min(sound.RollOffMaxDistance, 65)
-		end
-	end
-end
-
 function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
-	-- Reuse the established bolt-action behavior, then replace its identity,
-	-- assets, statistics, and alternate-action behavior.
-	local self = setmetatable(VolkRifle.new(info), WhisperRifle)
+	-- Start with firearm state, then apply Springfield assets and exact authored mounts.
+	local self = setmetatable(BaseRifle.new(info), WhisperRifle)
+	self.motor_6d_data = {Parent = "Left Arm", Part0 = "Left Arm", C0 = CFrame.identity, C1 = CFrame.identity}
+	self.name = "WhisperRifle"
+	self.AuthoredWelds = WhisperRifle.AuthoredWelds
+	self.EquipWelds = nil
 
 	self.className = "WhisperRifle"
 	self.item_image = WhisperRifle.Tool_Image
@@ -150,20 +156,19 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 	local model = findModel()
 	if model then
 		self.model_reference = model
-		self.holster_reference = GunAssets.Holsters:FindFirstChild("springfieldHolster")
-			or GunAssets.Holsters:FindFirstChild("SpringfieldHolster")
-			or GunAssets.Holsters:FindFirstChild("WhisperRifleHolster")
+		-- Use the Springfield model and its authored holster transform.
+		self.holster_reference = model
 		self.motor_6d_data.Part1 = model:FindFirstChild("hitbox", true)
 	end
 
-	self.AnimationGunType = "WhisperRifle"
+	self.AnimationGunType = "springfield"
 	self.animations = {
-		Hold = animation(whisperAnimations, "held"),
+		Hold = animation(princeAnimations, "held"),
 		Locked = animation(whisperAnimations, "locked"),
 		Locked_Alt = animation(whisperAnimations, "locked_alt"),
-		Draw = animation(princeAnimations, "draw"),
-		Unequip = animation(princeAnimations, "unequip"),
-		Aim = animation(whisperAnimations, "aim"),
+		Draw = animation(whisperAnimations, "draw"),
+		Unequip = animation(whisperAnimations, "unequip"),
+		Aim = animation(princeAnimations, "aim"),
 		Aim_Left = animation(princeAnimations, "aim_left"),
 		Fire = animation(whisperAnimations, "fire"),
 		Fire_Left = animation(whisperAnimations, "fire_left"),
@@ -188,15 +193,17 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 		Pedersen_Mag_In = animation(whisperAnimations, "pedersen_mag_in"),
 		Pedersen_Mag_Out = animation(whisperAnimations, "pedersen_mag_out"),
 		Check = animation(whisperAnimations, "check"),
-		Melee1 = animation(princeAnimations, "melee1"),
-		Melee2 = animation(princeAnimations, "melee2"),
-		Short = animation(princeAnimations, "short"),
-		Drop = Assets.Animations.Tools.Misc.Drop_Rifle,
+		Melee1 = animation(whisperAnimations, "melee1"),
+		Melee2 = animation(whisperAnimations, "melee2"),
+		Short = animation(whisperAnimations, "short"),
+		Drop = tools and tools:FindFirstChild("Misc") and tools.Misc:FindFirstChild("Drop_Rifle"),
 	}
-	self.animation_speeds.Draw = 1 / WEAPON_STATS.draw_speed
-	self.animation_speeds.Aim = 1 / WEAPON_STATS.aim_speed
-	self.animation_speeds.Aim_Left = 1 / WEAPON_STATS.aim_speed
-	self.animation_speeds.Reload_Loop = 1 / WEAPON_STATS.reload_loop
+	self.animation_speeds = {
+		Draw = 1 / WEAPON_STATS.draw_speed,
+		Aim = 1 / WEAPON_STATS.aim_speed,
+		Aim_Left = 1 / WEAPON_STATS.aim_speed,
+		Reload_Loop = 1 / WEAPON_STATS.reload_loop,
+	}
 
 	self.damage = WEAPON_STATS.damage
 	self.Max_Capacity = WEAPON_STATS.capacity
@@ -209,6 +216,8 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 	self.KnockBack_Force = 12
 	self.SoundFolder = whisperSounds
 	self.BulletSpeed = 1200
+	self.MuzzlePartName = "muzzle"
+	self.AmmoCheckPartName = "hitbox"
 	self.FireEmissions = nil
 	self.ShowBulletTrail = false
 
@@ -221,9 +230,9 @@ function WhisperRifle.new(info: Types.BaseToolCreateInfo): WhisperRifle
 	self.Jammed = false
 	self.Alting = false
 
-	configureSuppressedSounds(whisperSounds)
 	self:applyFirearmConfig(WEAPON_STATS)
 	self.SoundFolder = whisperSounds
+	self:_applyWeaponWelds()
 	return self
 end
 
@@ -265,7 +274,7 @@ function WhisperRifle:_getMuzzlePart(): BasePart?
 	local muzzleName = self.PedersenMode and "altmuzzle" or "muzzle"
 	local muzzle = model and model:FindFirstChild(muzzleName, true)
 	if muzzle and muzzle:IsA("BasePart") then return muzzle end
-	return VolkRifle._getMuzzlePart(self)
+	return self:_findModelPart(self.MuzzlePartName)
 end
 
 function WhisperRifle:_refreshFastCast()
@@ -285,8 +294,7 @@ function WhisperRifle:_refreshFastCast()
 	end)
 end
 
--- Whisper has ordinary rifle sights. It inherits Volk's bolt mechanics, not
--- Volk's scope camera or its iron-sight FOV override.
+-- Whisper uses its own rifle sights and authored Springfield animations.
 function WhisperRifle:aim()
 	local character = game.Players.LocalPlayer.Character
 	if character then character:SetAttribute("WeaponFOV", nil) end
@@ -305,7 +313,7 @@ function WhisperRifle:_playTimedAction(name: string, duration: number): boolean
 end
 
 function WhisperRifle:setAltMode()
-	if not self.Equipped or self:_isBusy() or self.Alting then return end
+	if not self.Equipped or self.Equipping or self:_isBusy() or self.Alting then return end
 	if self.Aiming then self:endAiming() end
 
 	self.Alting = true
@@ -348,19 +356,26 @@ function WhisperRifle:setAltMode()
 	self:_restoreBaseDeferred()
 end
 
+function WhisperRifle:activate()
+	if self.Reloading then self._reloadCancelled = true; return end
+	if not self.Equipped or self.Equipping or not self.actual_model then return end
+	if self.holding_aim_button and not self.Aiming and not self:_isBusy() then self:aim() end
+	if self.Aiming then self:fire() elseif not self:_isBusy() then self:melee() end
+end
+
 function WhisperRifle:fire()
 	if self.PedersenMode and self.Jammed then
 		if self.Cycling then return end
 		self.Cycling = true
 		self:notify("Clearing jam...")
-		self:_playTimedAction("Pedersen_Jam", PEDERSEN_JAM_CLEAR_TIME)
+		if not self:_playTimedAction("Pedersen_Jam", PEDERSEN_JAM_CLEAR_TIME) then return end
 		self.Jammed = false
 		self.ShotsUntilJam = math.random(7, 18)
 		self.Cycling = false
 		return
 	end
 
-	if self.Firing or self.Cycling or self.Reloading or self.Checking or self.Alting or not self.Aiming then return end
+	if not self.Equipped or self.Equipping or self.Firing or self.Cycling or self.Reloading or self.Checking or self.Alting or not self.Aiming then return end
 	if self:_if_sprinting() or self:_if_jumping() or self.ForceBlockFire then return end
 	if self.Capacity <= 0 then
 		self:_dryFire()
@@ -369,9 +384,7 @@ function WhisperRifle:fire()
 
 	self.damage = self.PedersenMode and 55 or 130
 	local fireAnimation = (self.current_shoulder == "Right") and "Fire" or "Fire_Left"
-	local fireSound = if self.PedersenMode
-		then whisperSounds:FindFirstChild("pedersen_fire") or whisperSounds:FindFirstChild("fire")
-		else whisperSounds:FindFirstChild("fire") or whisperSounds:FindFirstChild("Fire")
+	local fireSound = self.PedersenMode and findSound(self, "pedersen_fire", "fire", "Fire") or findSound(self, "fire", "Fire")
 	local fired = self:_fireSingleShot({
 		bulletSpeed = 1200,
 		fireAnimation = fireAnimation,
@@ -389,7 +402,7 @@ function WhisperRifle:fire()
 		if self.Equipped then
 			self:_stopAllExcept()
 			local cycleTrack = self:_playAnim("Cycle")
-			local cycleSound = whisperSounds:FindFirstChild("cycle") or whisperSounds:FindFirstChild("bolt")
+			local cycleSound = self.SoundFolder and (self.SoundFolder:FindFirstChild("cycle", true) or self.SoundFolder:FindFirstChild("bolt", true))
 			local muzzle = self:_getMuzzlePart()
 			if cycleSound and cycleSound:IsA("Sound") and muzzle then self:_play_sfx(cycleSound, muzzle) end
 			if not self:_waitActionPhase(cycleTrack,self:_cycleDuration()) then return end
@@ -403,9 +416,9 @@ end
 function WhisperRifle:reload()
 	if not self.PedersenMode then
 		local reserve = self.tool and self.tool:FindFirstChild("Reserve_Ammo")
-		if self.IsVeteran and self.Capacity <= 1 and reserve and reserve.Value >= self.Max_Capacity then
+		if self.IsVeteran and self.Capacity <= 0 and reserve and reserve.Value >= self.Max_Capacity then
 			self:_reloadByRound({
-				startAnim = self.Capacity <= 0 and "Reload_Clip_Start_Empty" or "Reload_Clip_Start_One",
+				startAnim = "Reload_Clip_Start_Empty",
 				useEmptyAnim = false,
 				useVeteranAnimations = false,
 				loopAnim = "Reload_Clip",
@@ -414,7 +427,10 @@ function WhisperRifle:reload()
 			})
 			return
 		end
-		VolkRifle.reload(self)
+		self:_reloadByRound({
+			startAnim = "Reload_Start", startLoadsRound = not self.IsVeteran,
+			loopAnim = "Reload_Loop", endAnim = "Reload_End",
+		})
 		return
 	end
 	local reserve = self.tool and self.tool:FindFirstChild("Pedersen_Reserve")
@@ -447,14 +463,16 @@ function WhisperRifle:reload()
 end
 
 function WhisperRifle:_on_equip()
-	VolkRifle._on_equip(self)
+	self:_cacheMotor6D()
+	self:_connectInput()
+	self:_initShoulderTracking()
 	self:_refreshFastCast()
 	task.defer(function()
 		if self.Equipped then self:_syncPedersenModel() end
 	end)
 end
 
-WhisperRifle.Tool_Image = "rbxassetid://76707981179928"
+WhisperRifle.Tool_Image = "rbxassetid://130781995861130"
 WhisperRifle.Medal_Cost = 0
 WhisperRifle.Weight = 2
 WhisperRifle.Designation = "Primary"

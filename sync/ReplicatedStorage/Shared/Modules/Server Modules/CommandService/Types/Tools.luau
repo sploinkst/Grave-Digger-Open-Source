@@ -5,6 +5,8 @@ local ToolClasses = ReplicatedStorage.Shared.Library.Classes.ToolClasses
 local GunClasses = ReplicatedStorage.Shared.Library.Classes.GunClasses
 
 local CLASS_ALIASES = {
+	lance = "LancerLance",
+	lancerlance = "LancerLance",
 	adjudicator = "AdjudicatorRifle",
 	adjudicatorrifle = "AdjudicatorRifle",
 	rsc = "AdjudicatorRifle",
@@ -49,7 +51,7 @@ end
 local classType = {
 	Transform = function(text)
 		local alias = CLASS_ALIASES[string.lower(text)]
-		if alias and GunClasses:FindFirstChild(alias) then
+		if alias and (GunClasses:FindFirstChild(alias) or ToolClasses:FindFirstChild(alias)) then
 			return { alias }
 		end
 

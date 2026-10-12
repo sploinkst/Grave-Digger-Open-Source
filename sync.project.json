@@ -2,6 +2,10 @@
   "name": "Grave-Digger-Sync",
   "serveAddress": "127.0.0.1",
   "servePort": 34872,
+  "globIgnorePaths": [
+    "sync/Workspace/ingameScript.client.luau",
+    "sync/Workspace/toolScript.client.luau"
+  ],
   "tree": {
     "$className": "DataModel",
     "ReplicatedFirst": {
@@ -18,6 +22,10 @@
     },
     "Workspace": {
       "$path": "sync/Workspace"
+    },
+    "StarterGui": {
+      "$className": "StarterGui",
+      "$ignoreUnknownInstances": true
     }
   }
 }

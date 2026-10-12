@@ -1,5 +1,7 @@
 -- Central class contract. Names are controller IDs, not asset display names.
 local Classes = {}
+local Master = require(script.Parent.MasterReference.Base)
+local Equipment = require(script.Parent.EquipmentRules)
 local Perks = require(script.Parent.PerkDefinitions)
 Classes.Default = "Soldat"
 Classes.Order = {"Soldat", "Rook", "Mortician", "Officer", "Jaeger", "Lancer", "Vanguard"}
@@ -32,7 +34,7 @@ Classes.Definitions = {
 	Lancer = {
 		Passive = "Painkiller Injector", MaxWeight = 2, Equipment = "ThrowingAxes",
 		EquipmentName = "Throwing Axes", Tools = {"Pickaxe", "PainkillerInjector"},
-		FixedPrimary = "lance", NoFirearms = true, MeleeDamageMultiplier = 0.7,
+		FixedPrimary = "LancerLance", NoFirearms = true, MeleeDamageMultiplier = 0.7,
 	},
 	Vanguard = {
 		Passive = "Bulwark's Hope", MaxWeight = 2, Equipment = "RallyBanner",
@@ -40,6 +42,13 @@ Classes.Definitions = {
 		FixedPrimary = "shield", NoFirearms = true, SuppressionImmune = true,
 	}
 }
+
+for name, definition in pairs(Classes.Definitions) do
+ local master = Master.classes[string.lower(name)]
+ if master then definition.Description = master.desc end
+ definition.EquipmentDetails = Equipment.Get(definition.Equipment)
+ definition.PassiveDetails = Equipment.Get(string.lower(name) .. "skill")
+end
 
 -- Elite kits deliberately sit beside a player's selected class. This lets a
 -- conversion retain that class's tools/equipment while replacing only weapons.
@@ -55,6 +64,14 @@ Classes.EliteDefinitions = {
 	["Bulwark Trooper"] = { Primary = "LewisGun", Secondary = "GraceRevolver", OutfitClass = "Vanguard" },
 	OcelotTrooper = { Primary = "OcelotTalonRevolver", Secondary = "OcelotTalonRevolverSecondary", OutfitClass = "Officer", RequiresUnlock = "OcelotTrooper" },
 }
+
+-- Fixed class weapons are issued at deployment, never chosen in editable slots.
+function Classes.IsClassWeapon(name: string): boolean
+	for _, definition in Classes.Definitions do
+		if definition.FixedPrimary == name then return true end
+	end
+	return false
+end
 
 function Classes.Get(name)
 	return Classes.Definitions[name] or Classes.Definitions[Classes.Default]
@@ -119,9 +136,14 @@ function Classes.GetLoadout(player: Player, className: string?)
 	-- Clear retired selections before they can appear in a slot or be deployed.
 	if loadout and game:GetService("RunService"):IsServer() then
 		local handling = require(script.Parent.WeaponHandling)
+		local mods = require(script.Parent.WeaponModStats)
 		local tools = script.Parent.Classes.ToolClasses
+		local guns = script.Parent.Classes.GunClasses
 		for _, slot in loadout:GetChildren() do
-			if slot:IsA("StringValue") and (slot.Name == "Primary" or slot.Name == "Secondary") and slot.Value ~= "" and (slot.Value == "SteyrRifle" or (not tools:FindFirstChild(slot.Value) and not handling.IsBaseline(slot.Value))) then
+			if not slot:IsA("StringValue") or (slot.Name ~= "Primary" and slot.Name ~= "Secondary") or slot.Value == "" then continue end
+			local gun = guns:FindFirstChild(slot.Value)
+			local supportedMod = mods[slot.Value] ~= nil and gun ~= nil and gun:IsA("ModuleScript")
+			if Classes.IsClassWeapon(slot.Value) or slot.Value == "SteyrRifle" or (not tools:FindFirstChild(slot.Value) and not handling.IsBaseline(slot.Value) and not supportedMod) then
 				slot.Value = ""
 				local legacy = equipment:FindFirstChild(slot.Name)
 				if legacy and legacy:IsA("StringValue") then legacy.Value = "" end

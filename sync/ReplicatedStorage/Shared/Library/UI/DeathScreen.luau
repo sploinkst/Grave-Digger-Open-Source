@@ -5,17 +5,23 @@ local DeathScreen = {}
 local player = Players.LocalPlayer
 local gui, top, bottom, title, quoteLabel, targetLabel
 local quoteCharacter, selectedQuote
+local shown = false
+local authored = false
+local spawnBound, spawnRemote
+local spawnConnections = {}
+local function setEnabled(value)
+	if not gui then return end
+	if gui:IsA("ScreenGui") then gui.Enabled = value else gui.Visible = value end
+end
+local function isEnabled()
+	return gui and (gui:IsA("ScreenGui") and gui.Enabled or gui:IsA("GuiObject") and gui.Visible)
+end
 local function removeLegacyScreens()
+	-- The supplied nested death panel is owned by this controller and retained.
 	local playerGui = player:FindFirstChildOfClass("PlayerGui")
 	if not playerGui then return end
-	for _, container in ipairs({playerGui, game:GetService("StarterGui")}) do
-		for _, descendant in ipairs(container:GetDescendants()) do
-			local oldDeathScreen = descendant.Name == "deathscreen" and descendant:IsA("GuiObject")
-			local oldSpectateScreen = descendant.Name == "Spectate" and descendant:IsA("ScreenGui")
-				or (descendant.Name == "spectate" and descendant.Parent
-					and descendant.Parent.Name == "main" and descendant:IsA("GuiObject"))
-			if oldDeathScreen or oldSpectateScreen then descendant:Destroy() end
-		end
+	for _, item in ipairs(playerGui:GetChildren()) do
+		if item.Name == "DeathScreenOverlay" and item:IsA("ScreenGui") and item ~= gui then item.Enabled = false end
 	end
 end
 
@@ -66,6 +72,22 @@ end
 
 local function ensureGui()
 	if gui and gui.Parent then return end
+	local assets = require(game:GetService("ReplicatedStorage").Shared.Library.AuthoredAssets)
+	local panel = assets.Widget("deathscreen")
+	local authoredTop = panel and panel:FindFirstChild("topframe")
+	local authoredBottom = panel and panel:FindFirstChild("bottomframe")
+	if authoredTop and authoredBottom then
+		local a = authoredTop:FindFirstChild("toptext")
+		local b = authoredTop:FindFirstChild("lowertext")
+		local c = authoredBottom:FindFirstChild("lowertext")
+		if a and b and c then
+			gui, top, bottom, title, quoteLabel, targetLabel = panel, authoredTop, authoredBottom, a, b, c
+			authored = true
+            local screen=assets.Screen("Spectate"); if screen then screen.Enabled=true end
+			gui.Visible = false
+			return
+		end
+	end
 	local playerGui = player:WaitForChild("PlayerGui")
 	gui = Instance.new("ScreenGui")
 	gui.Name = "DeathScreenOverlay"
@@ -100,8 +122,40 @@ local function ensureGui()
 	gui.Parent = playerGui
 end
 
+local function bindSpawn()
+	if not authored or spawnBound == gui then return end
+	for _, connection in ipairs(spawnConnections) do connection:Disconnect() end
+	table.clear(spawnConnections)
+	spawnBound = gui
+	local panel=gui:FindFirstChild("spawnframe")
+	local list=panel and panel:FindFirstChild("spawns")
+	spawnRemote=game:GetService("ReplicatedStorage").Shared.Library.Events:WaitForChild("MatchControl")
+	local engineer=panel and panel:FindFirstChild("engineerrespawn")
+ if engineer then engineer.Visible=false;engineer.Active=false end
+ local buttons={base=list and list:FindFirstChild("base"),train=list and list:FindFirstChild("train")}
+	for kind, button in pairs(buttons) do
+		if button and button:IsA("GuiButton") then
+			button.Visible=kind=="base"
+			table.insert(spawnConnections,button.Activated:Connect(function() spawnRemote:FireServer("SelectSpawn",kind) end))
+		end
+	end
+	table.insert(spawnConnections,spawnRemote.OnClientEvent:Connect(function(action,value)
+		if action=="SpawnOptions" and type(value)=="table" then
+			for kind,button in pairs(buttons) do button.Visible=value[kind]==true end
+		elseif action=="SpawnSelected" then
+			for kind,button in pairs(buttons) do button.BackgroundColor3=kind==value and Color3.new(1,1,1) or Color3.new(0,0,0) end
+		end
+	end))
+	if panel then panel.Visible=false end
+end
+
 function DeathScreen.Show(character)
+ local current=player.Character
+ local humanoid=current and current:FindFirstChildOfClass("Humanoid")
+ if character~=current or humanoid and humanoid.Health>0 then DeathScreen.Hide();return end
 	ensureGui()
+	bindSpawn()
+	if spawnRemote then spawnRemote:FireServer("SpawnOptions") end
 	removeLegacyScreens()
 	if character ~= quoteCharacter or not selectedQuote then
 		quoteCharacter = character
@@ -113,22 +167,33 @@ function DeathScreen.Show(character)
 	targetLabel.Text = ""
 	top.Visible = true
 	bottom.Visible = true
-	gui.Enabled = true
+	shown = true
+	setEnabled(player:GetAttribute("MenuOpen") ~= true)
 	-- The master script sets the text and shows the screen immediately.
-	top.Position = UDim2.fromScale(0, 0)
-	bottom.Position = UDim2.fromScale(0, 1)
+	if not authored then
+		top.Position = UDim2.fromScale(0, 0)
+		bottom.Position = UDim2.fromScale(0, 1)
+	end
 end
 
 function DeathScreen.SetSpectating(target)
-	if not gui or not gui.Enabled then return end
+	if not isEnabled() then return end
 	targetLabel.Text = if target then target.Name else ""
 end
 
 function DeathScreen.Hide()
+	shown = false
 	-- Capture the original typography before retiring its GUI.
 	ensureGui()
-	if gui then gui.Enabled = false end
+	setEnabled(false)
 	removeLegacyScreens()
+end
+
+if player then
+ player.CharacterAdded:Connect(function() DeathScreen.Hide() end)
+	player:GetAttributeChangedSignal("MenuOpen"):Connect(function()
+		setEnabled(shown and player:GetAttribute("MenuOpen") ~= true)
+	end)
 end
 
 return DeathScreen

@@ -264,7 +264,7 @@ function Service.ApplySpawn(player, character)
 		character:SetAttribute("SprintRampMultiplier", 0)
 		character:SetAttribute("InstantSprintAcceleration", true)
 		character:SetAttribute("SnakeEyes", true)
-		local rootPart = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 5)
+		local rootPart = require(ReplicatedStorage.Shared.Library.CharacterVoice).Origin(character)
 		local theme = findSound("theme")
 		if rootPart and theme then
 			events.Sounds:FireAllClients("OcelotTheme", theme, rootPart, theme.PlaybackSpeed, theme.Volume, 0, 0)
@@ -347,7 +347,7 @@ function Service.SetShockTrooper(player: Player, eliteName: string, bypassRequir
 		character:SetAttribute("SprintRampMultiplier", 0)
 		character:SetAttribute("InstantSprintAcceleration", true)
 		character:SetAttribute("SnakeEyes", true)
-		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		local rootPart = require(ReplicatedStorage.Shared.Library.CharacterVoice).Origin(character)
 		local theme = findSound("theme")
 		if rootPart and theme then
 			events.Sounds:FireAllClients(

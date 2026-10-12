@@ -1,8 +1,9 @@
--- Shared chemical contract. One dose is 10u; extra doses extend duration.
+local Master = require(script.Parent.MasterReference.Stimulants)
+local Base = require(script.Parent.MasterReference.Base)
 local Rules = {}
 Rules.DoseUnits = 10
 Rules.DoseDuration = 80
-Rules.SafeUnits = 30
+Rules.SafeUnits = Base.chem_tolerance * Rules.DoseUnits
 Rules.ImpactRadius = 12
 Rules.ThrowSpeed = 65
 Rules.ToxinInterval = 5
@@ -16,6 +17,25 @@ Rules.Definitions = {
 	Amatoxin = {description = "Builds Pox over time, causing Sickness above 30u.", color = {65, 110, 55}},
 }
 
+local nativeNames = {bic = "Bicardine", syn = "Synaptizine", mep = "Mephedrone", hyd = "Hydrocodone", hal = "Haloperidol", ama = "Amatoxin", per = "Peridaxon", int = "Initropidril", sickness = "Pox", tric = "Tricordrazine", inap = "Inaprovaline", eth = "Ethanol"}
+Rules.AllOrder = {}
+Rules.Aliases = {Bicaridine = "Bicardine"}
+for _, entry in ipairs(Master) do
+ local name = nativeNames[entry.int]
+ Rules.Aliases[entry.int] = name
+ local definition = Rules.Definitions[name] or {description = entry.desc, color = {199, 199, 199}}
+ definition.duration = entry.last
+ definition.icon = entry.icon
+ definition.displayName = entry.name
+ definition.id = entry.int
+ Rules.Definitions[name] = definition
+ table.insert(Rules.AllOrder, name)
+end
+function Rules.Normalize(name) return Rules.Aliases[name] or name end
+function Rules.Duration(name)
+ local definition = Rules.Definitions[Rules.Normalize(name)]
+ return definition and definition.duration or Rules.DoseDuration
+end
 function Rules.Expire(doses, now)
 	for index = #doses, 1, -1 do
 		if doses[index].expires <= now then table.remove(doses, index) end
@@ -27,14 +47,15 @@ function Rules.Units(doses)
 end
 
 function Rules.Add(doses, name, now, protectAlly)
-	if not Rules.Definitions[name] and name ~= "Pox" then return false end
+	name = Rules.Normalize(name)
+	if not Rules.Definitions[name] then return false end
 	Rules.Expire(doses, now)
 	if protectAlly and Rules.Units(doses) + Rules.DoseUnits > Rules.SafeUnits then return false end
 	local expiry = now
 	for _, dose in doses do
 		if dose.name == name then expiry = math.max(expiry, dose.expires) end
 	end
-	table.insert(doses, {name = name, expires = expiry + (name == "Pox" and 10 or Rules.DoseDuration), protectAlly = protectAlly == true})
+	table.insert(doses, {name = name, expires = expiry + Rules.Duration(name), protectAlly = protectAlly == true})
 	return true
 end
 
@@ -62,7 +83,7 @@ function Rules.Summarize(mix)
 		local entry = byName[name]
 		if not entry then entry = {name = name, units = 0, duration = 0}; byName[name] = entry; table.insert(result, entry) end
 		entry.units += Rules.DoseUnits
-		entry.duration += Rules.DoseDuration
+		entry.duration += Rules.Duration(name)
 	end
 	return result
 end

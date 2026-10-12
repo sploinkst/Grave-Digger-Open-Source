@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local spreadRandom = Random.new()
+local MasterEffects = require(script.Parent.Parent.MasterEffects.Dispatch)
 
 local BaseTool = require(script.Parent.BaseTool)
 local utilities_module = require(ReplicatedStorage.Shared.Library.Util)
@@ -28,6 +29,7 @@ local MIN_AMMO_CHECK_DISPLAY_TIME = 1
 local function hasVeteranPerk(): boolean
 	local player = LOCAL_PLAYER
 	local character = player and player.Character
+	if character and character:GetAttribute("Veteran") == true then return true end
 	local legacyPerk = character and character:FindFirstChild("perk")
 	if legacyPerk and legacyPerk:IsA("StringValue") then
 		local value = string.lower(legacyPerk.Value)
@@ -54,7 +56,7 @@ function BaseFirearm.new(info): BaseFirearm
 	self.AnimationDrivenGrip = false
 	self.IsFirearm = true
 	self.IsVeteran = hasVeteranPerk()
-	self.VeteranReloadSpeed = 1.2
+	self.VeteranReloadSpeed = 1 / 0.7
 	-- Shared rifle mount matches Prince's original scripted attachment.
 	self.DefaultGripC0 = CFrame.new(0.254, -1.703, -0.566)
 		* CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90))
@@ -306,7 +308,7 @@ function BaseFirearm:_playCycle(options): boolean
 		if not (self.Equipped and self._equipGeneration == generation) then return end
 		self:_stopAllExcept()
 		local track = self:_playAnim(animation)
-		if track then track.Stopped:Wait() elseif (self.cycle or 0) > 0 then task.wait(self.cycle or 0) end
+		if track then self:_waitAnimation(track) elseif (self.cycle or 0) > 0 then task.wait(self.cycle or 0) end
 		if not self.Equipped or self._equipGeneration ~= generation then return end
 		if recovery > 0 then task.wait(self:_effectiveFireDelay(recovery)) end
 		if not (self.Equipped and self._equipGeneration == generation) then return end
@@ -469,8 +471,8 @@ function BaseFirearm:_magazineAnimation(name: string): string
 	return name
 end
 
-function BaseFirearm:_playAnim(name: string, bypassEquipped: boolean?)
-	return BaseTool._playAnim(self, self:_magazineAnimation(name), bypassEquipped)
+function BaseFirearm:_playAnim(name: string, bypassEquipped: boolean?, playbackOptions)
+	return BaseTool._playAnim(self, self:_magazineAnimation(name), bypassEquipped, playbackOptions)
 end
 
 function BaseFirearm:_onBulletHit(cast, result, velocity, muzzle, penetrationLevel, damage, knockback_force)
@@ -498,6 +500,7 @@ function BaseFirearm:_onBulletHit(cast, result, velocity, muzzle, penetrationLev
 	end
 
 	self:_applyHit(result, damage, direction, knockback_force, metadata)
+	-- Native impact effects handle bullet hits; avoid duplicate master particles.
 
 	-- // if roblox terrain return
 	if instance:IsDescendantOf(workspace.Terrain) then
@@ -526,6 +529,7 @@ function BaseFirearm:_applyHit(result: RaycastResult, damage: number, direction:
 		PelletCount = metadata and metadata.PelletCount,
 		HipFire = metadata and metadata.HipFire,
 		AmmoBeforeShot = metadata and metadata.AmmoBeforeShot,
+		KingslayerShotToken = metadata and metadata.KingslayerShotToken,
 	}, damage, knockback_force)
 end
 
@@ -612,7 +616,7 @@ function BaseFirearm:_getShotAccuracy(): number
 			self._breathStartTime = nil
 		end
 	end
-	return math.max(1, accuracy)
+	return math.max(1, accuracy) * (character and character:GetAttribute("LancerStimSpreadMultiplier") or 1)
 end
 
 -- GuiObject.AbsolutePosition uses core-UI coordinates. ScreenPointToRay
@@ -678,17 +682,18 @@ function BaseFirearm:_fireCastFromMuzzle(muzzle: BasePart, direction: Vector3, b
 	return activeCast
 end
 
-function BaseFirearm:_playShotFeedback(muzzle: BasePart, sound: Sound?, soundPitchVariation: number?, soundVolumeAdjustment: number?)
+function BaseFirearm:_playShotFeedback(muzzle: BasePart, sound: Sound?, _soundPitchVariation: number?, soundVolumeAdjustment: number?)
 	self:_bounce_scoped_ui()
 	self:_fireMuzzleFlash()
 	local recoil = self.recoil
 	if self.IsOcelotTrooper then recoil *= 0.25 end
 	if self._isBipodActive and self:_isBipodActive() then recoil = 1 end
 	utilities_module.applyRecoil(recoil, self.recoil_count, 10, true, 1)
+	-- Gunshots keep the configured PlaybackSpeed; firing modes do not randomize pitch.
 	-- Sound failures must not interrupt ammo, cycling, or clearing Firing.
 	if sound then
 		local played, playError = pcall(function()
-			self:_play_sfx(sound, muzzle, sound.PlaybackSpeed, math.max(sound.Volume + (soundVolumeAdjustment or 0), 0), 0, soundPitchVariation or 0.1, nil, false, 0.3)
+			self:_play_sfx(sound, muzzle, sound.PlaybackSpeed, math.max(sound.Volume + (soundVolumeAdjustment or 0), 0), 0, 0, nil, false, 0.3)
 		end)
 		if not played then warn("[BaseFirearm] Gunshot audio failed:", playError) end
 	end
@@ -802,7 +807,7 @@ function BaseFirearm:_reloadByRound(options): boolean
 	alternateLoopAnim = veteranAnimation(alternateLoopAnim)
 	endAnim = veteranAnimation(endAnim)
 	local startTrack = startAnim and self:_playAnim(startAnim) or nil
-	if startTrack then startTrack.Stopped:Wait() end
+	if startTrack then self:_waitAnimation(startTrack) end
 	if not self.Equipped or self._equipGeneration ~= generation then return false end
 	-- Some opening clips include the first insertion already.
 	if options and options.startLoadsRound and startTrack and self.Equipped
@@ -816,6 +821,8 @@ function BaseFirearm:_reloadByRound(options): boolean
 	while self.Equipped and self.Capacity < self.Max_Capacity and reserveAmmo.Value > 0 and not self._reloadCancelled do
 		loopIndex += 1
 		local currentLoopAnim = alternateLoopAnim and loopIndex % 2 == 0 and alternateLoopAnim or loopAnim
+		local durationMultiplier = 1
+		if options and options.loopProfile then currentLoopAnim, durationMultiplier = options.loopProfile(self.Capacity) end
 		-- Weapon master blended into the first insertion for 0.05 seconds, then
 		-- hard-cut each subsequent loop so repeated rounds stay frame-accurate.
 		local loopTrack = currentLoopAnim and self:_playAnim(currentLoopAnim, false, {
@@ -824,9 +831,10 @@ function BaseFirearm:_reloadByRound(options): boolean
 			cutFade = 0,
 		}) or nil
 		if loopTrack then
-			loopTrack.Stopped:Wait()
+			if durationMultiplier ~= 1 then loopTrack:AdjustSpeed(loopTrack.Speed / durationMultiplier) end
+			self:_waitAnimation(loopTrack)
 		elseif options and options.loopWait then
-			task.wait(self.getFireDelay and self:getFireDelay(options.loopWait) or options.loopWait)
+			task.wait((self.getFireDelay and self:getFireDelay(options.loopWait) or options.loopWait) * durationMultiplier)
 		end
 		if not self.Equipped or self._equipGeneration ~= generation then return false end
 
@@ -840,7 +848,7 @@ function BaseFirearm:_reloadByRound(options): boolean
 
 	if (self.Equipped and self._equipGeneration == generation) then
 		local endTrack = endAnim and self:_playAnim(endAnim) or nil
-		if endTrack then endTrack.Stopped:Wait() end
+		if endTrack then self:_waitAnimation(endTrack) end
 		if not self.Equipped or self._equipGeneration ~= generation then return false end
 	end
 
@@ -929,12 +937,12 @@ function BaseFirearm:_reloadSequence(startAnimName, loopAnimName, endAnimName, o
 
 	if startAnimName then startAnimName = self:_magazineAnimation(startAnimName) end
 	if startAnimName and anims[startAnimName] then
-		self:_playAnim(startAnimName).Stopped:Wait()
+		self:_waitAnimation(self:_playAnim(startAnimName))
 	end
 
 	while currentAmmo < maxAmmo and not self._reloadCancelled do
 		if loopAnimName and anims[loopAnimName] then
-			self:_playAnim(loopAnimName).Stopped:Wait()
+			self:_waitAnimation(self:_playAnim(loopAnimName))
 		end
 		if self._reloadCancelled then break end
 		currentAmmo += 1
@@ -943,7 +951,7 @@ function BaseFirearm:_reloadSequence(startAnimName, loopAnimName, endAnimName, o
 
 	if not self._reloadCancelled then
 		if endAnimName and anims[endAnimName] then
-			self:_playAnim(endAnimName).Stopped:Wait()
+			self:_waitAnimation(self:_playAnim(endAnimName))
 		end
 	else
 		for _, name in ipairs({ startAnimName, loopAnimName, endAnimName }) do
@@ -1054,6 +1062,14 @@ end
 
 -- // Notifications
 
+
+function BaseFirearm:_ammoCheckDescription(): string?
+	local character = LOCAL_PLAYER.Character
+	if character and character:GetAttribute("IsShockTrooper") == true and self.Capacity > 0 then
+		return tostring(self.Capacity) .. " left."
+	end
+	return nil
+end
 
 function BaseFirearm:end_ammo_check(force: boolean?)
 	local displayId = self._ammoCheckDisplayId
@@ -1175,14 +1191,14 @@ function BaseFirearm:ammo_check()
 
 	ammo_check_utils.utils(self.Ammo_Type, math.clamp(self.Capacity / self.Max_Capacity, 0, 1),
 		false, reserveAmmo.Value / math.max(self.Max_Reserve_Ammo or self.Max_Capacity * 3, 1),
-		if self.IsVeteran and self.Capacity > (self.capacity or self.Max_Capacity) then "Full plus one." elseif self.Capacity == 1 then "One shot left." elseif (self.IsVeteran or self.ExactAmmoCount) and self.Capacity > 0 then tostring(self.Capacity) .. " left." else nil,
+		self:_ammoCheckDescription(),
 		self.hidereserves or (self.ammo_reserves_max or 0) >= 200)
 	self._ammoCheckShownAt = os.clock()
 	if not self._ammoCheckHeld then
 		self:end_ammo_check()
 	end
 
-	checkTrack.Stopped:Wait()
+	self:_waitAnimation(checkTrack)
 	if not self.Equipped or self._equipGeneration ~= generation then return end
 
 	self._ammoCheckPaused = false

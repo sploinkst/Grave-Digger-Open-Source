@@ -13,6 +13,9 @@ local Library = Shared:WaitForChild("Library")
 local Events = Library:WaitForChild("Events")
 local VoiceComms = Events:WaitForChild('VoiceComms')
 local Audio = require(Library.GameAudio)
+local Rules = require(Library.VoiceCommandRules)
+local lastCommands = setmetatable({}, {__mode="k"})
+local started = false
 
 -- // Variables
 
@@ -55,14 +58,27 @@ end
 
 -- // Connections
 function VoiceManager.start_module()
+	if started then return end
+	started = true
 	VoiceComms.OnServerEvent:Connect(function(player, voicecomm, data)
-		print("VoiceManager: received voicecomm from", player.Name, ":", voicecomm)
-		
-		if voicecomm == "danger" then
-			DangerAlert(player, data)
-			print("VoiceManager: Fired DangerAlert to", player.Name)
+		if type(voicecomm) ~= "string" or not Rules.Commands[voicecomm] then return end
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if not humanoid or humanoid.Health <= 0 or not root or not player.Team then return end
+		local now = os.clock()
+		if now - (lastCommands[player] or -math.huge) < 0.5 then return end
+		if Rules.Officer[voicecomm] and character:GetAttribute("Class") ~= "Officer" then return end
+		lastCommands[player] = now
+		if voicecomm == "danger" then DangerAlert(player, data); return end
+		local request = Rules.Requests[voicecomm]
+		if request then character:SetAttribute(request, workspace:GetServerTimeNow() + 10) end
+		for _, receiver in ipairs(Players:GetPlayers()) do
+			local receiverRoot = receiver.Character and receiver.Character:FindFirstChild("HumanoidRootPart")
+			if receiver.Team == player.Team and receiverRoot and (receiverRoot.Position-root.Position).Magnitude <= (Rules.Officer[voicecomm] and 200 or Audio.PingRadius) then
+				VoiceComms:FireClient(receiver, player, voicecomm, {Position=root.Position, message=Rules.Labels[voicecomm]})
+			end
 		end
 	end)
 end
-
 return VoiceManager

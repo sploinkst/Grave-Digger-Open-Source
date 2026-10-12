@@ -17,6 +17,20 @@ local SoundPlayback = require(Library.SoundPlayback)
 local Config = Library.Configuration.Scoring_Variables
 
 local TerrainService = require(script.TerrainService)
+local SpawnSelection = require(script.SpawnSelection)
+local MapVote = require(script.MapVote)
+local votedMap
+
+local function ShowHiatus(player, enabled)
+	local gui = player:FindFirstChildOfClass("PlayerGui")
+	if not gui then return end
+	local authored = false
+	for _, child in ipairs(gui:GetChildren()) do
+		if child.Name=="main" and child:IsA("ScreenGui") and child:FindFirstChild("warmap") then authored=true;break end
+	end
+	local legacy = gui:FindFirstChild("Hiatus")
+	if legacy and legacy:IsA("ScreenGui") then legacy.Enabled=enabled and not authored end
+end
 
 -- // Scoring values
 local EmpireReinCount = Config.Empire.Empire_Rein_Count
@@ -75,7 +89,7 @@ local BeginRound
 local TriggerRoundEnd
 
 local hiatusPeriod = false
-local hiatusTick = 180
+local hiatusTick = 60
 
 -- // Constants
 local ServerReadyTimeout = 5
@@ -579,7 +593,8 @@ local function SpawnAndEquipPlayer(player: Player, spawnRoom: Model)
 	local slot = FindEmptySpawn(spawnRoom)
 
 	slot:SetAttribute("Occupied", true)
-	character:PivotTo(slot.CFrame)
+	local selectedSpawn = SpawnSelection.CFrame(player)
+	character:PivotTo(selectedSpawn or slot.CFrame)
 	ApplyTeamCollisionGroup(character, player.Team)
 
 	-- // Freshly spawned characters start inside their spawn room.
@@ -589,7 +604,7 @@ local function SpawnAndEquipPlayer(player: Player, spawnRoom: Model)
 	print("[FinalStand]", player.Name, "- spawned/respawned, forcing in_spawn=true and clearing any stale highlight")
 
 	local animTrack: AnimationTrack?
-	local animation = GetSpawnAnimation(slot.Name)
+	local animation = not selectedSpawn and GetSpawnAnimation(slot.Name)
 
 	if animation then
 		local animator = character:WaitForChild("Humanoid"):FindFirstChildOfClass("Animator")
@@ -599,7 +614,10 @@ local function SpawnAndEquipPlayer(player: Player, spawnRoom: Model)
 		end
 	end
 
-	character:SetAttribute("DontRotate", true)
+	character:SetAttribute("DontRotate", selectedSpawn == nil)
+ task.delay(3,function()
+  if player.Character==character and character.Parent then character:SetAttribute("DontRotate",nil) end
+ end)
 
 	local humanoid: Humanoid = character:WaitForChild("Humanoid")
 
@@ -749,9 +767,14 @@ TriggerRoundEnd = function(losingTeam: Team, myGeneration: number)
 	print("[GameManager]", losingTeam.Name, "has been fully wiped out. Ending round", myGeneration, "and starting a new one.")
 	print("[GameManager] Returning to Hiatus Period")
 	hiatusPeriod = true
+	local presentation=Shared.Library.Events:FindFirstChild("Presentation")
+	if presentation then
+		presentation:FireAllClients("match_end",{text1=winningTeam.Name.." wins!",text2="The opposing force has been defeated.",duration=8})
+	end
+	MapVote.Open(CoreMaps,presentation)
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		player.PlayerGui.Hiatus.Enabled = true
+		ShowHiatus(player,true)
 	end
 
 	-- // yes i know this looks horrible. i know. blame me. -- Praxitos
@@ -762,16 +785,16 @@ TriggerRoundEnd = function(losingTeam: Team, myGeneration: number)
 		for _, player in ipairs(Players:GetPlayers()) do
 			local kills = player:GetAttribute("RoundKills") or 0
 
-			player.PlayerGui.Hiatus.Main.TextLabel.Text = [[This is your time to put all your bugs within <font color="rgb(212, 105, 20)">'Found Bugs'</font> thread for this specific test session.
+			if player.PlayerGui:FindFirstChild("Hiatus") then player.PlayerGui.Hiatus.Main.TextLabel.Text = [[This is your time to put all your bugs within <font color="rgb(212, 105, 20)">'Found Bugs'</font> thread for this specific test session.
 
 Testing will resume in ]] .. hiatusTick .. [[ seconds.
 
-You have killed <font color="rgb(255, 80, 80)">]] .. kills .. [[</font> people.]]
+You have killed <font color="rgb(255, 80, 80)">]] .. kills .. [[</font> people.]] end
 		end
 	end
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		player.PlayerGui.Hiatus.Enabled = false
+		ShowHiatus(player,false)
 	end
 
 	BeginRound()
@@ -784,9 +807,12 @@ local function SetBillboardUI(pointParent: Part)
 	billboardUiClone.Parent = pointParent
 end
 
-local function SelectRandomMap(): Model
-	local maps = CoreMaps:GetChildren()
-	return maps[math.random(1, #maps)]
+local function SelectRandomMap(): Model?
+	if votedMap and votedMap.Parent == CoreMaps then return votedMap:Clone() end
+	local maps = {}
+	for _, model in ipairs(CoreMaps:GetChildren()) do if model:IsA("Model") then table.insert(maps,model) end end
+	if #maps == 0 then return nil end
+	return maps[math.random(1,#maps)]:Clone()
 end
 
 local function PlaceMap(map: Model, point: Instance)
@@ -1073,6 +1099,12 @@ local function StartIntermission()
 	print("[GameManager] Intermission complete.")
 
 	roundActive = true
+	local audio = require(ReplicatedStorage.Shared.Library.GameAudio)
+	local modeValue = GamemodeFolder:FindFirstChild("Gamemode_Type")
+	local mode = modeValue and string.lower(tostring(modeValue.Value)) or "control"
+	if mode == "capture" then mode = "control" end
+	audio.WarDialogue(mode, "nation")
+	audio.WarDialogue(mode, "empire")
 
 	SetBaseColours(empireSpawn, false)
 	SetBaseColours(nationSpawn, false)
@@ -1081,6 +1113,9 @@ end
 
 -- // Round start / restart
 BeginRound = function()
+	votedMap = MapVote.Resolve()
+	local presentation=Shared.Library.Events:FindFirstChild("Presentation")
+	if presentation then presentation:FireAllClients("game_brief",{title="Control Points",mode="CONTROL",description="Capture objectives and exhaust the enemy reinforcements.",duration=6}) end
 	roundGeneration += 1
 	workspace:SetAttribute("MatchGeneration", roundGeneration)
 	workspace:SetAttribute("TruceResolved", nil)
@@ -1192,6 +1227,7 @@ BeginRound = function()
 
 	for i = 1, pointsToAssign do
 		local map = SelectRandomMap()
+		if not map then warn("[GameManager] No capture-map templates are available"); break end
 
 		local index = math.random(1, #emptyPoints)
 		local point = table.remove(emptyPoints, index)
@@ -1365,7 +1401,7 @@ function Module.start_module()
 
 	Players.PlayerAdded:Connect(function(player)
 		if hiatusPeriod then
-			player.PlayerGui.Hiatus.Enabled = true
+			ShowHiatus(player,true)
 
 			while hiatusTick ~= 0 do
 				task.wait(1)
@@ -1378,7 +1414,7 @@ function Module.start_module()
 				]]
 			end
 
-			player.PlayerGui.Hiatus.Enabled = false
+			ShowHiatus(player,false)
 		end
 	end)
 end
@@ -1414,4 +1450,5 @@ function Module.ResolveTruce(accepted)
  end
 end
 
+function Module.VoteMap(player,choice) return MapVote.Select(player,choice) end
 return Module

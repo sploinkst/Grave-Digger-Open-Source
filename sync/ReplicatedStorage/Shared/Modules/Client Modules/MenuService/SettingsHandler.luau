@@ -18,12 +18,15 @@ function module.start_module(menu)
 		local frame = scene:FindFirstChild("settingsframe")
 		if not frame then return end
 		local keyList, optionList = frame:FindFirstChild("keybinds"), frame:FindFirstChild("settings")
-		local keyTemplate = keyList and keyList:FindFirstChild("example")
-		local optionTemplate = optionList and optionList:FindFirstChild("example")
+		local keyTemplate = keyList and (keyList:FindFirstChild("ex") or keyList:FindFirstChild("example"))
+		local optionTemplate = optionList and (optionList:FindFirstChild("ex") or optionList:FindFirstChild("example"))
 		local categoryTemplate = optionList and optionList:FindFirstChild("category")
 		if keyTemplate then keyTemplate.Visible = false end
 		if optionTemplate then optionTemplate.Visible = false end
 		if categoryTemplate then categoryTemplate.Visible = false end
+		for _, list in {keyList, optionList} do
+			if list and list:IsA("ScrollingFrame") then list.AutomaticCanvasSize = Enum.AutomaticSize.Y end
+		end
 
 		local capturing, captureRefresh
 		local function stopCapture()
@@ -33,6 +36,9 @@ function module.start_module(menu)
 			captureRefresh = nil
 		end
 		scope:Own(stopCapture)
+		local visibility = scene:IsA("ScreenGui") and "Enabled" or "Visible"
+        scope:Connect(scene:GetPropertyChangedSignal(visibility), function() if not scene[visibility] then stopCapture() end end)
+        scope:Connect(menu.SceneChanged.Event, function(name) if name ~= "Settings" then stopCapture() end end)
 		local binds = settings:FindFirstChild("Inputs") and settings.Inputs:FindFirstChild("Binds")
 		if binds and keyTemplate and keyList then
 			for _, bind in binds:GetChildren() do

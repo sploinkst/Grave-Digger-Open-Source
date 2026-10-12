@@ -1,4 +1,4 @@
--- Pure state transitions, shared by the live controller and regression checks.
+local Base = require(script.Parent.MasterReference.Base)
 local Rules = {}
 local function clamp(value, low, high) return math.max(low, math.min(high, value)) end
 function Rules.New()
@@ -23,26 +23,28 @@ function Rules.Step(state, input, dt)
         and not input.crouching and not input.climbing and not input.vaulting
         and not input.mounted and state.airborne < 0.35 and input.moving
         and (input.freeLook or input.forward)
+    local charging = input.charging and not unavailable and not input.vaulting and not input.mounted
+    if charging then sprint = true end
     if sprint then
         state.ramp = state.ramp + dt
     else
         state.ramp = 0
     end
-    local rampTime = input.rampTime or 2
+    local rampTime = input.rampTime or Base.sprint_fullspeed_time
     local alpha = 0
-    if sprint then alpha = input.instant and 1 or (rampTime <= 0 and 1 or clamp(state.ramp / rampTime, 0, 1)) end
+    if sprint then alpha = (charging or input.instant) and 1 or (rampTime <= 0 and 1 or clamp(state.ramp / rampTime, 0, 1)) end
     local progress = alpha * alpha * (3 - 2 * alpha)
     state.recovery = math.max(0, state.recovery - dt)
     local focusAllowed = not unavailable and input.aiming and input.held
         and input.speed < 3 and not input.vaulting and not input.mounted
-    local accuracyTime = input.accuracyTime or 0.35
+    local accuracyTime = input.accuracyTime or Base.base_holdbreath_maxaccuracy
     local inhaled, exhaled = false, false
     if state.holding then
         state.breathElapsed = state.breathElapsed + dt
-        if (not focusAllowed or state.breathElapsed >= (input.breathDuration or 5.5))
+        if (not focusAllowed or state.breathElapsed >= (input.breathDuration or Base.base_holdbreath_time))
             and state.breathElapsed >= accuracyTime then
             state.holding = false
-            state.recovery = input.breathRecovery or 2.5
+            state.recovery = input.breathRecovery or Base.base_holdbreath_regen
             exhaled = true
         end
     elseif focusAllowed and state.recovery <= 0 then
@@ -51,8 +53,9 @@ function Rules.Step(state, input, dt)
         inhaled = true
     end
     if not input.alive then state.holding = false; state.latched = false end
-    local speed = input.normalSpeed or 10
-    if input.aiming then speed = input.aimSpeed or 5
+    local speed = input.normalSpeed or Base.base_walkspeed
+    if charging then speed = (input.sprintSpeed or 18) + 8
+    elseif input.aiming then speed = input.aimSpeed or 5
     elseif sprint then speed = speed + ((input.sprintSpeed or 18) - speed) * progress end
     return {
         speed=speed, sprinting=sprint and progress >= 0.8, accelerating=sprint,

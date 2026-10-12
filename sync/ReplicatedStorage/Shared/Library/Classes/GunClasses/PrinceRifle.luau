@@ -73,11 +73,12 @@ local FIREARM_CONFIG = {
 	className = "PrinceRifle",
 	name = "'Prince' Long Rifle",
 	desc = "An infantry rifle with good stopping power and range.",
+	lore = "An unremarkable yet effective rifle, the \'M1886\' has served faithfully as the standard issue infantry rifle for both the Nation and Empire for years, boasting a unique smokeless cartridge and a seven-round internal tube magazine that puts it above the capacities of most other rifles. The ergonomics may leave a lot to be desired, but many look towards the \'M1886\' as the gold standard for any rifle, and it looks to remain a staple of the war for years to come.\n\nYet, it is perhaps better known as the \'Prince\' - being used in the assassination of Prince Leido of the Royal Throne, thus causing the first set of bombs to be dropped on Golden Empire territory. Though the war was already well underway between the two vitriolic factions, it was his death that sent the world below the Surface, rendering it into the barren wasteland it is today.\n\nThe \'Prince\' demonstrated its reliability and accuracy then, as it will for the remainder of the war; and perhaps even longer still.",
 	size = 2,
 	icon = "17496049645",
-	animations = "lebel",
 	ammo_give = "8mm Smokeless",
 	melee_sound = "rifle",
+	assists = { "Consistent and reliable rifle with strong ranged performance.", "Alt Mode [@ALT] to toggle Single Fire, reloading after every shot.", "Alt Mode loads from the reserve but with a slower fire rate." },
 	tooltype = "gun",
 	damage = 150,
 	range = 100,
@@ -122,7 +123,7 @@ local FIREARM_CONFIG = {
 	ANIM_LAYERS = ANIM_LAYERS,
 
 	holster_reference = HolsterFolder and HolsterFolder:FindFirstChild("PrinceRifleHolster"),
-	model_reference = ToolFolder:FindFirstChild("PrinceRifle"),
+	model_reference = ToolFolder:FindFirstChild("lebel") or ToolFolder:FindFirstChild("PrinceRifle"),
 	Round = Assets.Guns.Rounds.PrinceRifle_Round,
 	RoundMotor_6d_Data = {
 		C0 = CFrame.new(-0.1, 0, 0) * CFrame.Angles(0, 0, 0),
@@ -292,11 +293,26 @@ function PrinceRifle.new(info: Types.BaseToolCreateInfo): PrinceRifle
 	local self = setmetatable(BaseRifle.new(info), PrinceRifle)
 
 	self:applyFirearmConfig(FIREARM_CONFIG)
+	-- Resolve at construction as well: Studio may import the model after this
+	-- module was first required. The supplied Prince layout is named lebel.
+	self.model_reference = ToolFolder:FindFirstChild("lebel") or ToolFolder:FindFirstChild("PrinceRifle")
+	local root = self.model_reference and (self.model_reference:FindFirstChild("hitbox", true)
+		or self.model_reference:FindFirstChild("PrinceRifle_Middle", true))
+	if not root or not root:IsA("BasePart") then
+		error("[PrinceRifle] Tool model requires a hitbox or PrinceRifle_Middle BasePart")
+	end
+	self.UseNativeEquipMount = root.Name ~= "hitbox"
+	self.UseAuthoredGrip = true
+	self.AnimationDrivenGrip = false
+	self.MuzzlePartName = root.Name == "hitbox" and "muzzle" or "PrinceRifle_Muzzle"
+	self.AmmoCheckPartName = root.Name
 	self.motor_6d_data = {
 		Parent = "Left Arm",
 		Part0  = "Left Arm",
-		Part1  = self.model_reference and self.model_reference:FindFirstChild("PrinceRifle_Middle"),
-		C0     = CFrame.new(0.254, -1.703, -0.566) * CFrame.Angles(math.rad(0.979), math.rad(-90), math.rad(90)),
+		Part1  = root,
+		C0     = PrinceRifle.AuthoredWelds.equipc0,
+		C1     = PrinceRifle.AuthoredWelds.equipc1,
+		UseRightGripAttachment = false,
 	}
 
 	self:_initShoulderTracking()
@@ -314,7 +330,7 @@ function PrinceRifle:setAltMode()
 
 	if self.Alt_Mode then
 		local track = self:_playAnim("Alt_Mode_On")
-		if track then track.Stopped:Wait() end
+		if track then self:_waitAnimation(track) end
 		if not self.Equipped or self._equipGeneration ~= equipGeneration then return end
 		self.Alt_Mode = false
 		-- Single Fire uses a separately hand-loaded round, never the internal
@@ -323,7 +339,7 @@ function PrinceRifle:setAltMode()
 		self:notify("Firemode: Single Fire")
 	else
 		local track = self:_playAnim("Alt_Mode_Off")
-		if track then track.Stopped:Wait() end
+		if track then self:_waitAnimation(track) end
 		if not self.Equipped or self._equipGeneration ~= equipGeneration then return end
 		self.Alt_Mode = true
 		self:notify("Firemode: Repeating Fire")
@@ -392,7 +408,7 @@ function PrinceRifle:_autoCycle()
 		self:_stopAllExcept()
 		local reloadName = self.Capacity > 0 and "Reload_Alt_Extra" or "Reload_Alt"
 		local reloadTrack = self:_playAnim(reloadName)
-		if reloadTrack then reloadTrack.Stopped:Wait() end
+		if reloadTrack then self:_waitAnimation(reloadTrack) end
 		if not self.Equipped or self._equipGeneration ~= equipGeneration then return end
 
 		if self:_hasReserveAmmo() then
@@ -501,6 +517,8 @@ PrinceRifle.Weight     = 2
 PrinceRifle.Designation = "Primary"
 PrinceRifle.Display_Name = FIREARM_CONFIG.name
 PrinceRifle.desc = FIREARM_CONFIG.desc
+PrinceRifle.lore = FIREARM_CONFIG.lore
+PrinceRifle.assists = FIREARM_CONFIG.assists
 PrinceRifle.icon = FIREARM_CONFIG.icon
 PrinceRifle.damage = FIREARM_CONFIG.damage
 PrinceRifle.range = FIREARM_CONFIG.range
@@ -521,8 +539,7 @@ PrinceRifle.ammo_reserves_max = FIREARM_CONFIG.ammo_reserves_max
 PrinceRifle.pen = FIREARM_CONFIG.pen
 
 -- Authored mount data from weapon_modules.lebel (including inherited values).
--- This authored model uses PrinceRifle_Middle rather than the legacy hitbox.
--- Its constructor defines the matching hand mount and internal joints.
+-- Prefer the legacy hitbox; retain PrinceRifle_Middle for native model variants.
 PrinceRifle.UseNativeEquipMount = true
 PrinceRifle.AuthoredWelds = {
 	equipc0 = CFrame.new(0.253814697, -1.70311737, -0.565979004, -0.0170763358, -0.000915539567, -0.99985379, 0.99842006, 0.0535294637, -0.0171008594, 0.0535372309, -0.998565853, -4.00225453e-9),
